@@ -1,0 +1,11 @@
+appId: com.jargon.app
+productName: Jargon
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.*'
+  - '!tsconfig*.json'
+mac:
+  category: public.app-category.business

@@ -11,13 +11,16 @@ export function BuilderMock() {
           </button>
           <div className="builder-folder">jargon</div>
           <div className="builder-project active">
-            <span>☎</span> Enterprise dialer
+            <span>◎</span> Retention risk queue
           </div>
           <div className="builder-project">
-            <span>✉</span> AE sequencer
+            <span>▤</span> Account prep
           </div>
           <div className="builder-project">
-            <span>↻</span> Multi-channel cadence
+            <span>☎</span> Mid-market dialer
+          </div>
+          <div className="builder-project">
+            <span>↻</span> Post-call admin
           </div>
         </aside>
 
@@ -27,20 +30,22 @@ export function BuilderMock() {
             <div className="builder-msg user">
               <div className="builder-role">You</div>
               <p>
-                Build a dialer for our Series B pipeline — prioritize VP Sales at mid-market SaaS,
-                pull from our CRM segments, and log outcomes back to the data layer.
+                Build a retention workspace for CSMs — surface accounts with declining health,
+                prep save-play talking points from our CRM notes, and log outcomes back to the
+                data layer.
               </p>
             </div>
             <div className="builder-msg assistant">
               <div className="builder-role">Jargon</div>
               <p>
-                Got it. I&apos;ll wire the queue to your CRM context, set dispositions for meeting
-                booked / follow-up, and ship a live dial console with campaign analytics.
+                Got it. I&apos;ll wire the queue to your health scores, generate prep briefs from
+                account context, and ship dispositions with CRM write-back so the whole team can
+                run the same motion.
               </p>
               <div className="builder-chips">
-                <span>CRM segments</span>
-                <span>VP Sales</span>
-                <span>Meeting booked</span>
+                <span>Health scores</span>
+                <span>Save plays</span>
+                <span>CRM write-back</span>
               </div>
               <button className="builder-open" type="button">
                 Open in canvas →
@@ -48,7 +53,7 @@ export function BuilderMock() {
             </div>
           </div>
           <div className="builder-composer">
-            <span>Describe the outbound tool you want to build…</span>
+            <span>Describe the revenue tool you want to build…</span>
             <button type="button">Send</button>
           </div>
         </section>
@@ -65,23 +70,23 @@ export function DialerMock() {
           <div className="product-brand-row">
             <BrandMark size={26} />
             <div>
-              <div className="product-name">Enterprise dialer</div>
-              <div className="product-kind">Outbound Dialer</div>
+              <div className="product-name">Retention risk queue</div>
+              <div className="product-kind">Save motion</div>
             </div>
           </div>
           <nav>
-            {['Dashboard', 'Campaigns', 'Dial console', 'Contacts', 'Analytics'].map((item, i) => (
+            {['Dashboard', 'Risk queue', 'Save console', 'Accounts', 'Analytics'].map((item, i) => (
               <div key={item} className={`nav-item ${i === 2 ? 'active' : ''}`}>
-                <span>{['▣', '⚑', '☎', '▤', '◎'][i]}</span>
+                <span>{['▣', '⚑', '◎', '▤', '◈'][i]}</span>
                 {item}
               </div>
             ))}
           </nav>
           <div className="product-user-row">
-            <div className="avatar">S</div>
+            <div className="avatar">R</div>
             <div>
               <div className="muted-xs">Signed in as</div>
-              <div className="user-name">Sales Ops</div>
+              <div className="user-name">Rev Ops</div>
             </div>
           </div>
         </aside>
@@ -89,11 +94,11 @@ export function DialerMock() {
         <div className="dial-stage">
           <div className="stage-header">
             <div>
-              <div className="eyebrow">Dial console</div>
-              <h3>Live queue</h3>
+              <div className="eyebrow">Save console</div>
+              <h3>At-risk queue</h3>
             </div>
             <span className="live-pill">
-              <span className="live-dot" /> Simulated · live
+              <span className="live-dot" /> Live · shared
             </span>
           </div>
 
@@ -101,10 +106,10 @@ export function DialerMock() {
             <div className="queue-panel">
               <div className="panel-label">Next up</div>
               {[
-                { name: 'Maya Chen', meta: 'Lattice · SF', status: 'active' },
-                { name: 'Jordan Blake', meta: 'Rippling · NYC', status: 'queued' },
-                { name: 'Priya Nair', meta: 'Notion · Remote', status: 'queued' },
-                { name: 'Sam Okonkwo', meta: 'Figma · LA', status: 'queued' }
+                { name: 'Maya Chen', meta: 'Lattice · Health 42', status: 'active' },
+                { name: 'Jordan Blake', meta: 'Rippling · Health 51', status: 'queued' },
+                { name: 'Priya Nair', meta: 'Notion · Health 38', status: 'queued' },
+                { name: 'Sam Okonkwo', meta: 'Figma · Health 47', status: 'queued' }
               ].map((c) => (
                 <div key={c.name} className={`queue-item ${c.status}`}>
                   <div>
@@ -122,18 +127,18 @@ export function DialerMock() {
                 <div className="call-avatar">MC</div>
                 <div className="call-name">Maya Chen</div>
                 <div className="call-title">VP Sales · Lattice</div>
-                <div className="call-phone">+1 (415) 555-0142</div>
-                <p className="call-goal">Step: Discovery dial · Goal: Book a meeting</p>
+                <div className="call-phone">Renewal in 34 days</div>
+                <p className="call-goal">Play: Usage drop · Goal: Confirm exec sponsor</p>
                 <div className="call-timer">00:42</div>
                 <div className="dispositions">
                   <button type="button" className="disp primary">
-                    Interested
+                    Sponsor confirmed
                   </button>
                   <button type="button" className="disp">
-                    No answer
+                    Follow up
                   </button>
                   <button type="button" className="disp">
-                    Not interested
+                    Escalate
                   </button>
                 </div>
               </div>
@@ -153,14 +158,14 @@ export function DashboardMock() {
           <div className="product-brand-row">
             <BrandMark size={26} />
             <div>
-              <div className="product-name">AE sequencer</div>
-              <div className="product-kind">Email Sequencer</div>
+              <div className="product-name">Org tool library</div>
+              <div className="product-kind">Shared · governed</div>
             </div>
           </div>
           <nav>
-            {['Dashboard', 'Sequences', 'Inbox', 'Contacts', 'Analytics'].map((item, i) => (
+            {['Library', 'Published', 'Teams', 'Usage', 'Analytics'].map((item, i) => (
               <div key={item} className={`nav-item ${i === 0 ? 'active' : ''}`}>
-                <span>{['▣', '↻', '✉', '▤', '◎'][i]}</span>
+                <span>{['▣', '⚑', '▤', '↻', '◎'][i]}</span>
                 {item}
               </div>
             ))}
@@ -170,21 +175,21 @@ export function DashboardMock() {
         <div className="dash-stage">
           <div className="stage-header">
             <div>
-              <div className="eyebrow">Dashboard</div>
-              <h3>AE sequencer</h3>
+              <div className="eyebrow">Leadership view</div>
+              <h3>Tools across the revenue org</h3>
             </div>
             <button type="button" className="mock-primary">
-              Open inbox
+              Publish update
             </button>
           </div>
 
           <div className="metric-row">
             {[
-              ['Enrolled', '1,248'],
-              ['Contacted', '892'],
-              ['Replied', '186'],
-              ['Booked', '47'],
-              ['Answer rate', '21.4%']
+              ['Published tools', '24'],
+              ['Active teams', '8'],
+              ['Weekly runs', '3,412'],
+              ['Shared playbooks', '11'],
+              ['Adoption', '86%']
             ].map(([label, value]) => (
               <div key={label} className="metric">
                 <div className="metric-value">{value}</div>
@@ -194,36 +199,36 @@ export function DashboardMock() {
           </div>
 
           <div className="activity-panel">
-            <div className="panel-label">Recent activity</div>
+            <div className="panel-label">Recently standardized</div>
             <table>
               <thead>
                 <tr>
                   <th>When</th>
-                  <th>Type</th>
+                  <th>Team</th>
                   <th>Summary</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>2m ago</td>
+                  <td>2h ago</td>
                   <td>
-                    <span className="type-badge">EMAIL</span>
+                    <span className="type-badge">CS</span>
                   </td>
-                  <td>Step 2 sent to Jordan Blake</td>
+                  <td>Retention risk queue · published org-wide</td>
                 </tr>
                 <tr>
-                  <td>14m ago</td>
+                  <td>Yesterday</td>
                   <td>
-                    <span className="type-badge reply">REPLY</span>
+                    <span className="type-badge reply">AM</span>
                   </td>
-                  <td>Priya Nair replied — interested</td>
+                  <td>Account prep briefs · shared with AE pod</td>
                 </tr>
                 <tr>
-                  <td>31m ago</td>
+                  <td>2d ago</td>
                   <td>
-                    <span className="type-badge call">CALL</span>
+                    <span className="type-badge call">Sales</span>
                   </td>
-                  <td>Logged meeting booked · Maya Chen</td>
+                  <td>Mid-market dialer · CRM write-back enabled</td>
                 </tr>
               </tbody>
             </table>
@@ -240,9 +245,9 @@ export function ContextMock() {
       <div className="context-layer layer-data">
         <span className="layer-tag">Your data layer</span>
         <div className="layer-chips">
-          <span>CRM segments</span>
-          <span>Enrichment</span>
-          <span>Intent signals</span>
+          <span>CRM</span>
+          <span>Warehouse</span>
+          <span>Health scores</span>
           <span>Call outcomes</span>
         </div>
       </div>
@@ -250,21 +255,21 @@ export function ContextMock() {
       <div className="context-layer layer-jargon">
         <BrandMark size={22} />
         <span className="layer-title">Jargon</span>
-        <span className="layer-sub">builds the tool around it</span>
+        <span className="layer-sub">builds shareable tools on it</span>
       </div>
       <div className="context-arrow">↓</div>
       <div className="context-tools">
         <div className="context-tool">
-          <span>☎</span> Dialer
+          <span>◎</span> Retention
         </div>
         <div className="context-tool">
-          <span>✉</span> Sequencer
+          <span>▤</span> Account prep
         </div>
         <div className="context-tool">
-          <span>↻</span> Cadence
+          <span>☎</span> Outbound
         </div>
         <div className="context-tool">
-          <span>▤</span> Lists
+          <span>↻</span> Post-call
         </div>
       </div>
     </div>

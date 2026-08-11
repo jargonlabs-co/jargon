@@ -213,6 +213,11 @@ button {
   letter-spacing: -0.02em;
 }
 
+.logo-mark {
+  display: block;
+  flex-shrink: 0;
+}
+
 .nav-links {
   display: flex;
   gap: 28px;
@@ -254,6 +259,8 @@ button {
   margin: 0 auto;
   text-align: center;
   animation: rise 1s var(--ease) both;
+  /* Ensure content is visible even if animation is interrupted */
+  opacity: 1;
 }
 
 .hero h1 {
@@ -265,6 +272,7 @@ button {
   max-width: 16ch;
   margin: 0 auto 22px;
   animation: rise 1s var(--ease) 0.08s both;
+  opacity: 1;
 }
 
 .hero-lede {
@@ -366,6 +374,44 @@ button {
   text-align: center;
   max-width: 640px;
   margin: 0 auto 48px;
+}
+
+/* ——— Pillars ——— */
+
+.pillar-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(28px, 4vw, 48px);
+  margin-top: 8px;
+}
+
+.pillar-list li {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.pillar-num {
+  display: block;
+  font-family: var(--mono, 'IBM Plex Mono', ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+
+.pillar-list h3 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.pillar-list p {
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.55;
 }
 
 .eyebrow {
@@ -1149,6 +1195,19 @@ button {
   background: rgba(253, 248, 238, 0.12);
 }
 
+/* Match the nav logo triad: coral, navy, gold */
+.cta-mark .brand-dot.orange {
+  background: var(--star-coral);
+}
+
+.cta-mark .brand-dot.navy {
+  background: var(--star-navy);
+}
+
+.cta-mark .brand-dot.blue {
+  background: var(--star-gold);
+}
+
 .cta-panel h2 {
   color: var(--cream);
   max-width: 14ch;
@@ -1212,7 +1271,7 @@ button {
 
 @keyframes rise {
   from {
-    opacity: 0;
+    opacity: 0.001;
     transform: translateY(22px);
   }
   to {
@@ -1223,7 +1282,7 @@ button {
 
 @keyframes rise-slow {
   from {
-    opacity: 0;
+    opacity: 0.001;
     transform: translateY(48px) perspective(1600px) rotateX(8deg);
   }
   to {
@@ -1275,6 +1334,11 @@ button {
 
   .metric-row {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .pillar-list {
+    grid-template-columns: 1fr;
+    gap: 28px;
   }
 
   .capability-list {

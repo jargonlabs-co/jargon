@@ -5,10 +5,10 @@ import {
   oauthRedirectUri,
   type ProviderSecrets
 } from '../connections'
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 
 export function gmailAuthUrl(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   orgId: string,
   userId: string

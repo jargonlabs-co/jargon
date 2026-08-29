@@ -1,4 +1,4 @@
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import type { ServerConfig } from './config'
 import type { PlanId, Subscription, SubscriptionStatus } from './types'
 import { uid } from './crypto'
@@ -37,7 +37,7 @@ export const PLAN_CATALOG: Record<
   }
 }
 
-export function ensureSubscription(store: JsonStore, orgId: string): Subscription {
+export function ensureSubscription(store: DataStore, orgId: string): Subscription {
   let sub = store.db.subscriptions.find((s) => s.orgId === orgId)
   if (sub) return sub
   const now = Date.now()
@@ -55,11 +55,11 @@ export function ensureSubscription(store: JsonStore, orgId: string): Subscriptio
   return sub
 }
 
-export function orgBuildCount(store: JsonStore, orgId: string): number {
+export function orgBuildCount(store: DataStore, orgId: string): number {
   return store.db.projects.filter((p) => p.orgId === orgId).length
 }
 
-export function billingSnapshot(store: JsonStore, orgId: string, config: ServerConfig) {
+export function billingSnapshot(store: DataStore, orgId: string, config: ServerConfig) {
   const sub = ensureSubscription(store, orgId)
   const plan = PLAN_CATALOG[sub.plan]
   const builds = orgBuildCount(store, orgId)
@@ -77,7 +77,7 @@ export function billingSnapshot(store: JsonStore, orgId: string, config: ServerC
 }
 
 export function updateSubscription(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   patch: Partial<Pick<Subscription, 'plan' | 'status' | 'stripeCustomerId' | 'stripeSubscriptionId' | 'currentPeriodEnd'>>
 ): Subscription {
@@ -95,7 +95,7 @@ async function stripeClient(secretKey: string) {
 }
 
 export async function createCheckoutSession(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   orgId: string,
   userEmail: string
@@ -129,7 +129,7 @@ export async function createCheckoutSession(
 }
 
 export async function createBillingPortalSession(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   orgId: string
 ): Promise<{ url: string }> {
@@ -149,7 +149,7 @@ export async function createBillingPortalSession(
 }
 
 export async function handleStripeWebhook(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   rawBody: Buffer,
   signature: string | undefined
@@ -205,7 +205,7 @@ function mapStripeStatus(status: string): SubscriptionStatus {
 }
 
 function applyStripeSubscriptionStatus(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   status: SubscriptionStatus,
   currentPeriodEnd?: number

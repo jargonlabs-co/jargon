@@ -2,7 +2,7 @@ import express from 'express'
 import type { Request } from 'express'
 import cors from 'cors'
 import type { Server } from 'http'
-import { JsonStore } from './store'
+import type { DataStore } from './store'
 import { seedProject } from './seed'
 import { analyticsFor, bundleProject } from './queries'
 import type { ContactStatus, MessageStatus, ProjectKind } from './types'
@@ -96,7 +96,7 @@ function shareLinkApiBase(req: Request, config: ServerConfig): string {
   return config.publicUrl.replace(/\/$/, '')
 }
 
-export function createApi(store: JsonStore, config: ServerConfig = loadConfig()) {
+export function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const app = express()
   app.use(cors({ origin: true, credentials: true }))
 
@@ -146,6 +146,8 @@ export function createApi(store: JsonStore, config: ServerConfig = loadConfig())
       },
       publicUrl: config.publicUrl,
       previewUrl: config.previewUrl,
+      storage: process.env.DATABASE_URL ? 'postgres' : 'json',
+      userCount: store.db.users.length,
       features: { sharePreview: true, deploy: true, cli: true }
     })
   })
@@ -1593,7 +1595,7 @@ export function createApi(store: JsonStore, config: ServerConfig = loadConfig())
 }
 
 function mutateCampaign(
-  store: JsonStore,
+  store: DataStore,
   id: string,
   orgId: string,
   state: 'ACTIVE' | 'PAUSED'
@@ -1619,7 +1621,7 @@ function mutateCampaign(
 }
 
 export async function startApiServer(
-  store: JsonStore,
+  store: DataStore,
   preferredPort = 8787,
   options?: { host?: string; config?: ServerConfig }
 ): Promise<{ server: Server; port: number; config: ServerConfig }> {

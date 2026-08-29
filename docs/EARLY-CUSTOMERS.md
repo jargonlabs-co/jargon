@@ -27,6 +27,7 @@ jargon CLI   ──┘
 ### Needs you (infra / accounts)
 
 - [ ] **Hosted API live** — Railway at `https://jargon-api-production.up.railway.app` with env vars set
+- [ ] **Postgres on Railway** — add PostgreSQL plugin, set `DATABASE_URL` on API (see [RAILWAY-POSTGRES.md](./RAILWAY-POSTGRES.md))
 - [ ] **Preview URL** — set `JARGON_PREVIEW_URL` on API to where `preview.html` is hosted
 - [ ] **Crustdata key** — `CRUSTDATA_API_KEY` on hosted API (you have locally)
 - [ ] **Gmail OAuth** — production redirect URI on Google Cloud console

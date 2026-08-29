@@ -1,7 +1,7 @@
 import { createHmac } from 'crypto'
 import type { ServerConfig } from '../config'
 import { upsertConnection } from '../connections'
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 
 /**
  * Twilio Client capability token (JWT) for softphone.
@@ -56,7 +56,7 @@ export function voiceTwiml(to: string, fromNumber: string): string {
 </Response>`
 }
 
-export function ensureTwilioConnection(store: JsonStore, orgId: string, serverConfig: ServerConfig) {
+export function ensureTwilioConnection(store: DataStore, orgId: string, serverConfig: ServerConfig) {
   const existing = store.db.connections.find((c) => c.orgId === orgId && c.provider === 'twilio')
   if (existing) return existing
   return upsertConnection(store, {

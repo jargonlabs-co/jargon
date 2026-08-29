@@ -1,4 +1,4 @@
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import type {
   Contact,
   PreviewComment,
@@ -53,7 +53,7 @@ function sharePreviewUrl(previewBase: string, token: string, apiBase?: string): 
 }
 
 export function createShareLink(
-  store: JsonStore,
+  store: DataStore,
   input: {
     orgId: string
     userId: string
@@ -92,7 +92,7 @@ export function createShareLink(
   }
 }
 
-export function resolveShareLink(store: JsonStore, token: string): ShareLink | null {
+export function resolveShareLink(store: DataStore, token: string): ShareLink | null {
   const tokenHash = hashToken(token)
   const share = store.db.shareLinks.find((s) => s.tokenHash === tokenHash)
   if (!share) return null
@@ -102,7 +102,7 @@ export function resolveShareLink(store: JsonStore, token: string): ShareLink | n
 }
 
 export function buildSharedPreview(
-  store: JsonStore,
+  store: DataStore,
   share: ShareLink
 ): SharedPreviewPayload | null {
   const bundle = bundleProject(store.db, share.projectId)
@@ -161,7 +161,7 @@ export function toPublicComment(comment: PreviewComment) {
 }
 
 export function addPreviewComment(
-  store: JsonStore,
+  store: DataStore,
   share: ShareLink,
   input: {
     authorName: string
@@ -222,7 +222,7 @@ export function addPreviewComment(
   return comment
 }
 
-export function revokeShareLink(store: JsonStore, shareId: string, orgId: string): boolean {
+export function revokeShareLink(store: DataStore, shareId: string, orgId: string): boolean {
   let revoked = false
   store.update((db) => {
     const share = db.shareLinks.find((s) => s.id === shareId && s.orgId === orgId)

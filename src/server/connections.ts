@@ -1,5 +1,5 @@
 import type { ServerConfig } from './config'
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import { decryptJson, encryptJson, randomToken, uid } from './crypto'
 import type { Connection, ConnectionProvider, ConnectionPublic, OAuthState } from './types'
 
@@ -24,7 +24,7 @@ export function toPublicConnection(c: Connection): ConnectionPublic {
   }
 }
 
-export function getConnection(store: JsonStore, orgId: string, provider: ConnectionProvider) {
+export function getConnection(store: DataStore, orgId: string, provider: ConnectionProvider) {
   return store.db.connections.find((c) => c.orgId === orgId && c.provider === provider)
 }
 
@@ -33,7 +33,7 @@ export function readSecrets(connection: Connection): ProviderSecrets {
 }
 
 export function upsertConnection(
-  store: JsonStore,
+  store: DataStore,
   input: {
     orgId: string
     provider: ConnectionProvider
@@ -79,7 +79,7 @@ export function upsertConnection(
 }
 
 export function createOAuthState(
-  store: JsonStore,
+  store: DataStore,
   input: {
     orgId: string
     userId: string
@@ -103,7 +103,7 @@ export function createOAuthState(
   return state
 }
 
-export function consumeOAuthState(store: JsonStore, id: string): OAuthState | null {
+export function consumeOAuthState(store: DataStore, id: string): OAuthState | null {
   const state = store.db.oauthStates.find((s) => s.id === id && s.expiresAt > Date.now())
   if (!state) return null
   store.update((db) => {

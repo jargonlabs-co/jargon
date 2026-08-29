@@ -1,4 +1,4 @@
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 import type { ServerConfig } from '../config'
 import {
   getConnection,
@@ -250,7 +250,7 @@ export function buildDemoCrustdataProspects(limit: number): ContextProspect[] {
 }
 
 export function ensureCrustdataConnection(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ) {
@@ -278,7 +278,7 @@ export function ensureCrustdataConnection(
 }
 
 export function resolveCrustdataApiKey(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ): { apiKey: string; demo: boolean } | null {

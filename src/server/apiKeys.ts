@@ -1,4 +1,4 @@
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import { hashToken, randomToken, uid } from './crypto'
 import type { ApiKey, ApiKeyPublic, Org, User } from './types'
 
@@ -20,7 +20,7 @@ export function toPublicApiKey(key: ApiKey): ApiKeyPublic {
 }
 
 export function createApiKey(
-  store: JsonStore,
+  store: DataStore,
   input: { orgId: string; userId: string; name: string }
 ): { apiKey: ApiKey; token: string } {
   const token = generateApiKeyToken()
@@ -41,7 +41,7 @@ export function createApiKey(
 }
 
 export function resolveApiKeyAuth(
-  store: JsonStore,
+  store: DataStore,
   token: string
 ): { user: User; org: Org; apiKey: ApiKey } | null {
   if (!token.startsWith(API_KEY_PREFIX)) return null
@@ -59,7 +59,7 @@ export function resolveApiKeyAuth(
   return { user, org, apiKey }
 }
 
-export function revokeApiKey(store: JsonStore, orgId: string, keyId: string): boolean {
+export function revokeApiKey(store: DataStore, orgId: string, keyId: string): boolean {
   let found = false
   store.update((db) => {
     const k = db.apiKeys.find((x) => x.id === keyId && x.orgId === orgId && !x.revokedAt)
@@ -70,7 +70,7 @@ export function revokeApiKey(store: JsonStore, orgId: string, keyId: string): bo
   return found
 }
 
-export function listApiKeys(store: JsonStore, orgId: string): ApiKeyPublic[] {
+export function listApiKeys(store: DataStore, orgId: string): ApiKeyPublic[] {
   return store.db.apiKeys
     .filter((k) => k.orgId === orgId && !k.revokedAt)
     .sort((a, b) => b.createdAt - a.createdAt)

@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import { hashToken, uid } from './crypto'
 import type { AuthPayload, Org, PublicUser, Session, User } from './types'
 import { resolveApiKeyAuth } from './apiKeys'
@@ -28,7 +28,7 @@ export function toPublicUser(user: User): PublicUser {
 }
 
 export function createSession(
-  store: JsonStore,
+  store: DataStore,
   userId: string,
   orgId: string
 ): { token: string; session: Session } {
@@ -49,11 +49,11 @@ export function createSession(
   return { token, session }
 }
 
-export function authPayload(store: JsonStore, token: string, user: User, org: Org): AuthPayload {
+export function authPayload(store: DataStore, token: string, user: User, org: Org): AuthPayload {
   return { token, user: toPublicUser(user), org }
 }
 
-export function resolveAuth(store: JsonStore, header?: string | null): AuthContext | null {
+export function resolveAuth(store: DataStore, header?: string | null): AuthContext | null {
   if (!header?.startsWith('Bearer ')) return null
   const token = header.slice('Bearer '.length).trim()
   if (!token) return null
@@ -79,7 +79,7 @@ export function resolveAuth(store: JsonStore, header?: string | null): AuthConte
   return { user, org, session, token, via: 'session' }
 }
 
-export function requireAuth(store: JsonStore) {
+export function requireAuth(store: DataStore) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const auth = resolveAuth(store, req.header('authorization'))
     if (!auth) {
@@ -91,7 +91,7 @@ export function requireAuth(store: JsonStore) {
   }
 }
 
-export function destroySession(store: JsonStore, token: string): void {
+export function destroySession(store: DataStore, token: string): void {
   const tokenHash = hashToken(token)
   store.update((db) => {
     db.sessions = db.sessions.filter((s) => s.tokenHash !== tokenHash)

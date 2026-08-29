@@ -7,7 +7,7 @@ import {
   upsertConnection,
   type ProviderSecrets
 } from '../connections'
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 
 const APOLLO_BASE = 'https://api.apollo.io/api/v1'
 
@@ -623,7 +623,7 @@ export function applyApolloEnrichment(
  * no need to paste the key in the UI each time.
  */
 export function ensureApolloConnection(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ) {
@@ -651,7 +651,7 @@ export function ensureApolloConnection(
 }
 
 export function resolveApolloApiKey(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ): { apiKey: string; demo: boolean } | null {

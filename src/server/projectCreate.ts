@@ -11,11 +11,11 @@ import {
 } from './providers/crustdata'
 import { prospectsToContacts } from './providers/prospects'
 import { seedProject } from './seed'
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import type { ProjectKind } from './types'
 
 export async function createProjectRecord(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   input: {
     orgId: string

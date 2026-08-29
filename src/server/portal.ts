@@ -1,4 +1,4 @@
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import type { Project } from './types'
 
 export interface PortalBuildShare {
@@ -16,7 +16,7 @@ export interface PortalBuild {
   shares: PortalBuildShare[]
 }
 
-export function listPortalBuilds(store: JsonStore, orgId: string): PortalBuild[] {
+export function listPortalBuilds(store: DataStore, orgId: string): PortalBuild[] {
   const projects = store.db.projects
     .filter((p) => p.orgId === orgId)
     .sort((a, b) => b.updatedAt - a.updatedAt)

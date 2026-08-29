@@ -1,4 +1,4 @@
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 import type { ServerConfig } from '../config'
 import {
   getConnection,
@@ -213,7 +213,7 @@ export async function fetchSupabaseProspects(input: {
 }
 
 export function ensureSupabaseConnection(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ) {
@@ -251,7 +251,7 @@ export function ensureSupabaseConnection(
 }
 
 export function resolveSupabaseConnection(
-  store: JsonStore,
+  store: DataStore,
   orgId: string,
   serverConfig: ServerConfig
 ): { projectUrl: string; apiKey: string; table: string; columnMap: SupabaseColumnMap } | null {

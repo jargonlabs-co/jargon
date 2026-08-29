@@ -3,6 +3,12 @@ import { dirname, join } from 'path'
 import type { Database } from './types'
 import { ensureBootstrapTenant } from './bootstrap'
 
+export interface DataStore {
+  get db(): Database
+  persist(next?: Database): void
+  update(mutator: (db: Database) => void): Database
+}
+
 const EMPTY: Database = {
   users: [],
   orgs: [],
@@ -24,7 +30,7 @@ const EMPTY: Database = {
   previewComments: []
 }
 
-function migrate(raw: Partial<Database>): Database {
+function migrateDb(raw: Partial<Database>): Database {
   const db: Database = { ...structuredClone(EMPTY), ...raw } as Database
   if (!db.shareLinks) db.shareLinks = []
   if (!db.previewComments) db.previewComments = []
@@ -63,7 +69,7 @@ function migrate(raw: Partial<Database>): Database {
   return db
 }
 
-export class JsonStore {
+export class JsonStore implements DataStore {
   private filePath: string
   private data: Database
 
@@ -72,7 +78,7 @@ export class JsonStore {
     this.data = this.load()
     if (options?.bootstrap !== false) {
       ensureBootstrapTenant(this)
-      this.data = migrate(this.data)
+      this.data = migrateDb(this.data)
       this.persist()
     }
   }
@@ -89,7 +95,7 @@ export class JsonStore {
         return structuredClone(EMPTY)
       }
       const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as Partial<Database>
-      return migrate(raw)
+      return migrateDb(raw)
     } catch {
       return structuredClone(EMPTY)
     }
@@ -108,10 +114,28 @@ export class JsonStore {
   }
 }
 
+export { migrateDb as migrateDatabase }
+
 export function defaultDbPath(userDataPath: string): string {
   return join(userDataPath, 'jargon-db.json')
 }
 
 export function hostedDbPath(cwd = process.cwd()): string {
   return process.env.JARGON_DB_PATH ?? join(cwd, 'data', 'jargon-db.json')
+}
+
+/** Hosted API store — Postgres when DATABASE_URL is set, else JSON file. */
+export async function createHostedStore(options?: {
+  bootstrap?: boolean
+}): Promise<{ store: DataStore; backend: 'postgres' | 'json'; label: string }> {
+  const databaseUrl = process.env.DATABASE_URL?.trim()
+  if (databaseUrl) {
+    const { PgStore } = await import('./pgStore')
+    const store = await PgStore.connect(databaseUrl, structuredClone(EMPTY), options)
+    return { store, backend: 'postgres', label: 'postgres:jargon_state' }
+  }
+  const dbPath = hostedDbPath()
+  mkdirSync(dirname(dbPath), { recursive: true })
+  const store = new JsonStore(dbPath, options)
+  return { store, backend: 'json', label: dbPath }
 }

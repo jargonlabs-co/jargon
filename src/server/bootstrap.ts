@@ -1,9 +1,9 @@
-import type { JsonStore } from './store'
+import type { DataStore } from './store'
 import { hashPassword, uid } from './crypto'
 import type { Membership, Org, User } from './types'
 
 /** Create a demo owner account on first boot so desktop can sign in immediately. */
-export function ensureBootstrapTenant(store: JsonStore): void {
+export function ensureBootstrapTenant(store: DataStore): void {
   if (store.db.users.length > 0) return
 
   const now = Date.now()

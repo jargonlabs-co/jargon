@@ -6,7 +6,7 @@ import {
   upsertConnection,
   type ProviderSecrets
 } from '../connections'
-import type { JsonStore } from '../store'
+import type { DataStore } from '../store'
 import { uid } from '../crypto'
 import type { Contact } from '../types'
 
@@ -22,7 +22,7 @@ export interface HubSpotProspect {
 }
 
 export function hubspotAuthUrl(
-  store: JsonStore,
+  store: DataStore,
   config: ServerConfig,
   orgId: string,
   userId: string

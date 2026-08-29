@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 function readApiBase(): string {
   const arg = process.argv.find((a) => a.startsWith('--jargon-api='))
@@ -8,5 +8,15 @@ function readApiBase(): string {
 
 contextBridge.exposeInMainWorld('jargon', {
   platform: process.platform,
-  apiBaseUrl: readApiBase()
+  apiBaseUrl: readApiBase(),
+  getAuthToken: (): Promise<string | null> => ipcRenderer.invoke('jargon:get-auth-token'),
+  setAuthToken: (token: string | null): Promise<boolean> =>
+    ipcRenderer.invoke('jargon:set-auth-token', token),
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('jargon:open-external', url),
+  getApiBase: (): Promise<string> => ipcRenderer.invoke('jargon:get-api-base'),
+  onDeepLink: (handler: (url: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, url: string): void => handler(url)
+    ipcRenderer.on('jargon:deep-link', listener)
+    return () => ipcRenderer.removeListener('jargon:deep-link', listener)
+  }
 })

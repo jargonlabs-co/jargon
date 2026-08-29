@@ -1,54 +1,79 @@
 # Jargon
 
-Desktop app for vibe-coding outbound sales tools. Describe what you want — Jargon clarifies, then builds a full multi-page dialer or sequencer backed by a **local simulated API**.
-
-## Flow
-
-1. Prompt → clarify questions
-2. Project saved under Projects
-3. Full-window product with separate pages: Dashboard, Campaigns, Dial console, Sequences, Inbox, Contacts, Analytics
+Build custom outbound tools on **Crustdata** people context — with **Gmail** and **Twilio** for email and calling.
 
 ## Stack
 
-- Electron + Vite + React + TypeScript
-- Local Express API + JSON file store (userData)
-- Simulated call/email engines (no Twilio/Gmail yet)
+| Layer | Provider | Role |
+|-------|----------|------|
+| Context | Crustdata | People search → prospect queue + talk tracks |
+| Email | Gmail OAuth | Send from rep tool surfaces |
+| Voice | Twilio | Call from dial surfaces |
 
-## Develop
+## Quick start
 
 ```bash
 npm install
+cp .env.example .env   # add CRUSTDATA_API_KEY
 npm run dev
 ```
 
-API defaults to `http://127.0.0.1:8787` and is started by Electron main.
+Sign in: `demo@jargon.app` / `jargon-demo`
 
-## Landing page
+1. **Crustdata** auto-connects from `CRUSTDATA_API_KEY` in `.env`
+2. Open **Connections** → connect **Gmail** and **Twilio**
+3. Chat prompt:
 
-Marketing site lives in `landing/` (Vite + React).
+> Find me the top 100 prospects I need to contact today
+
+That builds a Today tool: live Crustdata prospects in the queue, email via Gmail, calls via Twilio.
+
+Probe Crustdata without the app:
+
+```bash
+npx tsx scripts/crustdata-probe.ts --limit 5
+```
+
+## What's included
+
+- Electron desktop client (auth, deep-link OAuth, auto-update hook)
+- Multi-tenant hosted API (orgs, sessions, encrypted connection secrets)
+- Crustdata person search · Gmail send · Twilio Voice
+- Packaging via `electron-builder` + GitHub Release workflow
+
+## Hosted API
+
+```bash
+cp .env.example .env
+npm run api
+# or
+docker compose up --build
+```
+
+See [docs/LAUNCH.md](docs/LAUNCH.md) for provider setup, packaging, and ops.
+
+## Package desktop
+
+```bash
+npm run dist:mac
+npm run dist:win
+```
+
+Artifacts land in `release/`. Point production builds at the API with `JARGON_API_URL`.
+
+## Landing
 
 ```bash
 npm run landing:dev
 ```
 
-Opens at `http://localhost:5180`.
+## Customer portal
 
-### Deploy (GitHub Pages)
-
-Push to `main` deploys via `.github/workflows/deploy-landing.yml`.
-
-Site URL (default): `https://<your-user>.github.io/jargon/`
-
-If the repo name isn’t `jargon`, set the Vite base to match:
+Web account UI (login, builds, billing, API keys) — deploy to Vercel at `app.jargon.app`:
 
 ```bash
-# example: repo named jargon-landing
-VITE_BASE=/jargon-landing/ npm run landing:build
+npm run portal:dev      # http://127.0.0.1:5181
+npm run portal:build
 ```
 
-Or for a custom domain / `*.github.io` root repo:
-
-```bash
-VITE_BASE=/ npm run landing:build
-```
-
+Set `VITE_API_URL` on Vercel to your Railway API. Set `JARGON_PORTAL_URL` on the API for Stripe redirect URLs.

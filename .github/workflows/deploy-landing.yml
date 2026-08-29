@@ -32,6 +32,8 @@ jobs:
           cache-dependency-path: landing/package-lock.json
       - run: npm ci
       - run: npm run build
+        env:
+          VITE_BASE: /jargon/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: landing/dist

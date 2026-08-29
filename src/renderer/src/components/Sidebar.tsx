@@ -18,10 +18,15 @@ interface Props {
   drafting: boolean
   collapsed?: boolean
   workspaceName?: string
+  orgLabel?: string
+  userLabel?: string
+  connectionsActive?: boolean
   onNewProject: () => void
   onSelectTool: (id: string) => void
   onDeleteTool: (id: string) => void
   onToggleCollapse: () => void
+  onOpenConnections?: () => void
+  onSignOut?: () => void
 }
 
 export function Sidebar({
@@ -30,14 +35,19 @@ export function Sidebar({
   drafting,
   collapsed = false,
   workspaceName = 'jargon',
+  orgLabel,
+  userLabel,
+  connectionsActive = false,
   onNewProject,
   onSelectTool,
   onDeleteTool,
-  onToggleCollapse
+  onToggleCollapse,
+  onOpenConnections,
+  onSignOut
 }: Props) {
   const [query, setQuery] = useState('')
-  const [projectsOpen, setProjectsOpen] = useState(true)
-  const [workspaceOpen, setWorkspaceOpen] = useState(true)
+  const [toolsOpen, setToolsOpen] = useState(true)
+  const [folderOpen, setFolderOpen] = useState(true)
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -63,7 +73,7 @@ export function Sidebar({
       <button
         className="sidebar-expand-fab"
         onClick={onToggleCollapse}
-        title="Show projects"
+        title="Show studio"
         aria-label="Expand sidebar"
       >
         »»
@@ -72,12 +82,20 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar project-sidebar">
+    <aside className="sidebar project-sidebar studio-sidebar">
+      <div className="studio-brand">
+        <div className="studio-brand-mark">J</div>
+        <div>
+          <div className="studio-brand-name">Jargon</div>
+          <div className="studio-brand-role">RevOps studio</div>
+        </div>
+      </div>
+
       <div className="sidebar-actions">
         <div className="sidebar-actions-row">
           <button className="sidebar-action primary" onClick={onNewProject}>
             <span className="sidebar-action-icon">+</span>
-            New project
+            New tool
           </button>
           <button
             className="sidebar-collapse-btn"
@@ -93,57 +111,61 @@ export function Sidebar({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
-            aria-label="Search projects"
+            placeholder="Search tools"
+            aria-label="Search tools"
           />
         </div>
       </div>
 
       <div className="sidebar-section-block">
-        <button className="sidebar-section-toggle" onClick={() => setProjectsOpen((v) => !v)}>
-          <span className={`chev ${projectsOpen ? 'open' : ''}`}>▾</span>
-          Projects
+        <button className="sidebar-section-toggle" onClick={() => setToolsOpen((v) => !v)}>
+          <span className={`chev ${toolsOpen ? 'open' : ''}`}>▾</span>
+          Tools
           <span className="sidebar-section-count">{tools.length}</span>
         </button>
 
-        {projectsOpen ? (
+        {toolsOpen ? (
           <div className="project-tree">
-            <button className="workspace-folder" onClick={() => setWorkspaceOpen((v) => !v)}>
-              <span className={`chev small ${workspaceOpen ? 'open' : ''}`}>▾</span>
-              <span className="folder-icon">📁</span>
+            <button className="workspace-folder" onClick={() => setFolderOpen((v) => !v)}>
+              <span className={`chev small ${folderOpen ? 'open' : ''}`}>▾</span>
+              <span className="folder-icon">◇</span>
               <span className="folder-name">{workspaceName}</span>
             </button>
 
-            {workspaceOpen ? (
+            {folderOpen ? (
               <div className="project-children">
                 {drafting ? (
                   <div className="project-row drafting">
                     <span className="project-row-icon">✦</span>
-                    <span className="project-row-name">New outbound tool…</span>
+                    <span className="project-row-name">Scaffolding tool…</span>
                     <span className="project-row-time">now</span>
                   </div>
                 ) : null}
 
                 {filtered.length === 0 && !drafting ? (
                   <div className="sidebar-empty nested">
-                    No projects yet — describe one in chat to save it here.
+                    No tools yet — describe a rep-facing surface in chat, or start blank.
                   </div>
                 ) : (
                   filtered.map((tool) => (
                     <div
                       key={tool.id}
-                      className={tool.id === activeToolId ? 'project-row active' : 'project-row'}
+                      className={
+                        tool.id === activeToolId && !connectionsActive
+                          ? 'project-row active'
+                          : 'project-row'
+                      }
                       onClick={() => onSelectTool(tool.id)}
                       title={tool.name}
                     >
-                      <span className="project-row-icon">{kindGlyph(tool.kind)}</span>
+                      <span className="project-row-icon">◆</span>
                       <span className="project-row-name">{tool.name}</span>
                       <span className="project-row-time">
                         {relativeTime(tool.updatedAt ?? tool.createdAt, now)}
                       </span>
                       <button
                         className="project-row-delete"
-                        title="Remove project"
+                        title="Remove tool"
                         onClick={(e) => {
                           e.stopPropagation()
                           onDeleteTool(tool.id)
@@ -163,40 +185,39 @@ export function Sidebar({
       <div className="sidebar-section-block">
         <div className="sidebar-section-toggle static">
           <span className="chev open">▾</span>
-          Home
+          Studio
         </div>
         <div className="project-children home">
-          <div className="project-row muted-row">
-            <span className="project-row-icon">⌂</span>
-            <span className="project-row-name">Jargon workspace</span>
-          </div>
+          {onOpenConnections ? (
+            <button
+              type="button"
+              className={connectionsActive ? 'project-row active' : 'project-row'}
+              onClick={onOpenConnections}
+            >
+              <span className="project-row-icon">⬡</span>
+              <span className="project-row-name">Context</span>
+              <span className="project-row-meta">Sources</span>
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-user">
-          <div className="sidebar-footer-avatar">J</div>
+          <div className="sidebar-footer-avatar">
+            {(userLabel ?? orgLabel ?? 'J').charAt(0).toUpperCase()}
+          </div>
           <div>
-            <div className="sidebar-footer-name">Jargon</div>
-            <div className="sidebar-footer-plan">Local simulated API</div>
+            <div className="sidebar-footer-name">{orgLabel ?? 'Jargon'}</div>
+            <div className="sidebar-footer-plan">{userLabel ?? 'RevOps'}</div>
           </div>
         </div>
+        {onSignOut ? (
+          <button type="button" className="sidebar-signout" onClick={onSignOut}>
+            Sign out
+          </button>
+        ) : null}
       </div>
     </aside>
   )
-}
-
-function kindGlyph(kind: ProjectKind): string {
-  switch (kind) {
-    case 'dialer':
-      return '☎'
-    case 'sequencer':
-      return '✉'
-    case 'cadence':
-      return '↻'
-    case 'list':
-      return '▤'
-    default:
-      return '◆'
-  }
 }

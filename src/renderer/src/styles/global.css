@@ -29,7 +29,7 @@
   --shadow-card: 0 12px 40px rgba(19, 31, 34, 0.08);
   --radius: 10px;
   --font: 'Instrument Sans', system-ui, sans-serif;
-  --serif: Georgia, 'Times New Roman', Times, serif;
+  --serif: 'Instrument Serif', Georgia, 'Times New Roman', Times, serif;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
   --titlebar: 42px;
   --activity: 52px;
@@ -51,6 +51,14 @@ body,
   overflow: hidden;
 }
 
+html.share-preview-root,
+html.share-preview-root body,
+html.share-preview-root #root {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
 body {
   font-family: var(--font);
   background: var(--bg-deep);
@@ -59,6 +67,10 @@ body {
   font-size: 13.5px;
   line-height: 1.45;
   user-select: none;
+}
+
+html.share-preview-root body {
+  user-select: text;
 }
 
 button,

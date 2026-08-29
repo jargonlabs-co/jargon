@@ -1,0 +1,116 @@
+import type { JargonConfig } from './config.js'
+
+export type DeployResult = {
+  projectId: string
+  contactCount: number
+  prospectSource?: string
+  shareUrl?: string
+  shareToken?: string
+  project?: { name: string; prompt: string }
+}
+
+export type ProjectSummary = {
+  id: string
+  name: string
+  kind: string
+  updatedAt: number
+}
+
+async function request<T>(
+  cfg: JargonConfig,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const url = `${cfg.apiUrl.replace(/\/$/, '')}${path}`
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.token}`,
+      ...(init.headers as Record<string, string> | undefined)
+    }
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    let message = text
+    try {
+      const json = JSON.parse(text) as { error?: string }
+      if (json.error) message = json.error
+    } catch {
+      /* plain text */
+    }
+    throw new Error(message || `Request failed (${res.status})`)
+  }
+  if (!text) return undefined as T
+  return JSON.parse(text) as T
+}
+
+export async function loginWithPassword(
+  apiUrl: string,
+  email: string,
+  password: string
+): Promise<{ token: string; email: string }> {
+  const res = await fetch(`${apiUrl.replace(/\/$/, '')}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    let message = text
+    try {
+      const json = JSON.parse(text) as { error?: string }
+      if (json.error) message = json.error
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || `Login failed (${res.status})`)
+  }
+  const data = JSON.parse(text) as { token: string; user: { email: string } }
+  return { token: data.token, email: data.user.email }
+}
+
+export async function createApiKey(
+  cfg: JargonConfig,
+  name: string
+): Promise<{ key: string; prefix: string; id: string }> {
+  return request(cfg, '/auth/api-keys', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  })
+}
+
+export async function deployTool(
+  cfg: JargonConfig,
+  input: { prompt: string; label?: string; share?: boolean }
+): Promise<DeployResult> {
+  return request(cfg, '/tools/deploy', {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt: input.prompt,
+      label: input.label,
+      share: input.share !== false
+    })
+  })
+}
+
+export async function listProjects(cfg: JargonConfig): Promise<ProjectSummary[]> {
+  return request(cfg, '/projects')
+}
+
+export async function createShare(
+  cfg: JargonConfig,
+  projectId: string,
+  label?: string
+): Promise<{ url: string }> {
+  return request(cfg, `/projects/${projectId}/share`, {
+    method: 'POST',
+    body: JSON.stringify(label ? { label } : {})
+  })
+}
+
+export async function health(apiUrl: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${apiUrl.replace(/\/$/, '')}/health`)
+  if (!res.ok) throw new Error(`API unreachable (${res.status})`)
+  return res.json() as Promise<{ ok: boolean }>
+}

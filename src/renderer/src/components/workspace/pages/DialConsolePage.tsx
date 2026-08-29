@@ -5,18 +5,24 @@ import { api } from '../../../api/client'
 interface Props {
   bundle: ProjectBundle
   onRefresh: () => Promise<ProjectBundle>
+  initialContactId?: string | null
 }
 
-export function DialConsolePage({ bundle, onRefresh }: Props) {
+export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) {
   const active =
-    bundle.contacts.find((c) => c.status === 'active') ??
-    bundle.contacts.find((c) => c.status === 'queued') ??
+    (initialContactId && bundle.contacts.find((c) => c.id === initialContactId)) ||
+    bundle.contacts.find((c) => c.status === 'active') ||
+    bundle.contacts.find((c) => c.status === 'queued') ||
     bundle.contacts[0]
   const [selectedId, setSelectedId] = useState(active?.id ?? null)
   const [call, setCall] = useState<CallSession | null>(null)
   const [seconds, setSeconds] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (initialContactId) setSelectedId(initialContactId)
+  }, [initialContactId])
 
   const selected = bundle.contacts.find((c) => c.id === selectedId) ?? active
   const queue = useMemo(
@@ -64,6 +70,7 @@ export function DialConsolePage({ bundle, onRefresh }: Props) {
     setBusy(true)
     try {
       setSeconds(0)
+      await api.voiceToken().catch(() => undefined)
       const next = await api.startCall(selected.id)
       setCall(next)
       setToast(`Dialing ${selected.name}`)
@@ -100,7 +107,7 @@ export function DialConsolePage({ bundle, onRefresh }: Props) {
           <div className="prod-eyebrow">Dial console</div>
           <h2>Live queue</h2>
         </div>
-        <div className="muted">Simulated dialer · no carrier connected</div>
+        <div className="muted">Softphone · Dial console</div>
       </div>
 
       <div className="dial-layout">

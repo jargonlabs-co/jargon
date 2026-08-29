@@ -1,18 +1,26 @@
 import { useState } from 'react'
 import type { ProjectBundle } from '../../../api/client'
+import { ConnectedContextSection } from '../ConnectedContextSection'
 
 interface Props {
   bundle: ProjectBundle
   onOpenInbox: () => void
+  onStartSequence?: () => void
 }
 
-export function SequencesPage({ bundle, onOpenInbox }: Props) {
+export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
   const sequence = bundle.sequences[0]
   const steps = bundle.steps
     .filter((s) => s.sequenceId === sequence?.id)
     .sort((a, b) => a.order - b.order)
   const [selectedStepId, setSelectedStepId] = useState(steps[0]?.id ?? null)
   const selected = steps.find((s) => s.id === selectedStepId) ?? steps[0]
+  const isToday = bundle.project.kind === 'today'
+  const remaining = bundle.contacts.filter((c) => {
+    const done = c.channelsDone ?? []
+    return !(done.includes('email') && done.includes('call'))
+  }).length
+  const started = remaining < bundle.contacts.length
 
   return (
     <div className="page-split">
@@ -21,11 +29,27 @@ export function SequencesPage({ bundle, onOpenInbox }: Props) {
           <div>
             <div className="prod-eyebrow">Sequences</div>
             <h2>{sequence?.name ?? 'Sequences'}</h2>
+            {isToday ? (
+              <p className="muted" style={{ marginTop: 8, maxWidth: 520 }}>
+                {bundle.contacts.length} prospects enrolled. Start the sequence to open today’s
+                email and call tasks.
+              </p>
+            ) : null}
           </div>
-          <button className="prod-btn primary" onClick={onOpenInbox}>
-            Open inbox
-          </button>
+          <div className="prod-view-actions">
+            {onStartSequence ? (
+              <button className="prod-btn primary" onClick={onStartSequence}>
+                {started ? 'Continue daily tasks' : 'Start sequence'}
+              </button>
+            ) : (
+              <button className="prod-btn primary" onClick={onOpenInbox}>
+                Open inbox
+              </button>
+            )}
+          </div>
         </div>
+
+        {isToday ? <ConnectedContextSection crmName="HubSpot" /> : null}
 
         <div className="seq-summary">
           <div className="seq-summary-card">
@@ -37,8 +61,8 @@ export function SequencesPage({ bundle, onOpenInbox }: Props) {
             <div className="dash-label">Enrolled</div>
           </div>
           <div className="seq-summary-card">
-            <div className="dash-value">{bundle.analytics.emailsSent}</div>
-            <div className="dash-label">Sent</div>
+            <div className="dash-value">{remaining}</div>
+            <div className="dash-label">Left today</div>
           </div>
           <div className="seq-summary-card">
             <div className="dash-value">{sequence?.goal ?? '—'}</div>
@@ -96,6 +120,12 @@ export function SequencesPage({ bundle, onOpenInbox }: Props) {
                 <span>Day</span>
                 <strong>{selected.day}</strong>
               </div>
+              {selected.channel === 'call' ? (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Complete this step from the Dial console, then set a disposition to advance the
+                  prospect.
+                </p>
+              ) : null}
               {selected.subject ? (
                 <div className="detail-kv">
                   <span>Subject</span>
@@ -103,9 +133,15 @@ export function SequencesPage({ bundle, onOpenInbox }: Props) {
                 </div>
               ) : null}
               {selected.body ? <pre className="email-body">{selected.body}</pre> : null}
-              <button className="prod-btn primary" onClick={onOpenInbox}>
-                Compose from this step
-              </button>
+              {onStartSequence ? (
+                <button className="prod-btn primary" onClick={onStartSequence}>
+                  {started ? 'Continue daily tasks' : 'Start sequence'}
+                </button>
+              ) : selected.channel === 'email' ? (
+                <button className="prod-btn primary" onClick={onOpenInbox}>
+                  Compose from this step
+                </button>
+              ) : null}
             </div>
           </div>
         </aside>

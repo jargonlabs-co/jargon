@@ -5,12 +5,19 @@ import { api } from '../../../api/client'
 interface Props {
   bundle: ProjectBundle
   onRefresh: () => Promise<ProjectBundle>
+  initialContactId?: string | null
 }
 
-export function InboxPage({ bundle, onRefresh }: Props) {
+export function InboxPage({ bundle, onRefresh, initialContactId }: Props) {
   const active =
-    bundle.contacts.find((c) => c.status === 'active') ?? bundle.contacts[0]
+    (initialContactId && bundle.contacts.find((c) => c.id === initialContactId)) ||
+    bundle.contacts.find((c) => c.status === 'active') ||
+    bundle.contacts[0]
   const [selectedId, setSelectedId] = useState(active?.id ?? null)
+
+  useEffect(() => {
+    if (initialContactId) setSelectedId(initialContactId)
+  }, [initialContactId])
   const selected = bundle.contacts.find((c) => c.id === selectedId) ?? active
   const steps = useMemo(
     () =>
@@ -19,7 +26,13 @@ export function InboxPage({ bundle, onRefresh }: Props) {
         .sort((a, b) => a.order - b.order),
     [bundle.steps, bundle.project.id]
   )
-  const step = steps[selected?.stepIndex ?? 0]
+  const rawStep = steps[selected?.stepIndex ?? 0]
+  const step =
+    rawStep?.channel === 'email'
+      ? rawStep
+      : steps.find((s, i) => i >= (selected?.stepIndex ?? 0) && s.channel === 'email') ||
+        steps.find((s) => s.channel === 'email') ||
+        rawStep
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [toast, setToast] = useState<string | null>(null)
@@ -141,7 +154,7 @@ export function InboxPage({ bundle, onRefresh }: Props) {
             {selected ? (
               <div className="action-compose" style={{ padding: 14 }}>
                 <div className="muted" style={{ marginBottom: 8 }}>
-                  Step {selected.stepIndex + 1}: {step?.label ?? 'Outreach'} · Simulated send
+                  Step {selected.stepIndex + 1}: {step?.label ?? 'Outreach'}
                 </div>
                 <label className="compose-field">
                   <span>To</span>

@@ -31,16 +31,15 @@ export function ChatPanel({
   return (
     <section className="chat-panel">
       <div className="panel-header">
-        <span className="panel-title">Composer</span>
+        <span className="panel-title">Assistant</span>
       </div>
 
       {showActionHints ? (
         <div className="chat-action-hint">
-          <span className="chat-action-pill">☎ Call contacts</span>
-          <span className="chat-action-pill">✉ Send email</span>
-          <span className="chat-action-pill">✎ Draft messages</span>
-          <span className="chat-action-pill">in LinkedIn notes</span>
-          <span className="chat-action-pill">✓ Log outcomes</span>
+          <span className="chat-action-pill">＋ Add source</span>
+          <span className="chat-action-pill">↝ Edit workflow</span>
+          <span className="chat-action-pill">▣ Reshape tool UI</span>
+          <span className="chat-action-pill">▷ Run enrichment</span>
         </div>
       ) : null}
 

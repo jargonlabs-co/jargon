@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
 import type { ProjectBundle } from '../../../api/client'
+import { api } from '../../../api/client'
+import { ConnectedContextSection } from '../ConnectedContextSection'
 
 interface Props {
   bundle: ProjectBundle
@@ -8,6 +11,17 @@ interface Props {
 export function DashboardPage({ bundle, onNavigate }: Props) {
   const { analytics, project, campaigns, activities } = bundle
   const activeCampaigns = campaigns.filter((c) => c.state === 'ACTIVE').length
+  const [crmName, setCrmName] = useState('CRM')
+
+  useEffect(() => {
+    void api
+      .listConnections()
+      .then((list) => {
+        const hubspot = list.find((c) => c.provider === 'hubspot' && c.status === 'connected')
+        setCrmName(hubspot?.accountLabel?.replace(/\s*\(.*\)$/, '') || 'HubSpot')
+      })
+      .catch(() => setCrmName('HubSpot'))
+  }, [])
 
   return (
     <div className="prod-view">
@@ -28,6 +42,10 @@ export function DashboardPage({ bundle, onNavigate }: Props) {
           )}
         </div>
       </div>
+
+      {project.kind === 'dialer' || project.kind === 'today' ? (
+        <ConnectedContextSection crmName={crmName} />
+      ) : null}
 
       <div className="dash-grid">
         <DashCard label="Enrolled" value={String(analytics.enrolled)} />

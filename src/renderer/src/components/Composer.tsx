@@ -9,7 +9,7 @@ interface Props {
 
 export function Composer({
   disabled,
-  placeholder = 'Describe an outbound tool…',
+  placeholder = 'Describe a workflow or internal tool…',
   submitLabel = 'Send',
   onSubmit
 }: Props) {

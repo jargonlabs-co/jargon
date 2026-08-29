@@ -93,8 +93,10 @@ export function ProductShell({
 function iconFor(id: string): string {
   const map: Record<string, string> = {
     dashboard: '▦',
+    context: '◈',
     campaigns: '⚑',
     sequences: '☰',
+    today: '☀',
     cadences: '↻',
     lists: '▤',
     contacts: '☺',
@@ -103,6 +105,8 @@ function iconFor(id: string): string {
     settings: '⚙',
     help: '?',
     inbox: '✉',
+    dial: '☎',
+    connections: '⬡',
     agents: '⌁'
   }
   return map[id] ?? '•'

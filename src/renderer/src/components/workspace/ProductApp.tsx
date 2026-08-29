@@ -9,6 +9,9 @@ import { ContactsPage } from './pages/ContactsPage'
 import { DialConsolePage } from './pages/DialConsolePage'
 import { InboxPage } from './pages/InboxPage'
 import { AnalyticsPage } from './pages/AnalyticsPage'
+import { TodayQueuePage } from './pages/TodayQueuePage'
+import { ConnectionsPage } from './pages/ConnectionsPage'
+import { ContextPage } from './pages/ContextPage'
 
 interface Props {
   projectId: string
@@ -20,6 +23,7 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('dashboard')
+  const [focusContactId, setFocusContactId] = useState<string | null>(null)
 
   async function refresh() {
     const next = await api.getProject(projectId)
@@ -82,35 +86,83 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
       onNavChange={setPage}
       userLabel={bundle.project.team}
     >
+      {page === 'context' ? (
+        <ContextPage
+          bundle={bundle}
+          onContinue={() =>
+            setPage(bundle.project.kind === 'today' ? 'sequences' : bundle.project.kind === 'dialer' ? 'dial' : 'dashboard')
+          }
+        />
+      ) : null}
+      {page === 'today' ? (
+        <TodayQueuePage
+          bundle={bundle}
+          onRefresh={refresh}
+          onCall={async (id) => {
+            setFocusContactId(id)
+            await api.patchContact(id, { status: 'active' })
+            await refresh()
+            setPage('dial')
+          }}
+          onEmail={async (id) => {
+            setFocusContactId(id)
+            await api.patchContact(id, { status: 'active' })
+            await refresh()
+            setPage('inbox')
+          }}
+          onOpenSequence={() => setPage('sequences')}
+        />
+      ) : null}
       {page === 'dashboard' ? <DashboardPage bundle={bundle} onNavigate={setPage} /> : null}
       {page === 'campaigns' ? (
         <CampaignsPage bundle={bundle} onRefresh={refresh} onOpenDial={() => setPage('dial')} />
       ) : null}
       {page === 'sequences' ? (
-        <SequencesPage bundle={bundle} onOpenInbox={() => setPage('inbox')} />
+        <SequencesPage
+          bundle={bundle}
+          onOpenInbox={() => setPage('inbox')}
+          onStartSequence={() => setPage('today')}
+        />
       ) : null}
       {page === 'contacts' ? (
         <ContactsPage
           bundle={bundle}
           onRefresh={refresh}
           onCall={async (id) => {
+            setFocusContactId(id)
             await api.patchContact(id, { status: 'active' })
             await refresh()
             setPage('dial')
           }}
-          onEmail={async () => {
+          onEmail={async (id) => {
+            setFocusContactId(id)
             setPage('inbox')
           }}
         />
       ) : null}
-      {page === 'dial' ? <DialConsolePage bundle={bundle} onRefresh={refresh} /> : null}
-      {page === 'inbox' ? <InboxPage bundle={bundle} onRefresh={refresh} /> : null}
+      {page === 'dial' ? (
+        <DialConsolePage
+          bundle={bundle}
+          onRefresh={refresh}
+          initialContactId={focusContactId}
+        />
+      ) : null}
+      {page === 'inbox' ? (
+        <InboxPage bundle={bundle} onRefresh={refresh} initialContactId={focusContactId} />
+      ) : null}
       {page === 'analytics' ? <AnalyticsPage bundle={bundle} /> : null}
+      {page === 'connections' ? <ConnectionsPage /> : null}
       {page === 'settings' || page === 'help' ? (
         <div className="prod-view placeholder-view">
           <div className="prod-eyebrow">{page}</div>
           <h2>{page === 'settings' ? 'Settings' : 'Help'}</h2>
-          <p>Local simulated workspace for {bundle.project.segment}.</p>
+          <p>
+            Multi-tenant workspace for {bundle.project.segment}. Connect HubSpot, Gmail, and Twilio
+            under Connections.
+          </p>
+          <button type="button" className="ghost-btn" onClick={() => setPage('connections')}>
+            Open Connections
+          </button>
         </div>
       ) : null}
     </ProductShell>
@@ -118,7 +170,7 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
 }
 
 function defaultPage(kind: ProjectBundle['project']['kind']): string {
-  if (kind === 'dialer') return 'campaigns'
+  if (kind === 'today' || kind === 'dialer') return 'context'
   if (kind === 'sequencer') return 'sequences'
   return 'dashboard'
 }
@@ -133,6 +185,8 @@ function kindLabel(kind: ProjectBundle['project']['kind']): string {
       return 'Multi-channel cadence'
     case 'list':
       return 'Lead list builder'
+    case 'today':
+      return 'Outbound sequencer'
     default:
       return 'Sales workspace'
   }
@@ -140,11 +194,25 @@ function kindLabel(kind: ProjectBundle['project']['kind']): string {
 
 function navForKind(kind: ProjectBundle['project']['kind']): NavItem[] {
   const sharedTail = [
+    { id: 'connections', label: 'Connections', section: 'system' as const },
     { id: 'settings', label: 'Settings', section: 'system' as const },
     { id: 'help', label: 'Help', section: 'system' as const }
   ]
+  if (kind === 'today') {
+    return [
+      { id: 'context', label: 'Context' },
+      { id: 'sequences', label: 'Sequence' },
+      { id: 'today', label: 'Daily tasks' },
+      { id: 'inbox', label: 'Inbox' },
+      { id: 'dial', label: 'Dial console' },
+      { id: 'contacts', label: 'Contacts' },
+      { id: 'analytics', label: 'Analytics' },
+      ...sharedTail
+    ]
+  }
   if (kind === 'dialer') {
     return [
+      { id: 'context', label: 'Context' },
       { id: 'dashboard', label: 'Dashboard' },
       { id: 'campaigns', label: 'Campaigns' },
       { id: 'dial', label: 'Dial console' },

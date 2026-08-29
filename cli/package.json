@@ -1,0 +1,19 @@
+{
+  "name": "@jargon/cli",
+  "version": "0.1.0",
+  "description": "Deploy Jargon outbound tools from the terminal",
+  "type": "module",
+  "bin": {
+    "jargon": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.2"
+  }
+}

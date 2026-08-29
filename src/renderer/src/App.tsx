@@ -1,53 +1,77 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ClarifySession, SessionPhase } from './types'
-import type { Project } from './api/client'
-import { api } from './api/client'
-import {
-  analysisIntro,
-  startClarifySession,
-  SUGGESTED_PROMPTS
-} from './lib/analyzePrompt'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { AuthPayload, Org, Project, PublicUser } from './api/client'
+import { api, setClientAuthToken } from './api/client'
+import type { PaletteItem } from './lib/board'
+import { promptToBoardPlan } from './lib/promptToBoard'
 import { Sidebar } from './components/Sidebar'
-import { ChatPanel } from './components/ChatPanel'
 import { ToolCanvas } from './components/ToolCanvas'
-import { Composer } from './components/Composer'
 import { TitleBar } from './components/TitleBar'
+import { AuthScreen } from './components/AuthScreen'
+import { ProjectTabs } from './components/ProjectTabs'
+import { LibrarySidebar } from './components/LibrarySidebar'
+import { ChatBar } from './components/ChatBar'
+import type { BoardPromptApply } from './components/workspace/BoardCanvas'
+import { inferProjectFromPrompt, isProspectQueuePrompt, SUGGESTED_PROMPTS } from './lib/analyzePrompt'
 import './styles/app.css'
 
-const WELCOME: ChatMessage = {
-  id: 'welcome',
-  role: 'assistant',
-  content:
-    'Describe the outbound tool you want.\n\nI’ll ask a few clarifying questions, then build a ready-to-use workspace — dialer, sequencer, cadence, or list.\n\nTry:\n• “Create an outbound dialer for the Midwest segment”\n• “Create an email sequencing tool for the SMB team”',
-  createdAt: Date.now()
-}
-
-function msgId(suffix: string): string {
-  return `msg_${Date.now()}_${suffix}_${Math.random().toString(36).slice(2, 5)}`
-}
-
 export default function App() {
+  const [authed, setAuthed] = useState(false)
+  const [user, setUser] = useState<PublicUser | null>(null)
+  const [org, setOrg] = useState<Org | null>(null)
+  const [authChecking, setAuthChecking] = useState(true)
+
   const [projects, setProjects] = useState<Project[]>([])
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
-  const [phase, setPhase] = useState<SessionPhase>('idle')
-  const [session, setSession] = useState<ClarifySession | null>(null)
-  const [isWorking, setIsWorking] = useState(false)
+  const [openTabIds, setOpenTabIds] = useState<string[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [paletteWidth, setPaletteWidth] = useState(240)
   const [apiReady, setApiReady] = useState(false)
-  const timers = useRef<number[]>([])
+  const [canvasMode, setCanvasMode] = useState<'workspace' | 'connections'>('workspace')
+  const [pendingAdd, setPendingAdd] = useState<PaletteItem | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<BoardPromptApply | null>(null)
+  const [queuedPrompt, setQueuedPrompt] = useState<Omit<BoardPromptApply, 'token'> | null>(null)
+  const [chatStatus, setChatStatus] = useState<string | null>(null)
+  const [creatingProject, setCreatingProject] = useState(false)
 
-  const drafting = phase === 'clarifying' || phase === 'building'
-  const showProjectWindow = phase === 'ready' && !!activeProjectId
-
-  const clearTimers = useCallback(() => {
-    timers.current.forEach((t) => window.clearTimeout(t))
-    timers.current = []
-  }, [])
-
-  useEffect(() => () => clearTimers(), [clearTimers])
+  const activeProjectId =
+    activeTabId && canvasMode === 'workspace' ? activeTabId : null
 
   useEffect(() => {
+    let cancelled = false
+    async function restore() {
+      try {
+        for (let i = 0; i < 20; i++) {
+          try {
+            await fetch(`${window.jargon?.apiBaseUrl ?? 'http://127.0.0.1:8787'}/health`)
+            break
+          } catch {
+            await new Promise((r) => setTimeout(r, 250))
+          }
+        }
+        const stored = (await window.jargon?.getAuthToken?.()) ?? null
+        if (stored) {
+          setClientAuthToken(stored)
+          const me = await api.me()
+          if (cancelled) return
+          setUser(me.user)
+          setOrg(me.org)
+          setAuthed(true)
+        }
+      } catch {
+        setClientAuthToken(null)
+        await window.jargon?.setAuthToken?.(null)
+      } finally {
+        if (!cancelled) setAuthChecking(false)
+      }
+    }
+    void restore()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!authed) return
     let cancelled = false
     async function boot() {
       for (let i = 0; i < 20; i++) {
@@ -56,6 +80,11 @@ export default function App() {
           if (cancelled) return
           setProjects(list)
           setApiReady(true)
+          if (list.length > 0) {
+            const first = list[0].id
+            setOpenTabIds([first])
+            setActiveTabId(first)
+          }
           return
         } catch {
           await new Promise((r) => setTimeout(r, 250))
@@ -67,6 +96,29 @@ export default function App() {
     return () => {
       cancelled = true
     }
+  }, [authed])
+
+  const onAuthed = useCallback((payload: AuthPayload) => {
+    setUser(payload.user)
+    setOrg(payload.org)
+    setAuthed(true)
+  }, [])
+
+  const signOut = useCallback(async () => {
+    try {
+      await api.logout()
+    } catch {
+      /* ignore */
+    }
+    setClientAuthToken(null)
+    await window.jargon?.setAuthToken?.(null)
+    setAuthed(false)
+    setUser(null)
+    setOrg(null)
+    setProjects([])
+    setOpenTabIds([])
+    setActiveTabId(null)
+    setCanvasMode('workspace')
   }, [])
 
   const refreshProjects = useCallback(async () => {
@@ -75,211 +127,169 @@ export default function App() {
     return list
   }, [])
 
-  const askCurrentQuestion = useCallback((next: ClarifySession) => {
-    const question = next.questions[next.currentIndex]
-    if (!question) return
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: msgId('q'),
-        role: 'assistant',
-        content: question.prompt,
-        questionId: question.id,
-        options: question.options,
-        createdAt: Date.now()
-      }
-    ])
-  }, [])
-
-  const finishAndBuild = useCallback(
-    (finalSession: ClarifySession) => {
-      setPhase('building')
-      setIsWorking(true)
-      setSession(null)
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: msgId('build'),
-          role: 'assistant',
-          content: 'Great — I have what I need. Building your outbound tool now…',
-          createdAt: Date.now()
+  const closeTab = useCallback(
+    (id: string) => {
+      setOpenTabIds((prev) => {
+        const next = prev.filter((t) => t !== id)
+        if (activeTabId === id) {
+          setActiveTabId(next[next.length - 1] ?? null)
+          setCanvasMode('workspace')
         }
-      ])
-
-      const timer = window.setTimeout(() => {
-        void (async () => {
-          try {
-            const bundle = await api.createProject({
-              prompt: finalSession.originalPrompt,
-              kind: finalSession.kind,
-              answers: finalSession.answers
-            })
-            await refreshProjects()
-            setActiveProjectId(bundle.project.id)
-            setPhase('ready')
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: msgId('ready'),
-                role: 'assistant',
-                content: `Built **${bundle.project.name}** — saved to Projects and opened full-screen.\n\nUse the app nav for Campaigns, Dial console, Sequences, Inbox, and Analytics. Actions persist through the local simulated backend.`,
-                toolId: bundle.project.id,
-                createdAt: Date.now()
-              }
-            ])
-          } catch (err) {
-            setPhase('idle')
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: msgId('err'),
-                role: 'assistant',
-                content: `Couldn’t create the project: ${err instanceof Error ? err.message : 'Unknown error'}`,
-                createdAt: Date.now()
-              }
-            ])
-          } finally {
-            setIsWorking(false)
-          }
-        })()
-      }, 900)
-
-      timers.current.push(timer)
+        return next
+      })
     },
-    [refreshProjects]
-  )
-
-  const answerQuestion = useCallback(
-    (questionId: string, answer: string) => {
-      if (!session || isWorking) return
-      const current = session.questions[session.currentIndex]
-      if (!current || current.id !== questionId) return
-      const trimmed = answer.trim()
-      if (!trimmed) return
-
-      setMessages((prev) => [
-        ...prev,
-        { id: msgId('a'), role: 'user', content: trimmed, createdAt: Date.now() }
-      ])
-
-      const next: ClarifySession = {
-        ...session,
-        answers: { ...session.answers, [questionId]: trimmed },
-        currentIndex: session.currentIndex + 1
-      }
-
-      if (next.currentIndex >= next.questions.length) {
-        setSession(next)
-        finishAndBuild(next)
-        return
-      }
-
-      setSession(next)
-      setIsWorking(true)
-      const timer = window.setTimeout(() => {
-        setIsWorking(false)
-        askCurrentQuestion(next)
-      }, 350)
-      timers.current.push(timer)
-    },
-    [session, isWorking, askCurrentQuestion, finishAndBuild]
-  )
-
-  const startFromPrompt = useCallback(
-    (prompt: string) => {
-      const trimmed = prompt.trim()
-      if (!trimmed || isWorking || phase === 'clarifying' || phase === 'building') return
-
-      setMessages((prev) => [
-        ...prev,
-        { id: msgId('u'), role: 'user', content: trimmed, createdAt: Date.now() }
-      ])
-      setIsWorking(true)
-      setActiveProjectId(null)
-
-      const timer = window.setTimeout(() => {
-        const next = startClarifySession(trimmed)
-        setSession(next)
-        setPhase('clarifying')
-        setIsWorking(false)
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: msgId('intro'),
-            role: 'assistant',
-            content: analysisIntro(next),
-            createdAt: Date.now()
-          }
-        ])
-        const qTimer = window.setTimeout(() => askCurrentQuestion(next), 280)
-        timers.current.push(qTimer)
-      }, 500)
-
-      timers.current.push(timer)
-    },
-    [isWorking, phase, askCurrentQuestion]
-  )
-
-  const submitComposer = useCallback(
-    (value: string) => {
-      if (phase === 'clarifying' && session) {
-        const current = session.questions[session.currentIndex]
-        if (current) {
-          answerQuestion(current.id, value)
-          return
-        }
-      }
-      startFromPrompt(value)
-    },
-    [phase, session, answerQuestion, startFromPrompt]
+    [activeTabId]
   )
 
   const deleteProject = useCallback(
     async (id: string) => {
       await api.deleteProject(id)
       await refreshProjects()
-      if (activeProjectId === id) {
-        setActiveProjectId(null)
-        setPhase('idle')
-      }
+      closeTab(id)
     },
-    [activeProjectId, refreshProjects]
+    [refreshProjects, closeTab]
   )
 
   const selectProject = useCallback(
     (id: string) => {
-      if (drafting) return
-      setActiveProjectId(id)
-      setPhase('ready')
+      setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+      setActiveTabId(id)
+      setCanvasMode('workspace')
       void refreshProjects()
-      const name = projects.find((p) => p.id === id)?.name ?? 'project'
-      setMessages([
-        {
-          id: msgId('reopen'),
-          role: 'assistant',
-          content: `Opened **${name}** from your saved projects.`,
-          toolId: id,
-          createdAt: Date.now()
-        }
-      ])
     },
-    [drafting, projects, refreshProjects]
+    [refreshProjects]
   )
 
-  const newProject = useCallback(() => {
-    if (drafting && !window.confirm('Leave the current draft and start a new project?')) return
-    clearTimers()
-    setSession(null)
-    setIsWorking(false)
-    setActiveProjectId(null)
-    setPhase('idle')
-    setMessages([{ ...WELCOME, id: msgId('welcome'), createdAt: Date.now() }])
-  }, [drafting, clearTimers])
+  const openConnections = useCallback(() => {
+    setCanvasMode('connections')
+  }, [])
 
-  const composerPlaceholder =
-    phase === 'clarifying'
-      ? 'Type an answer, or click an option above…'
-      : 'Describe an outbound tool… e.g. create a dialer for Midwest enterprise'
+  const newProject = useCallback(async () => {
+    if (creatingProject || !apiReady) return
+    setCreatingProject(true)
+    setCanvasMode('workspace')
+    try {
+      const bundle = await api.createProject({
+        prompt: 'Blank rep tool',
+        kind: 'generic',
+        answers: { segment: 'General', team: 'RevOps', goal: 'Compose from palette' }
+      })
+      await refreshProjects()
+      const id = bundle.project.id
+      setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+      setActiveTabId(id)
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not create project')
+    } finally {
+      setCreatingProject(false)
+    }
+  }, [creatingProject, apiReady, refreshProjects])
+
+  const tabItems = useMemo(() => {
+    return openTabIds.map((id) => {
+      const project = projects.find((p) => p.id === id)
+      return { id, label: project?.name ?? 'Tool' }
+    })
+  }, [openTabIds, projects])
+
+  const activeProject = projects.find((p) => p.id === activeProjectId)
+  const prospectQueueMode = activeProject?.kind === 'today'
+  const libraryDisabled = canvasMode !== 'workspace' || !activeProjectId || prospectQueueMode
+
+  const handleChatPrompt = useCallback(
+    async (prompt: string) => {
+      const prospectQueue = isProspectQueuePrompt(prompt)
+      const plan = prospectQueue ? null : promptToBoardPlan(prompt)
+      setChatStatus(prospectQueue ? 'Searching Crustdata…' : plan?.summary ?? null)
+
+      const needsNewProject =
+        prospectQueue || !activeProjectId || (plan?.replace && (plan?.items.length ?? 0) >= 10)
+      let projectId = activeProjectId
+
+      if (needsNewProject) {
+        if (creatingProject || !apiReady) return
+        setCreatingProject(true)
+        setCanvasMode('workspace')
+        try {
+          const inferred = inferProjectFromPrompt(prompt)
+          const bundle = await api.createProject({
+            prompt,
+            kind: inferred.kind,
+            answers: {
+              segment: inferred.segment,
+              team: inferred.team,
+              goal: inferred.goal,
+              ...(inferred.channels ? { channels: inferred.channels } : {}),
+              ...(inferred.prospect_count ? { prospect_count: inferred.prospect_count } : {})
+            }
+          })
+          await refreshProjects()
+          projectId = bundle.project.id
+          setOpenTabIds((prev) => (prev.includes(projectId!) ? prev : [...prev, projectId!]))
+          setActiveTabId(projectId)
+          if (prospectQueue) {
+            const n = bundle.contacts.length
+            const src = bundle.project.answers.prospect_source ?? 'crustdata'
+            setChatStatus(
+              n > 0
+                ? `Loaded ${n} prospects from ${src === 'crustdata' ? 'Crustdata' : src}`
+                : 'No prospects returned — check Crustdata connection'
+            )
+            return
+          }
+        } catch (err) {
+          setChatStatus(err instanceof Error ? err.message : 'Could not create project')
+          return
+        } finally {
+          setCreatingProject(false)
+        }
+      }
+
+      if (!plan?.items.length) return
+
+      const apply = { items: plan.items, replace: plan.replace }
+      setQueuedPrompt(apply)
+    },
+    [activeProjectId, creatingProject, apiReady, refreshProjects]
+  )
+
+  useEffect(() => {
+    if (!activeProjectId || !queuedPrompt || creatingProject) return
+    const timer = window.setTimeout(() => {
+      setPendingPrompt({
+        ...queuedPrompt,
+        token: Date.now()
+      })
+      setQueuedPrompt(null)
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [activeProjectId, queuedPrompt, creatingProject])
+
+  useEffect(() => {
+    if (!chatStatus) return
+    const id = window.setTimeout(() => setChatStatus(null), 5000)
+    return () => window.clearTimeout(id)
+  }, [chatStatus])
+
+  if (authChecking) {
+    return (
+      <div className="app">
+        <TitleBar />
+        <div className="auth-screen">
+          <p>Starting Jargon…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!authed) {
+    return (
+      <div className="app">
+        <TitleBar />
+        <AuthScreen onAuthed={onAuthed} />
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -296,45 +306,71 @@ export default function App() {
             team: p.team
           }))}
           activeToolId={activeProjectId}
-          drafting={drafting}
+          drafting={creatingProject}
           collapsed={sidebarCollapsed}
-          onNewProject={newProject}
+          connectionsActive={canvasMode === 'connections'}
+          onNewProject={() => void newProject()}
           onSelectTool={selectProject}
           onDeleteTool={(id) => void deleteProject(id)}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          onOpenConnections={openConnections}
+          orgLabel={org?.name}
+          userLabel={user?.email}
+          onSignOut={() => void signOut()}
         />
         <main
-          className={`workspace ${showProjectWindow ? 'workspace-project' : 'workspace-chat'} ${sidebarCollapsed ? 'workspace-expanded' : ''}`}
+          className={`workspace workspace-board studio-workspace ${sidebarCollapsed ? 'workspace-expanded' : ''}`}
         >
-          {showProjectWindow ? (
-            <ToolCanvas projectId={activeProjectId} phase={phase} fullscreen />
-          ) : (
-            <>
-              <div className="workspace-panes chat-only">
-                <ChatPanel
-                  messages={messages}
-                  isGenerating={isWorking || !apiReady}
-                  generatingLabel={
-                    !apiReady
-                      ? 'Starting local API…'
-                      : phase === 'building'
-                        ? 'Building tool…'
-                        : 'Analyzing…'
-                  }
-                  suggestions={phase === 'idle' && !activeProjectId ? SUGGESTED_PROMPTS : []}
-                  showActionHints={phase !== 'idle'}
-                  onSuggest={startFromPrompt}
-                  onOpenTool={selectProject}
-                  onSelectOption={phase === 'clarifying' ? answerQuestion : undefined}
-                />
-              </div>
-              <Composer
-                disabled={isWorking || phase === 'building' || !apiReady}
-                placeholder={composerPlaceholder}
-                onSubmit={submitComposer}
+          <ProjectTabs
+            tabs={tabItems}
+            activeId={canvasMode === 'connections' ? null : activeTabId}
+            onSelect={(id) => {
+              setActiveTabId(id)
+              setCanvasMode('workspace')
+            }}
+            onClose={closeTab}
+            onNew={() => void newProject()}
+          />
+          <div
+            className={`workspace-panes ${canvasMode === 'workspace' && !prospectQueueMode ? 'library-board' : 'board-only-pane'}`}
+            style={
+              canvasMode === 'workspace' && !prospectQueueMode
+                ? { gridTemplateColumns: `${paletteWidth === 0 ? 10 : paletteWidth}px minmax(0, 1fr)` }
+                : undefined
+            }
+          >
+            {canvasMode === 'workspace' && !prospectQueueMode ? (
+              <LibrarySidebar
+                width={paletteWidth}
+                onWidthChange={setPaletteWidth}
+                disabled={libraryDisabled}
+                onAddToBoard={(item) => {
+                  if (!libraryDisabled) setPendingAdd(item)
+                }}
               />
-            </>
-          )}
+            ) : null}
+            <div className="board-column">
+              <ToolCanvas
+                projectId={activeProjectId}
+                phase={creatingProject ? 'building' : activeProjectId ? 'ready' : 'idle'}
+                mode={canvasMode}
+                pendingAdd={pendingAdd}
+                onPendingAddConsumed={() => setPendingAdd(null)}
+                pendingPrompt={pendingPrompt}
+                onPendingPromptConsumed={() => setPendingPrompt(null)}
+                onOpenConnections={openConnections}
+              />
+              {canvasMode === 'workspace' ? (
+                <ChatBar
+                  disabled={creatingProject || !apiReady}
+                  status={chatStatus}
+                  hints={SUGGESTED_PROMPTS.slice(0, 3)}
+                  placeholder="Find me 20 VP Sales prospects to contact today…"
+                  onSubmit={(prompt) => void handleChatPrompt(prompt)}
+                />
+              ) : null}
+            </div>
+          </div>
         </main>
       </div>
     </div>

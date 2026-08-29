@@ -6,3 +6,11 @@ out
 .vscode/*
 !.vscode/extensions.json
 release
+data
+.env
+.env.local
+.env.hubspot
+.env.apollo
+*.dmg
+*.exe
+*.AppImage

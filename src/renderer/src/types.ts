@@ -1,4 +1,4 @@
-export type ToolKind = 'dialer' | 'sequencer' | 'cadence' | 'list' | 'generic'
+export type ToolKind = 'dialer' | 'sequencer' | 'cadence' | 'list' | 'today' | 'generic'
 
 export type SessionPhase = 'idle' | 'clarifying' | 'building' | 'ready'
 
@@ -26,6 +26,7 @@ export interface ClarifySession {
   inferred: {
     segment?: string
     team?: string
+    prospectCount?: string
   }
   questions: ClarifyQuestion[]
   answers: Record<string, string>

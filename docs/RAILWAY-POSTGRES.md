@@ -4,6 +4,24 @@ The hosted API stores all state (users, orgs, sessions, projects) in **Postgres*
 
 ## One-time setup (Railway dashboard)
 
+Or via CLI (from repo root, linked to `jargon-api`):
+
+```bash
+railway add --database postgres
+railway variable set DATABASE_URL='${{Postgres.DATABASE_URL}}' --service jargon-api
+railway up --service jargon-api -d -y   # deploy latest code with Postgres support
+```
+
+Then verify:
+
+```bash
+curl -s https://jargon-api-production.up.railway.app/health | jq '.storage, .userCount'
+# "postgres"
+# 1
+```
+
+### Dashboard alternative
+
 1. Open your [Railway project](https://railway.com) → **+ New** → **Database** → **PostgreSQL**
 2. Click the **Postgres** service → **Connect** → copy `DATABASE_URL`
 3. Open your **Jargon API** service → **Variables** → add:

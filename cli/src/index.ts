@@ -2,7 +2,6 @@
 import { clearConfig, defaultApiUrl, loadConfig, requireConfig, saveConfig } from './config.js'
 import {
   createApiKey,
-  createShare,
   deployTool,
   health,
   listProjects,
@@ -25,7 +24,11 @@ function opt(name: string): string | undefined {
 }
 
 function restAfterCommand(): string[] {
-  return args.slice(1).filter((a) => !a.startsWith('-') && !opt('--email') && !opt('--password') && !opt('--api-key') && !opt('--api-url') && !opt('--label') && !opt('--name'))
+  return args.slice(1).filter((a) => !a.startsWith('-'))
+}
+
+function appUrl(): string {
+  return (process.env.JARGON_APP_URL ?? 'http://127.0.0.1:5180').replace(/\/$/, '')
 }
 
 async function cmdLogin() {
@@ -57,29 +60,26 @@ async function cmdLogin() {
 async function cmdDeploy() {
   const cfg = requireConfig()
   const json = flag('--json')
-  const noShare = flag('--no-share')
-  const label = opt('--label')
-  const promptParts = restAfterCommand()
+  const promptParts = restAfterCommand().filter(
+    (a) => a !== opt('--email') && a !== opt('--password') && a !== opt('--api-key')
+  )
   const prompt = promptParts.join(' ').trim() || opt('--prompt')
   if (!prompt) {
-    console.error('Usage: jargon deploy "Find 20 prospects to contact today"')
-    console.error('   or: jargon deploy --prompt "..." [--label "Team queue"] [--json]')
+    console.error('Usage: jargon deploy "Build a dialer for VP Sales"')
     process.exit(1)
   }
 
-  const result = await deployTool(cfg, { prompt, label, share: !noShare })
+  const result = await deployTool(cfg, { prompt, label: opt('--label') })
 
   if (json) {
     console.log(JSON.stringify(result, null, 2))
     return
   }
 
-  console.log(`✓ Deployed ${result.project?.name ?? result.projectId}`)
-  console.log(`  Prospects: ${result.contactCount} (${result.prospectSource ?? 'unknown source'})`)
-  if (result.shareUrl) {
-    console.log(`  Share URL: ${result.shareUrl}`)
-    console.log('  Paste in Slack — reps open in browser, no install needed.')
-  }
+  const open = `${appUrl()}${result.dashboardPath ?? `/tools/${result.projectId}`}`
+  console.log(`Deployed ${result.project?.name ?? result.projectId}`)
+  console.log(`  Contacts: ${result.contactCount}`)
+  console.log(`  Open: ${open}`)
 }
 
 async function cmdList() {
@@ -91,30 +91,13 @@ async function cmdList() {
     return
   }
   if (!projects.length) {
-    console.log('No projects yet. Run: jargon deploy "Find 20 prospects to contact today"')
+    console.log('No projects yet. Run: jargon deploy "Build a dialer"')
     return
   }
   for (const p of projects) {
     const when = new Date(p.updatedAt).toLocaleString()
     console.log(`${p.id}  ${p.name}  (${p.kind})  · ${when}`)
   }
-}
-
-async function cmdShare() {
-  const cfg = requireConfig()
-  const json = flag('--json')
-  const projectId = restAfterCommand()[0] || opt('--project')
-  const label = opt('--label')
-  if (!projectId) {
-    console.error('Usage: jargon share <project-id> [--label "Queue name"]')
-    process.exit(1)
-  }
-  const result = await createShare(cfg, projectId, label)
-  if (json) {
-    console.log(JSON.stringify(result, null, 2))
-    return
-  }
-  console.log(result.url)
 }
 
 async function cmdApiKeysCreate() {
@@ -148,18 +131,15 @@ function help() {
 Usage:
   jargon login --email you@co.com --password secret [--api-url URL]
   jargon login --api-key jarg_...
-  jargon deploy "Find 20 prospects to contact today" [--label NAME] [--json]
+  jargon deploy "Build a dialer for VP Sales" [--json]
   jargon list [--json]
-  jargon share <project-id> [--label NAME]
   jargon api-keys create --name "Claude Code"
   jargon whoami
   jargon logout
 
 Environment:
-  JARGON_API_URL   Default API base (default http://127.0.0.1:8787)
-
-Claude Code example:
-  jargon deploy "Find 20 VP Sales in Austin" --json
+  JARGON_API_URL   API base (default http://127.0.0.1:8787)
+  JARGON_APP_URL   Website to open tools (default http://127.0.0.1:5180)
 `)
 }
 
@@ -175,9 +155,6 @@ async function main() {
       case 'list':
       case 'ls':
         await cmdList()
-        break
-      case 'share':
-        await cmdShare()
         break
       case 'api-keys':
         if (args[1] === 'create') await cmdApiKeysCreate()

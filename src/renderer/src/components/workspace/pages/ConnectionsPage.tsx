@@ -5,25 +5,25 @@ const OUTBOUND_PROVIDERS: Array<{
   id: ConnectionProvider
   title: string
   blurb: string
-  role: 'context' | 'email' | 'voice'
+  role: 'email' | 'voice' | 'linkedin'
 }> = [
-  {
-    id: 'crustdata',
-    title: 'Crustdata',
-    blurb: 'People context — prospects and talk tracks for your outbound tools.',
-    role: 'context'
-  },
   {
     id: 'gmail',
     title: 'Gmail',
-    blurb: 'Send email from rep surfaces you publish.',
+    blurb: 'Send email from dialers and sequencers.',
     role: 'email'
   },
   {
     id: 'twilio',
     title: 'Twilio Voice',
-    blurb: 'Place calls from dial surfaces you publish.',
+    blurb: 'Place calls from dial surfaces.',
     role: 'voice'
+  },
+  {
+    id: 'heyreach',
+    title: 'HeyReach',
+    blurb: 'Send LinkedIn messages from sequences.',
+    role: 'linkedin'
   }
 ]
 
@@ -49,36 +49,16 @@ export function ConnectionsPage() {
     return () => window.clearTimeout(id)
   }, [toast])
 
-  useEffect(() => {
-    const unsub = window.jargon?.onDeepLink?.((url) => {
-      try {
-        const parsed = new URL(url)
-        if (parsed.hostname === 'oauth' || parsed.pathname.includes('oauth')) {
-          const status = parsed.searchParams.get('status')
-          const provider = parsed.searchParams.get('provider')
-          setToast(
-            status === 'ok'
-              ? `${provider ?? 'Provider'} connected`
-              : parsed.searchParams.get('message') ?? 'OAuth failed'
-          )
-          void refresh()
-        }
-      } catch {
-        /* ignore */
-      }
-    })
-    return () => unsub?.()
-  }, [refresh])
-
   async function connect(provider: ConnectionProvider) {
     setBusy(provider)
     setError(null)
     try {
       const result = await api.startConnection(provider)
       if (result.url) {
-        await window.jargon?.openExternal?.(result.url)
-        setToast(`Complete ${provider} in your browser`)
-      } else if (result.connection) {
+        window.location.href = result.url
+        return
+      }
+      if (result.connection) {
         setToast(`${provider} ready`)
         await refresh()
       }
@@ -107,34 +87,15 @@ export function ConnectionsPage() {
     }
   }
 
-  const crustdata = items.find((c) => c.provider === 'crustdata')
-
   return (
     <div className="connections-page studio-context-page">
       <header>
         <p className="ide-eyebrow">Outbound stack</p>
         <h2>Connections</h2>
-        <p>
-          Crustdata supplies people context. Gmail and Twilio power the outbound actions in your
-          tools — connect all three, then build from the chat.
-        </p>
+        <p>Gmail, Twilio, and HeyReach power email, calling, and LinkedIn in tools you deploy from the CLI.</p>
       </header>
       {error ? <p className="auth-error">{error}</p> : null}
       {toast ? <div className="toast">{toast}</div> : null}
-      {crustdata?.status === 'connected' ? (
-        <p className="connection-hint">
-          Crustdata is live
-          {crustdata.meta.creditsRemaining
-            ? ` · ${Number(crustdata.meta.creditsRemaining).toLocaleString()} credits`
-            : ''}
-          . Today tools pull prospects automatically on create.
-        </p>
-      ) : (
-        <p className="connection-hint">
-          Add <code>CRUSTDATA_API_KEY</code> to <code>.env</code> and restart — it auto-connects on
-          boot.
-        </p>
-      )}
       <div className="connection-grid">
         {OUTBOUND_PROVIDERS.map((p) => {
           const existing = items.find((c) => c.provider === p.id)
@@ -146,25 +107,17 @@ export function ConnectionsPage() {
               <p className="connection-status">
                 {existing?.status === 'connected' ? (
                   <>Connected{existing.accountLabel ? ` · ${existing.accountLabel}` : ''}</>
-                ) : p.id === 'crustdata' ? (
-                  'Waiting for CRUSTDATA_API_KEY in .env'
                 ) : (
                   'Not connected'
                 )}
               </p>
-              {p.id === 'crustdata' ? (
-                <button type="button" onClick={() => void refresh()} disabled={busy === 'crustdata'}>
-                  {crustdata?.status === 'connected' ? 'Refresh status' : 'Check .env + restart'}
-                </button>
-              ) : (
-                <button type="button" onClick={() => void connect(p.id)} disabled={busy === p.id}>
-                  {busy === p.id
-                    ? 'Starting…'
-                    : existing?.status === 'connected'
-                      ? 'Reconnect'
-                      : 'Connect'}
-                </button>
-              )}
+              <button type="button" onClick={() => void connect(p.id)} disabled={busy === p.id}>
+                {busy === p.id
+                  ? 'Starting…'
+                  : existing?.status === 'connected'
+                    ? 'Reconnect'
+                    : 'Connect'}
+              </button>
               {p.id === 'gmail' && existing?.status === 'connected' ? (
                 <div className="connection-test">
                   <input
@@ -179,7 +132,7 @@ export function ConnectionsPage() {
                     onClick={() => void sendGmailTest()}
                     disabled={busy === 'gmail-test' || !testEmail.trim()}
                   >
-                    {busy === 'gmail-test' ? 'Sending…' : 'Send test'}
+                    Send test
                   </button>
                 </div>
               ) : null}

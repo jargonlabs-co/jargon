@@ -8,10 +8,7 @@ import type {
   SequenceStep
 } from './types'
 import { uid } from './crypto'
-import {
-  apolloProspectsToContacts,
-  buildDemoGtmSoftwareProspects
-} from './providers/apollo'
+import { buildProspectContext } from './providers/prospects'
 
 function titleCase(value: string): string {
   return value
@@ -21,8 +18,15 @@ function titleCase(value: string): string {
     .join(' ')
 }
 
-const FIRST = ['Ava', 'Marcus', 'Sofia', 'Jonah', 'Priya', 'Elena', 'Chris', 'Noah']
-const LAST = ['Chen', 'Lee', 'Grant', 'Price', 'Shah', 'Brooks', 'Nguyen', 'Patel']
+const FIRST = [
+  'Ava', 'Marcus', 'Sofia', 'Jonah', 'Priya', 'Elena', 'Chris', 'Noah', 'Maya', 'Leo',
+  'Iris', 'Owen', 'Nina', 'Kai', 'Ruth', 'Sam', 'Tess', 'Victor', 'Willa', 'Zane',
+  'Amara', 'Blake', 'Cora', 'Devon', 'Eden', 'Felix', 'Gia', 'Hugo', 'Ivy', 'Jules'
+]
+const LAST = [
+  'Chen', 'Lee', 'Grant', 'Price', 'Shah', 'Brooks', 'Nguyen', 'Patel', 'Kim', 'Ross',
+  'Ortiz', 'Walsh', 'Diaz', 'Singh', 'Cohen'
+]
 const COMPANIES = [
   'Northwind Logistics',
   'Prairie Health',
@@ -33,8 +37,40 @@ const COMPANIES = [
   'Vaultline',
   'Clearstack'
 ]
-const TITLES = ['VP Sales', 'Head of Growth', 'SDR Manager', 'CRO', 'RevOps Lead', 'Founder']
-const CITIES = ['Chicago', 'Minneapolis', 'Detroit', 'Indy', 'Milwaukee', 'Columbus', 'St. Louis']
+const DEMO_SOFTWARE_COMPANIES = [
+  { name: 'Clearstack', domain: 'clearstack.io', size: '120' },
+  { name: 'Harbor AI', domain: 'harborai.com', size: '85' },
+  { name: 'OrbitOps', domain: 'orbitops.com', size: '210' },
+  { name: 'Ledgerly', domain: 'ledgerly.com', size: '340' },
+  { name: 'Vaultline', domain: 'vaultline.io', size: '95' },
+  { name: 'Summit Grid', domain: 'summitgrid.com', size: '160' },
+  { name: 'Copperline', domain: 'copperline.ai', size: '70' },
+  { name: 'Paynest', domain: 'paynest.com', size: '450' },
+  { name: 'Nimbus CRM', domain: 'nimbuscrm.com', size: '280' },
+  { name: 'Relaystack', domain: 'relaystack.io', size: '55' },
+  { name: 'Brightloop', domain: 'brightloop.com', size: '190' },
+  { name: 'Forgecloud', domain: 'forgecloud.com', size: '620' }
+]
+const TITLES = [
+  'VP of Sales',
+  'Head of Sales',
+  'Chief Revenue Officer',
+  'VP Revenue',
+  'Head of Growth',
+  'VP Marketing',
+  'Head of Demand Generation',
+  'SDR Manager',
+  'BDR Manager',
+  'RevOps Lead',
+  'Head of Revenue Operations',
+  'GTM Lead',
+  'VP Go-To-Market',
+  'Founder'
+]
+const CITIES = [
+  'San Francisco', 'Austin', 'Seattle', 'Denver', 'New York', 'Chicago', 'Boston', 'Remote',
+  'Minneapolis', 'Detroit', 'Indy', 'Milwaukee', 'Columbus', 'St. Louis'
+]
 const ATLANTA_CITIES = ['Atlanta', 'Marietta', 'Alpharetta', 'Sandy Springs', 'Roswell', 'Decatur']
 const ATLANTA_ACCOUNTS = [
   'Peachtree Logistics',
@@ -97,7 +133,7 @@ export function seedProject(
       ...(kind === 'today'
         ? {
             segment: todaySegment,
-            prospect_source: input.answers.prospect_source ?? 'apollo',
+            prospect_source: input.answers.prospect_source ?? 'seed',
             channels: input.answers.channels ?? 'Phone call + Email'
           }
         : {})
@@ -112,8 +148,9 @@ export function seedProject(
     db.contacts.push(...input.contacts.map((c) => ({ ...c, projectId: project.id, orgId })))
   } else if (kind === 'today') {
     const count = Number(prospectCount)
-    const prospects = buildDemoGtmSoftwareProspects(Math.min(Math.max(count, 1), 100))
-    db.contacts.push(...apolloProspectsToContacts(orgId, project.id, prospects))
+    db.contacts.push(
+      ...buildDemoGtmSoftwareContacts(orgId, project.id, Math.min(Math.max(count, 1), 100))
+    )
   } else if (regionalAtlanta) {
     db.contacts.push(...buildAtlantaMidMarketContacts(orgId, project.id, 12))
   } else {
@@ -195,6 +232,52 @@ function kindLabel(kind: ProjectKind): string {
 function isAtlantaMidMarket(segment: string, team: string, prompt: string): boolean {
   const haystack = `${segment} ${team} ${prompt}`.toLowerCase()
   return /atlanta/.test(haystack) && /mid[- ]market|midmarket/.test(haystack)
+}
+
+function buildDemoGtmSoftwareContacts(
+  orgId: string,
+  projectId: string,
+  count: number
+): Contact[] {
+  const now = Date.now()
+  return Array.from({ length: count }, (_, i) => {
+    const first = FIRST[i % FIRST.length]
+    const last = LAST[(i * 3) % LAST.length]
+    const company = DEMO_SOFTWARE_COMPANIES[i % DEMO_SOFTWARE_COMPANIES.length]
+    const title = TITLES[i % TITLES.length]
+    const externalId = `seed_demo_${i + 1}`
+    return {
+      id: uid('contact'),
+      orgId,
+      projectId,
+      name: `${first} ${last}`,
+      company: company.name,
+      title,
+      email: `${first.toLowerCase()}.${last.toLowerCase()}${i}@${company.domain}`,
+      phone: `+1-555-${String(1000 + i).slice(-4)}`,
+      city: CITIES[i % CITIES.length],
+      status: i === 0 ? ('active' as const) : ('queued' as const),
+      stepIndex: 0,
+      notes: 'Demo GTM software prospect',
+      externalId,
+      source: 'seed' as const,
+      accountName: company.name,
+      linkedinUrl: `https://www.linkedin.com/in/${first.toLowerCase()}${last.toLowerCase()}${i}`,
+      companyDomain: company.domain,
+      companyIndustry: 'computer software',
+      companySize: company.size,
+      context: buildProspectContext({
+        id: externalId,
+        company: company.name,
+        title,
+        companySize: company.size,
+        companyIndustry: 'computer software'
+      }),
+      channelsDone: [],
+      createdAt: now,
+      updatedAt: now
+    }
+  })
 }
 
 function buildContacts(

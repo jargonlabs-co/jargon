@@ -1,10 +1,5 @@
 import type { ServerConfig } from '../config'
-import {
-  createOAuthState,
-  desktopDeepLink,
-  oauthRedirectUri,
-  type ProviderSecrets
-} from '../connections'
+import { createOAuthState, oauthRedirectUri, type ProviderSecrets } from '../connections'
 import type { DataStore } from '../store'
 
 export function gmailAuthUrl(
@@ -157,16 +152,12 @@ export async function sendGmailMessage(input: {
 }
 
 export function finishGmailOAuthHtml(config: ServerConfig, ok: boolean, message: string): string {
-  const deep = desktopDeepLink(config, 'oauth', {
-    provider: 'gmail',
-    status: ok ? 'ok' : 'error',
-    message
-  })
+  const next = `${config.appUrl}/`
   return `<!doctype html><html><body style="font-family:system-ui;padding:40px">
   <h2>${ok ? 'Gmail connected' : 'Gmail connection failed'}</h2>
   <p>${message}</p>
   <p>Returning to Jargon…</p>
-  <script>location.href=${JSON.stringify(deep)}</script>
-  <p><a href="${deep}">Open Jargon</a></p>
+  <script>location.href=${JSON.stringify(next)}</script>
+  <p><a href="${next}">Open Jargon</a></p>
   </body></html>`
 }

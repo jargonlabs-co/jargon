@@ -11,13 +11,7 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
-export type ConnectionProvider =
-  | 'hubspot'
-  | 'gmail'
-  | 'twilio'
-  | 'apollo'
-  | 'supabase'
-  | 'crustdata'
+export type ConnectionProvider = 'gmail' | 'twilio' | 'heyreach'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface Org {
@@ -117,7 +111,7 @@ export interface Contact {
   stepIndex: number
   notes: string
   externalId?: string
-  source?: 'seed' | 'hubspot' | 'manual' | 'apollo'
+  source?: 'seed' | 'manual' | 'heyreach'
   accountName?: string
   channelsDone?: Channel[]
   linkedinUrl?: string
@@ -156,7 +150,7 @@ export interface Message {
   status: MessageStatus
   channel: 'email' | 'linkedin'
   providerMessageId?: string
-  mode: 'demo' | 'gmail'
+  mode: 'demo' | 'gmail' | 'heyreach'
   createdAt: number
   updatedAt: number
   sentAt?: number
@@ -194,56 +188,4 @@ export interface ProjectBundle {
   messages: Message[]
   activities: Activity[]
   analytics: AnalyticsSummary
-}
-
-export type PreviewCommentSection = 'queue' | 'talk_track' | 'email' | 'general'
-
-export interface PreviewCommentPublic {
-  id: string
-  authorName: string
-  authorEmail?: string
-  body: string
-  contactId?: string
-  section?: PreviewCommentSection
-  pinX?: number
-  pinY?: number
-  parentId?: string
-  createdAt: number
-}
-
-export interface ShareLinkPublic {
-  id: string
-  label: string
-  expiresAt: number
-  createdAt: number
-  commentCount: number
-}
-
-export interface ShareLinkCreated extends ShareLinkPublic {
-  url: string
-  token: string
-}
-
-export interface SharedPreviewPayload {
-  project: {
-    id: string
-    name: string
-    kind: ProjectKind
-    segment: string
-    description: string
-  }
-  contacts: Contact[]
-  sequences: Array<{ id: string; name: string; goal: string }>
-  steps: SequenceStep[]
-  share: {
-    id: string
-    label: string
-    createdAt: number
-    commentCount: number
-  }
-  comments: PreviewCommentPublic[]
-}
-
-export interface ProjectFeedbackComment extends PreviewCommentPublic {
-  shareLabel: string
 }

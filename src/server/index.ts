@@ -1,9 +1,7 @@
 import express from 'express'
-import type { Request } from 'express'
 import cors from 'cors'
 import type { Server } from 'http'
 import type { DataStore } from './store'
-import { seedProject } from './seed'
 import { analyticsFor, bundleProject } from './queries'
 import type { ContactStatus, MessageStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
@@ -23,13 +21,6 @@ import {
   upsertConnection
 } from './connections'
 import {
-  exchangeHubSpotCode,
-  fetchHubSpotProspects,
-  finishHubSpotOAuthHtml,
-  hubspotAuthUrl,
-  prospectsToContacts
-} from './providers/hubspot'
-import {
   exchangeGmailCode,
   finishGmailOAuthHtml,
   gmailAuthUrl,
@@ -42,82 +33,19 @@ import {
   voiceTwiml
 } from './providers/twilio'
 import {
-  applyApolloEnrichment,
-  apolloProspectsToContacts,
-  enrichContactFromApollo,
-  ensureApolloConnection,
-  resolveApolloApiKey,
-  searchGtmSoftwareProspects,
-  validateApolloKey
-} from './providers/apollo'
-import {
-  ensureCrustdataConnection,
-  resolveCrustdataApiKey,
-  searchGtmSoftwarePeople,
-  searchPeopleFromPrompt,
-  validateCrustdataKey
-} from './providers/crustdata'
-import { prospectsToContacts } from './providers/prospects'
-import {
-  DEFAULT_SUPABASE_TABLE,
-  ensureSupabaseConnection,
-  fetchSupabaseProspects,
-  resolveSupabaseConnection,
-  validateSupabaseConnection
-} from './providers/supabase'
-import {
-  addPreviewComment,
-  buildSharedPreview,
-  createShareLink,
-  resolveShareLink,
-  revokeShareLink,
-  toPublicComment
-} from './share'
+  ensureHeyReachConnection,
+  resolveHeyReachApiKey,
+  sendHeyReachLinkedInMessage,
+  validateHeyReachKey
+} from './providers/heyreach'
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
-import {
-  billingSnapshot,
-  createBillingPortalSession,
-  createCheckoutSession,
-  ensureSubscription,
-  handleStripeWebhook
-} from './billing'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
 
-function shareLinkApiBase(req: Request, config: ServerConfig): string {
-  const host = req.get('host')
-  if (host) {
-    const hostname = host.split(':')[0]
-    if (hostname === '127.0.0.1' || hostname === 'localhost') {
-      return `http://${host}`.replace(/\/$/, '')
-    }
-  }
-  return config.publicUrl.replace(/\/$/, '')
-}
-
 export function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const app = express()
   app.use(cors({ origin: true, credentials: true }))
-
-  app.post(
-    '/billing/webhook',
-    express.raw({ type: 'application/json' }),
-    async (req, res) => {
-      try {
-        await handleStripeWebhook(
-          store,
-          config,
-          req.body as Buffer,
-          req.headers['stripe-signature'] as string | undefined
-        )
-        res.json({ received: true })
-      } catch (err) {
-        res.status(400).json({ error: err instanceof Error ? err.message : 'Webhook failed' })
-      }
-    }
-  )
-
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
 
@@ -130,7 +58,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       multiTenant: true,
       demoMode: config.demoMode,
       providers: {
-        hubspot: config.hubspot.clientId ? 'live' : 'demo',
         gmail: config.google.clientId ? 'live' : 'demo',
         twilio:
           config.twilio.accountSid &&
@@ -139,16 +66,12 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
           config.twilio.twimlAppSid
             ? 'live'
             : 'demo',
-        apollo: config.apollo.apiKey ? 'live' : 'unset',
-        crustdata: config.crustdata.apiKey ? 'live' : 'unset',
-        supabase:
-          config.supabase.projectUrl && config.supabase.apiKey ? 'live' : 'unset'
+        heyreach: config.heyreach.apiKey ? 'live' : 'unset'
       },
       publicUrl: config.publicUrl,
-      previewUrl: config.previewUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
       userCount: store.db.users.length,
-      features: { sharePreview: true, deploy: true, cli: true }
+      features: { deploy: true, cli: true }
     })
   })
 
@@ -200,9 +123,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
     const user = store.db.users.find((u) => u.id === userId)!
     const org = store.db.orgs.find((o) => o.id === orgId)!
-    ensureApolloConnection(store, orgId, config)
     ensureTwilioConnection(store, orgId, config)
-    ensureSubscription(store, orgId)
+    ensureHeyReachConnection(store, orgId, config)
     const { token } = createSession(store, userId, orgId)
     res.status(201).json(authPayload(store, token, user, org))
   })
@@ -224,8 +146,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.status(500).json({ error: 'No organization for user' })
       return
     }
-    ensureApolloConnection(store, org.id, config)
     ensureTwilioConnection(store, org.id, config)
+    ensureHeyReachConnection(store, org.id, config)
     const { token } = createSession(store, user.id, org.id)
     res.json(authPayload(store, token, user, org))
   })
@@ -267,15 +189,12 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   })
 
   app.get('/auth/me', auth, (req, res) => {
-    ensureApolloConnection(store, req.auth!.org.id, config)
-    ensureCrustdataConnection(store, req.auth!.org.id, config)
-    ensureSubscription(store, req.auth!.org.id)
+    ensureTwilioConnection(store, req.auth!.org.id, config)
+    ensureHeyReachConnection(store, req.auth!.org.id, config)
     res.json({
       user: toPublicUser(req.auth!.user),
       org: req.auth!.org,
-      demoMode: config.demoMode,
-      apolloConfigured: Boolean(config.apollo.apiKey),
-      billing: billingSnapshot(store, req.auth!.org.id, config)
+      demoMode: config.demoMode
     })
   })
 
@@ -303,41 +222,10 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.json({ org })
   })
 
-  // ——— Billing ———
-  app.get('/billing', auth, (req, res) => {
-    res.json(billingSnapshot(store, req.auth!.org.id, config))
-  })
-
-  app.post('/billing/checkout', auth, async (req, res) => {
-    try {
-      const result = await createCheckoutSession(
-        store,
-        config,
-        req.auth!.org.id,
-        req.auth!.user.email
-      )
-      res.json(result)
-    } catch (err) {
-      res.status(503).json({ error: err instanceof Error ? err.message : 'Checkout unavailable' })
-    }
-  })
-
-  app.post('/billing/portal', auth, async (req, res) => {
-    try {
-      const result = await createBillingPortalSession(store, config, req.auth!.org.id)
-      res.json(result)
-    } catch (err) {
-      res.status(503).json({ error: err instanceof Error ? err.message : 'Billing portal unavailable' })
-    }
-  })
-
-
   // ——— Connections ———
   app.get('/connections', auth, (req, res) => {
-    ensureApolloConnection(store, req.auth!.org.id, config)
-    ensureCrustdataConnection(store, req.auth!.org.id, config)
-    ensureSupabaseConnection(store, req.auth!.org.id, config)
     ensureTwilioConnection(store, req.auth!.org.id, config)
+    ensureHeyReachConnection(store, req.auth!.org.id, config)
     const list = store.db.connections
       .filter((c) => c.orgId === req.auth!.org.id)
       .map(toPublicConnection)
@@ -347,11 +235,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   app.post('/connections/:provider/start', auth, async (req, res) => {
     const provider = paramId(req.params.provider)
     const { org, user } = req.auth!
-    if (provider === 'hubspot') {
-      const url = hubspotAuthUrl(store, config, org.id, user.id)
-      res.json({ url })
-      return
-    }
     if (provider === 'gmail') {
       const url = gmailAuthUrl(store, config, org.id, user.id)
       res.json({ url })
@@ -362,14 +245,14 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.json({ connection: toPublicConnection(conn) })
       return
     }
-    if (provider === 'apollo') {
+    if (provider === 'heyreach') {
       const { apiKey: bodyKey } = req.body as { apiKey?: string }
-      const apiKey = (bodyKey?.trim() || config.apollo.apiKey).trim()
+      const apiKey = (bodyKey?.trim() || config.heyreach.apiKey).trim()
       if (!apiKey) {
-        res.status(400).json({ error: 'API key required — set APOLLO_API_KEY or paste a key' })
+        res.status(400).json({ error: 'API key required — set HEYREACH_API_KEY or paste a key' })
         return
       }
-      const validated = await validateApolloKey(apiKey)
+      const validated = await validateHeyReachKey(apiKey)
       if (!validated.ok) {
         res.status(400).json({ error: validated.error })
         return
@@ -377,7 +260,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       const demo = apiKey === 'demo'
       const conn = upsertConnection(store, {
         orgId: org.id,
-        provider: 'apollo',
+        provider: 'heyreach',
         status: 'connected',
         accountLabel: validated.label,
         secrets: { accessToken: apiKey },
@@ -389,112 +272,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.json({ connection: toPublicConnection(conn) })
       return
     }
-    if (provider === 'crustdata') {
-      const { apiKey: bodyKey } = req.body as { apiKey?: string }
-      const apiKey = (bodyKey?.trim() || config.crustdata.apiKey).trim()
-      if (!apiKey) {
-        res.status(400).json({ error: 'API key required — set CRUSTDATA_API_KEY or paste a key' })
-        return
-      }
-      const validated = await validateCrustdataKey(apiKey)
-      if (!validated.ok) {
-        res.status(400).json({ error: validated.error })
-        return
-      }
-      const demo = apiKey === 'demo'
-      const conn = upsertConnection(store, {
-        orgId: org.id,
-        provider: 'crustdata',
-        status: 'connected',
-        accountLabel: validated.label,
-        secrets: { accessToken: apiKey },
-        meta: {
-          mode: demo ? 'demo' : 'live',
-          source: bodyKey?.trim() ? 'manual' : 'env',
-          ...(validated.credits !== undefined
-            ? { creditsRemaining: String(Math.floor(validated.credits)) }
-            : {})
-        }
-      })
-      res.json({ connection: toPublicConnection(conn) })
-      return
-    }
-    if (provider === 'supabase') {
-      const { projectUrl, apiKey, table } = req.body as {
-        projectUrl?: string
-        apiKey?: string
-        table?: string
-      }
-      const resolvedUrl = (projectUrl?.trim() || config.supabase.projectUrl).trim()
-      const resolvedKey = (apiKey?.trim() || config.supabase.apiKey).trim()
-      const resolvedTable = (table?.trim() || config.supabase.table || DEFAULT_SUPABASE_TABLE).trim()
-      if (!resolvedUrl || !resolvedKey) {
-        res.status(400).json({
-          error: 'Supabase URL and API key required — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY'
-        })
-        return
-      }
-      const validated = await validateSupabaseConnection({
-        projectUrl: resolvedUrl,
-        apiKey: resolvedKey,
-        table: resolvedTable
-      })
-      if (!validated.ok) {
-        res.status(400).json({ error: validated.error })
-        return
-      }
-      const conn = upsertConnection(store, {
-        orgId: org.id,
-        provider: 'supabase',
-        status: 'connected',
-        accountLabel: validated.label,
-        secrets: {
-          accessToken: resolvedKey,
-          extra: { projectUrl: resolvedUrl, table: resolvedTable }
-        },
-        meta: {
-          mode: 'live',
-          source: projectUrl?.trim() || apiKey?.trim() ? 'manual' : 'env',
-          projectUrl: resolvedUrl,
-          table: resolvedTable,
-          ...(validated.rowCount !== undefined
-            ? { rowCount: String(validated.rowCount) }
-            : {})
-        }
-      })
-      res.json({ connection: toPublicConnection(conn) })
-      return
-    }
     res.status(400).json({ error: 'Unknown provider' })
-  })
-
-  app.get('/oauth/hubspot/callback', async (req, res) => {
-    try {
-      const { code, state } = req.query as { code?: string; state?: string }
-      if (!code || !state) {
-        res.status(400).send(finishHubSpotOAuthHtml(config, false, 'Missing code/state'))
-        return
-      }
-      const oauth = consumeOAuthState(store, state)
-      if (!oauth) {
-        res.status(400).send(finishHubSpotOAuthHtml(config, false, 'Invalid or expired state'))
-        return
-      }
-      const tokens = await exchangeHubSpotCode(config, code)
-      upsertConnection(store, {
-        orgId: oauth.orgId,
-        provider: 'hubspot',
-        status: 'connected',
-        accountLabel: tokens.accountLabel,
-        secrets: tokens,
-        meta: { mode: code === 'demo' || !config.hubspot.clientId ? 'demo' : 'live' }
-      })
-      res.send(finishHubSpotOAuthHtml(config, true, 'You can return to the Jargon desktop app.'))
-    } catch (err) {
-      res
-        .status(500)
-        .send(finishHubSpotOAuthHtml(config, false, err instanceof Error ? err.message : 'Error'))
-    }
   })
 
   app.get('/oauth/gmail/callback', async (req, res) => {
@@ -524,7 +302,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         },
         meta: { mode: code === 'demo' || !config.google.clientId ? 'demo' : 'live' }
       })
-      res.send(finishGmailOAuthHtml(config, true, 'You can return to the Jargon desktop app.'))
+      res.send(finishGmailOAuthHtml(config, true, 'You can return to Jargon.'))
     } catch (err) {
       res
         .status(500)
@@ -578,276 +356,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     }
   })
 
-  app.post('/connections/apollo/sync', auth, async (req, res) => {
-    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
-    const orgId = req.auth!.org.id
-    const count = Math.min(Math.max(limit ?? 100, 1), 100)
-    const resolved = resolveApolloApiKey(store, orgId, config)
-    if (!resolved) {
-      res.status(400).json({ error: 'Apollo not connected — set APOLLO_API_KEY in .env' })
-      return
-    }
-
-    try {
-      const result = await searchGtmSoftwareProspects(resolved.apiKey, count, resolved.demo)
-      if (!projectId) {
-        res.json({ prospects: result.prospects, count: result.prospects.length, mode: result.mode })
-        return
-      }
-      const project = store.db.projects.find((p) => p.id === projectId && p.orgId === orgId)
-      if (!project) {
-        res.status(404).json({ error: 'Project not found' })
-        return
-      }
-      const contacts = apolloProspectsToContacts(orgId, projectId, result.prospects)
-      const conn = getConnection(store, orgId, 'apollo')
-      store.update((db) => {
-        db.contacts = db.contacts.filter((c) => c.projectId !== projectId)
-        db.contacts.push(...contacts)
-        if (conn) {
-          const c = db.connections.find((x) => x.id === conn.id)
-          if (c) {
-            c.lastSyncAt = Date.now()
-            c.updatedAt = Date.now()
-          }
-        }
-        const p = db.projects.find((x) => x.id === projectId)
-        if (p) {
-          p.answers = {
-            ...p.answers,
-            prospect_source: result.mode === 'live' ? 'apollo' : 'apollo_demo',
-            prospect_count: String(contacts.length),
-            segment: p.answers.segment || 'Software · GTM titles'
-          }
-          p.updatedAt = Date.now()
-        }
-        db.activities.unshift({
-          id: uid('act'),
-          orgId,
-          projectId,
-          kind: 'sync',
-          summary: `Pulled ${contacts.length} GTM software prospects from Apollo`,
-          createdAt: Date.now()
-        })
-        const campaign = db.campaigns.find((x) => x.projectId === projectId && x.state === 'ACTIVE')
-        if (campaign) {
-          campaign.total = contacts.length
-          campaign.updatedAt = Date.now()
-        }
-      })
-      res.json(bundleProject(store.db, projectId))
-    } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Apollo sync failed' })
-    }
-  })
-
-  app.post('/connections/hubspot/sync', auth, async (req, res) => {
-    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
-    const orgId = req.auth!.org.id
-    const conn = getConnection(store, orgId, 'hubspot')
-    if (!conn || conn.status !== 'connected') {
-      res.status(400).json({ error: 'HubSpot not connected' })
-      return
-    }
-    const secrets = readSecrets(conn)
-    const count = Math.min(Math.max(limit ?? 100, 1), 100)
-    try {
-      const prospects = await fetchHubSpotProspects(
-        secrets.accessToken,
-        count,
-        secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
-      )
-      if (!projectId) {
-        res.json({ prospects, count: prospects.length })
-        return
-      }
-      const project = store.db.projects.find((p) => p.id === projectId && p.orgId === orgId)
-      if (!project) {
-        res.status(404).json({ error: 'Project not found' })
-        return
-      }
-      const contacts = prospectsToContacts(orgId, projectId, prospects)
-      store.update((db) => {
-        db.contacts = db.contacts.filter((c) => c.projectId !== projectId)
-        db.contacts.push(...contacts)
-        const c = db.connections.find((x) => x.id === conn.id)
-        if (c) {
-          c.lastSyncAt = Date.now()
-          c.updatedAt = Date.now()
-        }
-        project.updatedAt = Date.now()
-        db.activities.unshift({
-          id: uid('act'),
-          orgId,
-          projectId,
-          kind: 'sync',
-          summary: `Synced ${contacts.length} prospects from HubSpot`,
-          createdAt: Date.now()
-        })
-        const campaign = db.campaigns.find((x) => x.projectId === projectId && x.state === 'ACTIVE')
-        if (campaign) {
-          campaign.total = contacts.length
-          campaign.updatedAt = Date.now()
-        }
-      })
-      res.json(bundleProject(store.db, projectId))
-    } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Sync failed' })
-    }
-  })
-
-  app.post('/connections/supabase/sync', auth, async (req, res) => {
-    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
-    const orgId = req.auth!.org.id
-    const resolved = resolveSupabaseConnection(store, orgId, config)
-    if (!resolved) {
-      res.status(400).json({
-        error: 'Supabase not connected — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env'
-      })
-      return
-    }
-    const count = Math.min(Math.max(limit ?? 100, 1), 500)
-    try {
-      const result = await fetchSupabaseProspects({
-        projectUrl: resolved.projectUrl,
-        apiKey: resolved.apiKey,
-        table: resolved.table,
-        limit: count,
-        columnMap: resolved.columnMap
-      })
-      if (!projectId) {
-        res.json({ prospects: result.prospects, count: result.prospects.length, mode: result.mode })
-        return
-      }
-      const project = store.db.projects.find((p) => p.id === projectId && p.orgId === orgId)
-      if (!project) {
-        res.status(404).json({ error: 'Project not found' })
-        return
-      }
-      const contacts = prospectsToContacts(orgId, projectId, result.prospects, 'supabase')
-      const conn = getConnection(store, orgId, 'supabase')
-      store.update((db) => {
-        db.contacts = db.contacts.filter((c) => c.projectId !== projectId)
-        db.contacts.push(...contacts)
-        if (conn) {
-          const c = db.connections.find((x) => x.id === conn.id)
-          if (c) {
-            c.lastSyncAt = Date.now()
-            c.updatedAt = Date.now()
-          }
-        }
-        const p = db.projects.find((x) => x.id === projectId)
-        if (p) {
-          p.answers = {
-            ...p.answers,
-            prospect_source: 'supabase',
-            prospect_count: String(contacts.length),
-            segment: p.answers.segment || `Supabase · ${resolved.table}`
-          }
-          p.updatedAt = Date.now()
-        }
-        db.activities.unshift({
-          id: uid('act'),
-          orgId,
-          projectId,
-          kind: 'sync',
-          summary: `Pulled ${contacts.length} prospects from Supabase (${resolved.table})`,
-          createdAt: Date.now()
-        })
-        const campaign = db.campaigns.find((x) => x.projectId === projectId && x.state === 'ACTIVE')
-        if (campaign) {
-          campaign.total = contacts.length
-          campaign.updatedAt = Date.now()
-        }
-      })
-      res.json(bundleProject(store.db, projectId))
-    } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Supabase sync failed' })
-    }
-  })
-
-  app.post('/connections/crustdata/sync', auth, async (req, res) => {
-    const { projectId, limit, prompt } = req.body as {
-      projectId?: string
-      limit?: number
-      prompt?: string
-    }
-    const orgId = req.auth!.org.id
-    const resolved = resolveCrustdataApiKey(store, orgId, config)
-    if (!resolved) {
-      res.status(400).json({ error: 'Crustdata not connected — set CRUSTDATA_API_KEY in .env' })
-      return
-    }
-
-    const project = projectId
-      ? store.db.projects.find((p) => p.id === projectId && p.orgId === orgId)
-      : undefined
-    const searchPrompt = prompt?.trim() || project?.prompt || 'Find prospects to contact today'
-    const count = Math.min(Math.max(limit ?? Number(project?.answers.prospect_count ?? 20), 1), 100)
-
-    try {
-      const result = await searchPeopleFromPrompt(
-        resolved.apiKey,
-        searchPrompt,
-        count,
-        resolved.demo
-      )
-      if (!projectId) {
-        res.json({
-          prospects: result.prospects,
-          count: result.prospects.length,
-          mode: result.mode,
-          querySummary: result.querySummary
-        })
-        return
-      }
-      if (!project) {
-        res.status(404).json({ error: 'Project not found' })
-        return
-      }
-      const contacts = prospectsToContacts(orgId, projectId, result.prospects, 'crustdata')
-      const conn = getConnection(store, orgId, 'crustdata')
-      store.update((db) => {
-        db.contacts = db.contacts.filter((c) => c.projectId !== projectId)
-        db.contacts.push(...contacts)
-        if (conn) {
-          const c = db.connections.find((x) => x.id === conn.id)
-          if (c) {
-            c.lastSyncAt = Date.now()
-            c.updatedAt = Date.now()
-          }
-        }
-        const p = db.projects.find((x) => x.id === projectId)
-        if (p) {
-          p.answers = {
-            ...p.answers,
-            prospect_source: result.mode === 'live' ? 'crustdata' : 'crustdata_demo',
-            prospect_count: String(contacts.length),
-            crustdata_query: result.querySummary,
-            segment: p.answers.segment || result.querySummary
-          }
-          p.updatedAt = Date.now()
-        }
-        db.activities.unshift({
-          id: uid('act'),
-          orgId,
-          projectId,
-          kind: 'sync',
-          summary: `Pulled ${contacts.length} GTM prospects from Crustdata`,
-          createdAt: Date.now()
-        })
-        const campaign = db.campaigns.find((x) => x.projectId === projectId && x.state === 'ACTIVE')
-        if (campaign) {
-          campaign.total = contacts.length
-          campaign.updatedAt = Date.now()
-        }
-      })
-      res.json(bundleProject(store.db, projectId))
-    } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Crustdata sync failed' })
-    }
-  })
-
   app.get('/voice/token', auth, (req, res) => {
     ensureTwilioConnection(store, req.auth!.org.id, config)
     const identity = `user_${req.auth!.user.id}`
@@ -871,7 +379,13 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         if (callStatus === 'in-progress' || callStatus === 'answered') {
           call.phase = 'connected'
           call.connectedAt = call.connectedAt ?? Date.now()
-        } else if (callStatus === 'completed' || callStatus === 'busy' || callStatus === 'no-answer' || callStatus === 'failed' || callStatus === 'canceled') {
+        } else if (
+          callStatus === 'completed' ||
+          callStatus === 'busy' ||
+          callStatus === 'no-answer' ||
+          callStatus === 'failed' ||
+          callStatus === 'canceled'
+        ) {
           if (call.phase !== 'completed') {
             call.phase = callStatus === 'completed' ? 'connected' : 'failed'
           }
@@ -915,10 +429,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   })
 
   app.post('/tools/deploy', auth, async (req, res) => {
-    const { prompt, share, label, kind, answers } = req.body as {
+    const { prompt, kind, answers } = req.body as {
       prompt?: string
-      share?: boolean
-      label?: string
       kind?: ProjectKind
       answers?: Record<string, string>
     }
@@ -928,7 +440,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     }
     const inferred = inferDeployParams(prompt.trim())
     const orgId = req.auth!.org.id
-    const userId = req.auth!.user.id
     try {
       const projectId = await createProjectRecord(store, config, {
         orgId,
@@ -937,28 +448,16 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         answers: { ...inferred.answers, ...(answers ?? {}) }
       })
       const bundle = bundleProject(store.db, projectId)
-      let shareUrl: string | undefined
-      let shareToken: string | undefined
-      if (share !== false) {
-        const created = createShareLink(store, {
-          orgId,
-          userId,
-          projectId,
-          label: label?.trim() || bundle.project.name,
-          previewBaseUrl: config.previewUrl,
-          apiBaseUrl: shareLinkApiBase(req, config)
-        })
-        shareUrl = created.url
-        shareToken = created.token
+      if (!bundle) {
+        res.status(500).json({ error: 'Project created but could not be loaded' })
+        return
       }
       res.status(201).json({
         projectId,
         project: bundle.project,
         contactCount: bundle.contacts.length,
-        prospectSource: bundle.project.answers.prospect_source,
-        shareUrl,
-        shareToken,
-        bundle
+        bundle,
+        dashboardPath: `/tools/${projectId}`
       })
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : 'Deploy failed' })
@@ -1060,71 +559,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       if (project) project.updatedAt = Date.now()
     })
     res.json(contact)
-  })
-
-  app.post('/contacts/:id/enrich', auth, async (req, res) => {
-    const orgId = req.auth!.org.id
-    const contact = store.db.contacts.find(
-      (c) => c.id === paramId(req.params.id) && c.orgId === orgId
-    )
-    if (!contact) {
-      res.status(404).json({ error: 'Contact not found' })
-      return
-    }
-    const resolved = resolveApolloApiKey(store, orgId, config)
-    if (!resolved) {
-      res.status(400).json({ error: 'Apollo not connected — set APOLLO_API_KEY in .env' })
-      return
-    }
-    try {
-      const enrichment = await enrichContactFromApollo(
-        resolved.apiKey,
-        contact,
-        resolved.demo
-      )
-      if (!enrichment.person && !enrichment.organization) {
-        res.status(404).json({ error: 'No Apollo match found for this contact' })
-        return
-      }
-      const patch = applyApolloEnrichment(contact, enrichment)
-      let updated = contact
-      const conn = getConnection(store, orgId, 'apollo')
-      store.update((db) => {
-        const c = db.contacts.find((x) => x.id === contact.id)
-        if (!c) return
-        Object.assign(c, patch)
-        updated = c
-        db.activities.unshift({
-          id: uid('act'),
-          orgId,
-          projectId: c.projectId,
-          contactId: c.id,
-          kind: 'sync',
-          summary: `Apollo enriched${enrichment.organization?.industry ? ` · ${enrichment.organization.industry}` : ''}`,
-          createdAt: Date.now()
-        })
-        const project = db.projects.find((p) => p.id === c.projectId)
-        if (project) project.updatedAt = Date.now()
-        if (conn) {
-          const apolloConn = db.connections.find((x) => x.id === conn.id)
-          if (apolloConn) {
-            apolloConn.lastSyncAt = Date.now()
-            apolloConn.updatedAt = Date.now()
-          }
-        }
-      })
-      res.json({
-        contact: updated,
-        enrichment: {
-          mode: enrichment.mode,
-          matchedPerson: Boolean(enrichment.person),
-          matchedOrganization: Boolean(enrichment.organization)
-        },
-        bundle: bundleProject(store.db, contact.projectId)
-      })
-    } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Apollo enrichment failed' })
-    }
   })
 
   app.post('/contacts/:id/calls', auth, (req, res) => {
@@ -1281,14 +715,15 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       status?: 'draft' | 'queued' | 'sent'
       channel?: 'email' | 'linkedin'
     }
+    const messageChannel = channel ?? 'email'
     const now = Date.now()
     const messageId = uid('msg')
     let finalStatus: MessageStatus = status ?? 'draft'
-    let mode: 'demo' | 'gmail' = 'demo'
+    let mode: 'demo' | 'gmail' | 'heyreach' = 'demo'
     let providerMessageId: string | undefined
     let error: string | undefined
 
-    if (finalStatus === 'sent' && (channel ?? 'email') === 'email') {
+    if (finalStatus === 'sent' && messageChannel === 'email') {
       const conn = getConnection(store, contact.orgId, 'gmail')
       if (conn?.status === 'connected') {
         try {
@@ -1330,16 +765,35 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       }
     }
 
+    if (finalStatus === 'sent' && messageChannel === 'linkedin') {
+      const resolved = resolveHeyReachApiKey(store, contact.orgId, config)
+      const demo = !resolved || resolved.demo
+      const apiKey = resolved?.apiKey ?? 'demo'
+      try {
+        const result = await sendHeyReachLinkedInMessage({
+          apiKey,
+          linkedinUrl: contact.linkedinUrl ?? '',
+          message: body ?? '',
+          demo
+        })
+        mode = result.mode
+        providerMessageId = result.id
+      } catch (err) {
+        finalStatus = 'failed'
+        error = err instanceof Error ? err.message : 'LinkedIn send failed'
+      }
+    }
+
     store.update((db) => {
       db.messages.unshift({
         id: messageId,
         orgId: contact.orgId,
         projectId: contact.projectId,
         contactId: contact.id,
-        subject: subject ?? '(no subject)',
+        subject: subject ?? (messageChannel === 'linkedin' ? 'LinkedIn message' : '(no subject)'),
         body: body ?? '',
         status: finalStatus,
-        channel: channel ?? 'email',
+        channel: messageChannel,
         mode,
         providerMessageId,
         error,
@@ -1353,7 +807,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         c.stepIndex = c.stepIndex + 1
         c.updatedAt = now
         const done = new Set(c.channelsDone ?? [])
-        done.add('email')
+        done.add(messageChannel === 'linkedin' ? 'linkedin' : 'email')
         c.channelsDone = [...done]
       }
       db.activities.unshift({
@@ -1363,18 +817,22 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         contactId: contact.id,
         kind:
           finalStatus === 'sent'
-            ? 'email'
-            : channel === 'linkedin'
+            ? messageChannel === 'linkedin'
+              ? 'linkedin'
+              : 'email'
+            : messageChannel === 'linkedin'
               ? 'linkedin'
               : finalStatus === 'failed'
                 ? 'email'
                 : 'draft',
         summary:
           finalStatus === 'sent'
-            ? `Sent email to ${contact.name}`
+            ? messageChannel === 'linkedin'
+              ? `Sent LinkedIn message to ${contact.name}`
+              : `Sent email to ${contact.name}`
             : finalStatus === 'failed'
-              ? `Failed to email ${contact.name}: ${error}`
-              : `Saved ${channel ?? 'email'} draft for ${contact.name}`,
+              ? `Failed to ${messageChannel === 'linkedin' ? 'message' : 'email'} ${contact.name}: ${error}`
+              : `Saved ${messageChannel} draft for ${contact.name}`,
         createdAt: now
       })
       const project = db.projects.find((p) => p.id === contact.projectId)
@@ -1440,157 +898,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.json(call)
   })
 
-  app.post('/projects/:id/share', auth, (req, res) => {
-    const projectId = paramId(req.params.id)
-    const project = store.db.projects.find(
-      (p) => p.id === projectId && p.orgId === req.auth!.org.id
-    )
-    if (!project) {
-      res.status(404).json({ error: 'Project not found' })
-      return
-    }
-    try {
-      const { label } = req.body as { label?: string }
-      const created = createShareLink(store, {
-        orgId: req.auth!.org.id,
-        userId: req.auth!.user.id,
-        projectId,
-        label,
-        previewBaseUrl: config.previewUrl,
-        apiBaseUrl: shareLinkApiBase(req, config)
-      })
-      res.status(201).json({
-        id: created.share.id,
-        label: created.share.label,
-        url: created.url,
-        token: created.token,
-        expiresAt: created.share.expiresAt,
-        createdAt: created.share.createdAt
-      })
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not create share link' })
-    }
-  })
-
-  app.get('/projects/:id/shares', auth, (req, res) => {
-    const projectId = paramId(req.params.id)
-    const project = store.db.projects.find(
-      (p) => p.id === projectId && p.orgId === req.auth!.org.id
-    )
-    if (!project) {
-      res.status(404).json({ error: 'Project not found' })
-      return
-    }
-    const shares = store.db.shareLinks
-      .filter((s) => s.projectId === projectId && s.orgId === req.auth!.org.id && !s.revokedAt)
-      .map((s) => ({
-        id: s.id,
-        label: s.label,
-        expiresAt: s.expiresAt,
-        createdAt: s.createdAt,
-        commentCount: store.db.previewComments.filter((c) => c.shareLinkId === s.id).length
-      }))
-      .sort((a, b) => b.createdAt - a.createdAt)
-    res.json(shares)
-  })
-
-  app.get('/projects/:id/feedback', auth, (req, res) => {
-    const projectId = paramId(req.params.id)
-    const project = store.db.projects.find(
-      (p) => p.id === projectId && p.orgId === req.auth!.org.id
-    )
-    if (!project) {
-      res.status(404).json({ error: 'Project not found' })
-      return
-    }
-    const shareIds = new Set(
-      store.db.shareLinks
-        .filter((s) => s.projectId === projectId && s.orgId === req.auth!.org.id)
-        .map((s) => s.id)
-    )
-    const comments = store.db.previewComments
-      .filter((c) => shareIds.has(c.shareLinkId))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((c) => {
-        const share = store.db.shareLinks.find((s) => s.id === c.shareLinkId)
-        return { ...toPublicComment(c), shareLabel: share?.label ?? 'Shared preview' }
-      })
-    res.json(comments)
-  })
-
-  app.delete('/shares/:id', auth, (req, res) => {
-    const shareId = paramId(req.params.id)
-    const ok = revokeShareLink(store, shareId, req.auth!.org.id)
-    if (!ok) {
-      res.status(404).json({ error: 'Share link not found' })
-      return
-    }
-    res.status(204).end()
-  })
-
-  app.get('/share/:token', (req, res) => {
-    const token = paramId(req.params.token)
-    const share = resolveShareLink(store, token)
-    if (!share) {
-      res.status(404).json({ error: 'Share link not found or expired' })
-      return
-    }
-    const payload = buildSharedPreview(store, share)
-    if (!payload) {
-      res.status(404).json({ error: 'Preview unavailable' })
-      return
-    }
-    res.json(payload)
-  })
-
-  app.get('/share/:token/comments', (req, res) => {
-    const token = paramId(req.params.token)
-    const share = resolveShareLink(store, token)
-    if (!share) {
-      res.status(404).json({ error: 'Share link not found or expired' })
-      return
-    }
-    const comments = store.db.previewComments
-      .filter((c) => c.shareLinkId === share.id)
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map(toPublicComment)
-    res.json(comments)
-  })
-
-  app.post('/share/:token/comments', (req, res) => {
-    const token = paramId(req.params.token)
-    const share = resolveShareLink(store, token)
-    if (!share) {
-      res.status(404).json({ error: 'Share link not found or expired' })
-      return
-    }
-    const body = req.body as {
-      authorName?: string
-      authorEmail?: string
-      body?: string
-      contactId?: string
-      section?: 'queue' | 'talk_track' | 'email' | 'general'
-      pinX?: number
-      pinY?: number
-      parentId?: string
-    }
-    try {
-      const comment = addPreviewComment(store, share, {
-        authorName: body.authorName ?? '',
-        authorEmail: body.authorEmail,
-        body: body.body ?? '',
-        contactId: body.contactId,
-        section: body.section,
-        pinX: body.pinX,
-        pinY: body.pinY,
-        parentId: body.parentId
-      })
-      res.status(201).json(toPublicComment(comment))
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not post comment' })
-    }
-  })
-
   return app
 }
 
@@ -1627,11 +934,9 @@ export async function startApiServer(
 ): Promise<{ server: Server; port: number; config: ServerConfig }> {
   const config = options?.config ?? loadConfig({ port: preferredPort })
   const host = options?.host ?? config.host
-  // Auto-attach Apollo (and Twilio) for every existing org when env keys are present
   for (const org of store.db.orgs) {
-    ensureApolloConnection(store, org.id, config)
-    ensureCrustdataConnection(store, org.id, config)
     ensureTwilioConnection(store, org.id, config)
+    ensureHeyReachConnection(store, org.id, config)
   }
   const app = createApi(store, config)
 

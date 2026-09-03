@@ -1,39 +1,23 @@
 interface Source {
-  id: 'crm' | 'clay' | 'gong'
+  id: 'gmail' | 'twilio' | 'heyreach'
   name: string
   feeds: string
 }
 
-interface Props {
-  crmName?: string
-}
-
-export function ConnectedContextSection({ crmName = 'CRM' }: Props) {
+export function ConnectedContextSection() {
   const sources: Source[] = [
-    {
-      id: 'crm',
-      name: crmName,
-      feeds: 'Accounts, owners, and last activity'
-    },
-    {
-      id: 'clay',
-      name: 'Clay',
-      feeds: 'Firmographics, intent, and buying signals'
-    },
-    {
-      id: 'gong',
-      name: 'Gong',
-      feeds: 'Past calls, talk tracks, and next steps'
-    }
+    { id: 'gmail', name: 'Gmail', feeds: 'Outbound email from this tool' },
+    { id: 'twilio', name: 'Twilio', feeds: 'Live dialing from the console' },
+    { id: 'heyreach', name: 'HeyReach', feeds: 'LinkedIn messages in sequences' }
   ]
 
   return (
-    <section className="connected-context" aria-label="Connected context">
+    <section className="connected-context" aria-label="Connected outbound">
       <div className="connected-context-header">
         <div>
-          <div className="prod-eyebrow">Connected context</div>
-          <h3>CRM, Clay, and Gong</h3>
-          <p>This dialer is grounded in the stack you already run — records, enrichment, and call intelligence.</p>
+          <div className="prod-eyebrow">Outbound stack</div>
+          <h3>Gmail, Twilio, and HeyReach</h3>
+          <p>This tool sends through the connections on your Jargon workspace.</p>
         </div>
       </div>
       <div className="connected-context-row">
@@ -42,9 +26,9 @@ export function ConnectedContextSection({ crmName = 'CRM' }: Props) {
             <article className="connected-context-card">
               <div className="connected-context-card-top">
                 <span className={`connected-mark mark-${source.id}`} aria-hidden="true">
-                  {source.id === 'crm' ? '◆' : source.id === 'clay' ? '▣' : '◎'}
+                  {source.id === 'gmail' ? '✉' : source.id === 'twilio' ? '☎' : 'in'}
                 </span>
-                <span className="connected-pill">Connected</span>
+                <span className="connected-pill">Ready</span>
               </div>
               <strong>{source.name}</strong>
               <span>{source.feeds}</span>

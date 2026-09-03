@@ -49,7 +49,7 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
           </div>
         </div>
 
-        {isToday ? <ConnectedContextSection crmName="HubSpot" /> : null}
+        {isToday ? <ConnectedContextSection /> : null}
 
         <div className="seq-summary">
           <div className="seq-summary-card">

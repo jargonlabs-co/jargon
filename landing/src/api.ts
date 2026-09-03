@@ -48,14 +48,20 @@ export interface PortalBuild {
     updatedAt: number
   }
   contactCount: number
-  shares: Array<{ id: string; label: string; expiresAt: number; revoked: boolean }>
 }
 
 export interface DeployResult {
   projectId: string
   project: { id: string; name: string; kind: string; prompt: string }
   contactCount: number
-  shareUrl?: string
+  dashboardPath?: string
+}
+
+export interface ApiKeyPublic {
+  id: string
+  name: string
+  prefix: string
+  createdAt: number
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -112,16 +118,19 @@ export const api = {
   deploy(prompt: string) {
     return request<DeployResult>('/tools/deploy', {
       method: 'POST',
-      body: JSON.stringify({ prompt, share: true })
+      body: JSON.stringify({ prompt })
     })
   },
   builds() {
     return request<{ builds: PortalBuild[] }>('/portal/builds')
   },
-  createShare(projectId: string, label?: string) {
-    return request<{ url: string }>(`/projects/${projectId}/share`, {
+  listApiKeys() {
+    return request<ApiKeyPublic[]>('/auth/api-keys')
+  },
+  createApiKey(name: string) {
+    return request<{ key: string; prefix: string; id: string; name: string }>('/auth/api-keys', {
       method: 'POST',
-      body: JSON.stringify({ label })
+      body: JSON.stringify({ name })
     })
   }
 }

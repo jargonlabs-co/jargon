@@ -1,63 +1,25 @@
-# Launch / ops runbook for the customer-facing desktop MVP
+# Launch / ops for the public product
 
 ## Architecture
 
-- **Desktop app** (Electron): chat → Today queue / dial / inbox. Auth token in OS safe storage. Deep link `jargon://` for OAuth return.
-- **Hosted API** (`npm run api` or Docker): multi-tenant orgs, encrypted OAuth secrets, Apollo people search, HubSpot sync, Gmail send, Twilio voice token + webhooks.
-- **Demo mode**: when provider env vars / keys are missing, Apollo/HubSpot/Gmail/Twilio run with fixtures so local QA works without keys.
+- **CLI** (`jargon deploy`): creates a tool on the hosted API
+- **Website** (`landing/`): marketing, login dashboard, authenticated tool UIs at `/tools/:id`
+- **API**: multi-tenant orgs, Gmail send, Twilio voice, HeyReach LinkedIn
 
 ## Local development
 
 ```bash
 npm install
-npm run dev          # Electron + embedded multi-tenant API on :8787
-# sign in: demo@jargon.app / jargon-demo
-```
-
-Demo prompt: **Find me the top 100 prospects I need to contact today** → pulls GTM-title software prospects (Apollo) into an outbound sequencer (email live via Gmail, call softphone placeholder).
-
-Standalone API (as if hosted):
-
-```bash
 cp .env.example .env
 npm run api
-# or
-docker compose up --build
-```
-
-Point a packaged desktop build at the API:
-
-```bash
-JARGON_API_URL=https://api.your-domain.com npm run dist:mac
+npm run landing:dev
+npm run jargon -- login --email demo@jargon.app --password jargon-demo
+npm run jargon -- deploy "Build a dialer"
 ```
 
 ## Provider setup
 
-1. **HubSpot** private app / OAuth: redirect `https://api…/oauth/hubspot/callback`
-2. **Google Cloud** OAuth client: redirect `https://api…/oauth/gmail/callback`, enable Gmail API
-3. **Twilio**: Account SID, Auth Token, API Key, TwiML App pointing Voice Request URL to `https://api…/voice/twiml`, status callback `https://api…/voice/status`
-4. Set `JARGON_ENCRYPTION_KEY` and `JARGON_PUBLIC_URL` in production
-
-## Packaging & updates
-
-- `npm run dist:mac` / `dist:win` → artifacts in `release/`
-- Code signing: set Apple/`CSC_*` secrets in CI before enabling Gatekeeper-friendly distribution
-- Auto-update feed: `electron-builder.yml` → `publish.url` (generic CDN)
-- Register protocol `jargon://` (configured in builder + main process)
-
-## Landing / download
-
-Update the marketing site download CTAs to the GitHub Release or CDN URLs for the latest `.dmg` / `.exe`.
-
-## Monitoring checklist
-
-- `/health` uptime check
-- Alert on 5xx for `/oauth/*`, `/contacts/*/messages`, `/voice/status`
-- Retain `data/jargon-db.json` (or migrate to Postgres) with daily backups
-- Rotate `JARGON_ENCRYPTION_KEY` only with a re-encrypt migration
-
-## Provider app review notes
-
-- HubSpot / Google: publish OAuth apps for production traffic beyond test users
-- Twilio: verify business profile / A2P as needed for SMS; Voice numbers for dialing
-- Privacy policy + support email required on OAuth consent screens
+1. **Google Cloud** OAuth: redirect `https://api…/oauth/gmail/callback`, enable Gmail API. After connect, users return to `JARGON_APP_URL`.
+2. **Twilio**: Account SID, Auth Token, API Key, TwiML App Voice URL `https://api…/voice/twiml`, status `https://api…/voice/status`
+3. **HeyReach**: `HEYREACH_API_KEY` (optional; LinkedIn send uses demo mode without it)
+4. Set `JARGON_ENCRYPTION_KEY`, `JARGON_PUBLIC_URL`, and `JARGON_APP_URL` in production

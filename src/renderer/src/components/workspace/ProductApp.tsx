@@ -157,8 +157,8 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
           <div className="prod-eyebrow">{page}</div>
           <h2>{page === 'settings' ? 'Settings' : 'Help'}</h2>
           <p>
-            Multi-tenant workspace for {bundle.project.segment}. Connect HubSpot, Gmail, and Twilio
-            under Connections.
+            Workspace for {bundle.project.segment}. Connect Gmail, Twilio, and HeyReach under
+            Connections.
           </p>
           <button type="button" className="ghost-btn" onClick={() => setPage('connections')}>
             Open Connections

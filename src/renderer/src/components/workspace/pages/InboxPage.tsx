@@ -109,7 +109,7 @@ export function InboxPage({ bundle, onRefresh, initialContactId }: Props) {
         status: 'sent',
         channel: 'linkedin'
       })
-      setToast('LinkedIn note logged')
+      setToast(`LinkedIn message sent to ${selected.name}`)
       await onRefresh()
     } finally {
       setBusy(false)
@@ -176,7 +176,7 @@ export function InboxPage({ bundle, onRefresh, initialContactId }: Props) {
                     Save draft
                   </button>
                   <button className="prod-btn ghost" disabled={busy} onClick={() => void linkedIn()}>
-                    Log LinkedIn note
+                    Send LinkedIn via HeyReach
                   </button>
                 </div>
               </div>

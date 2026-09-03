@@ -4,23 +4,29 @@ import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
 const SUGGESTED_PROMPTS = [
-  'Find 20 prospects to contact today',
   'Build a dialer for VP Sales in Austin',
-  'Create a rep queue for SaaS founders in NYC'
+  'Create an outbound sequencer for SaaS founders',
+  'Today queue for mid-market accounts'
 ]
 
 const CONTEXT_PROVIDERS = [
   {
-    id: 'hubspot',
-    name: 'HubSpot',
-    role: 'CRM',
-    blurb: 'Pull contacts and companies from your CRM.'
+    id: 'gmail',
+    name: 'Gmail',
+    role: 'Email',
+    blurb: 'Send from sequencers and inbox.'
   },
   {
-    id: 'crustdata',
-    name: 'Crustdata',
-    role: 'Enrichment',
-    blurb: 'People search and talk tracks for outbound tools.'
+    id: 'twilio',
+    name: 'Twilio',
+    role: 'Voice',
+    blurb: 'Call from the dial console.'
+  },
+  {
+    id: 'heyreach',
+    name: 'HeyReach',
+    role: 'LinkedIn',
+    blurb: 'Message prospects on LinkedIn.'
   }
 ] as const
 
@@ -30,11 +36,19 @@ function statusLabel(conn: ConnectionPublic | undefined): string {
   return conn.status
 }
 
-export function WebApp({ preview = false }: { preview?: boolean }) {
+function toolPath(projectId: string): string {
+  return `/tools/${projectId}`
+}
+
+export function WebApp({
+  preview = false,
+  onOpenTool
+}: {
+  preview?: boolean
+  onOpenTool?: (projectId: string) => void
+}) {
   const auth = useAuth()
-  const user = preview
-    ? { name: 'Tara', email: 'demo@jargon.app' }
-    : auth.user!
+  const user = preview ? { name: 'Tara', email: 'demo@jargon.app' } : auth.user!
   const org = preview ? { name: 'Jargon Demo' } : auth.org!
   const signOut = preview ? () => window.location.assign('/') : auth.signOut
   const [connections, setConnections] = useState<ConnectionPublic[]>([])
@@ -43,27 +57,25 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [lastDeploy, setLastDeploy] = useState<{ name: string; url: string; contacts: number } | null>(
-    null
-  )
+  const [lastKey, setLastKey] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (preview) {
       setConnections([
-        { id: '1', provider: 'crustdata', status: 'connected', accountLabel: 'Crustdata live' },
-        { id: '2', provider: 'hubspot', status: 'disconnected' }
+        { id: '1', provider: 'gmail', status: 'connected', accountLabel: 'demo@jargon.app' },
+        { id: '2', provider: 'twilio', status: 'disconnected' },
+        { id: '3', provider: 'heyreach', status: 'disconnected' }
       ])
       setBuilds([
         {
           project: {
             id: 'proj_demo',
-            name: 'Today queue',
+            name: 'Outbound sequencer',
             kind: 'today',
-            prompt: 'Find 20 prospects to contact today',
+            prompt: 'Create an outbound sequencer',
             updatedAt: Date.now() - 86400000
           },
-          contactCount: 20,
-          shares: [{ id: 's1', label: 'Today queue preview', expiresAt: Date.now() + 86400000 * 30, revoked: false }]
+          contactCount: 20
         }
       ])
       return
@@ -109,11 +121,6 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
     e.preventDefault()
     if (!prompt.trim()) return
     if (preview) {
-      setLastDeploy({
-        name: 'Today queue',
-        url: 'https://app.jargon.app/preview.html#demo',
-        contacts: 20
-      })
       setToast('Preview — deploy calls your hosted API in production')
       return
     }
@@ -121,15 +128,9 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
     setError(null)
     try {
       const result = await api.deploy(prompt.trim())
-      if (result.shareUrl) {
-        setLastDeploy({
-          name: result.project.name,
-          url: result.shareUrl,
-          contacts: result.contactCount
-        })
-      }
       setToast(`Built "${result.project.name}" with ${result.contactCount} contacts`)
       await refresh()
+      onOpenTool?.(result.projectId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Deploy failed')
     } finally {
@@ -137,14 +138,18 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
     }
   }
 
-  async function copyShare(projectId: string, name: string) {
-    setBusy(`share-${projectId}`)
+  async function mintKey() {
+    if (preview) {
+      setToast('API keys are created after login')
+      return
+    }
+    setBusy('apikey')
     try {
-      const share = await api.createShare(projectId, `${name} preview`)
-      await navigator.clipboard.writeText(share.url)
-      setToast('Share link copied')
+      const created = await api.createApiKey('CLI')
+      setLastKey(created.key)
+      setToast('API key created — copy it now, it is shown once')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not copy link')
+      setError(err instanceof Error ? err.message : 'Could not create API key')
     } finally {
       setBusy(null)
     }
@@ -169,10 +174,11 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
       <main className="webapp-main">
         <section className="webapp-section">
           <div className="section-heading">
-            <p className="eyebrow">Step 1</p>
-            <h1>Connect your context layer</h1>
+            <p className="eyebrow">Connections</p>
+            <h1>Gmail, Twilio, HeyReach</h1>
             <p className="section-lede">
-              Wire CRM and enrichment so every tool you build runs on live data.
+              Tools you deploy from the CLI send email, place calls, and message LinkedIn through
+              these accounts.
             </p>
           </div>
           <div className="context-grid">
@@ -209,10 +215,11 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
 
         <section className="webapp-section">
           <div className="section-heading">
-            <p className="eyebrow">Step 2</p>
-            <h1>Create a tool</h1>
+            <p className="eyebrow">Create</p>
+            <h1>Deploy a tool</h1>
             <p className="section-lede">
-              Describe what your team needs. Jargon builds a rep-ready workspace and share link.
+              From the website or <code>jargon deploy</code> in your terminal. Open the UI here after
+              login — no share links.
             </p>
           </div>
           <form className="build-form" onSubmit={deploy}>
@@ -220,7 +227,7 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
-              placeholder="Find 20 prospects to contact today…"
+              placeholder="Build a dialer for inbound leads…"
             />
             <div className="prompt-chips">
               {SUGGESTED_PROMPTS.map((sample) => (
@@ -238,18 +245,6 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
               {busy === 'deploy' ? 'Building…' : 'Build tool'}
             </button>
           </form>
-
-          {lastDeploy ? (
-            <div className="deploy-result">
-              <h3>{lastDeploy.name}</h3>
-              <p>
-                {lastDeploy.contacts} contacts ·{' '}
-                <a href={lastDeploy.url} target="_blank" rel="noreferrer">
-                  Open rep console
-                </a>
-              </p>
-            </div>
-          ) : null}
         </section>
 
         {builds.length > 0 ? (
@@ -262,15 +257,16 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
                 <li key={build.project.id} className="build-row">
                   <div>
                     <strong>{build.project.name}</strong>
-                    <p>{build.contactCount} contacts · {build.project.prompt}</p>
+                    <p>
+                      {build.contactCount} contacts · {build.project.prompt}
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="btn ghost btn-sm"
-                    disabled={busy === `share-${build.project.id}`}
-                    onClick={() => void copyShare(build.project.id, build.project.name)}
+                    className="btn primary btn-sm"
+                    onClick={() => onOpenTool?.(build.project.id)}
                   >
-                    Copy link
+                    Open
                   </button>
                 </li>
               ))}
@@ -278,9 +274,31 @@ export function WebApp({ preview = false }: { preview?: boolean }) {
           </section>
         ) : null}
 
+        <section className="webapp-section">
+          <div className="section-heading">
+            <h2>CLI</h2>
+            <p className="section-lede">
+              <code>jargon login --api-key …</code> then{' '}
+              <code>jargon deploy &quot;Build a dialer…&quot;</code>
+            </p>
+          </div>
+          <button type="button" className="btn ghost" disabled={busy === 'apikey'} onClick={() => void mintKey()}>
+            {busy === 'apikey' ? 'Creating…' : 'Create API key'}
+          </button>
+          {lastKey ? (
+            <p className="deploy-result">
+              Save this key — it is shown once:
+              <br />
+              <code>{lastKey}</code>
+            </p>
+          ) : null}
+        </section>
+
         {error ? <p className="form-error webapp-error">{error}</p> : null}
         {toast ? <div className="webapp-toast">{toast}</div> : null}
       </main>
     </div>
   )
 }
+
+export { toolPath }

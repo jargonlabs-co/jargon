@@ -20,6 +20,7 @@ export interface ProspectContextInput {
   company: string
   title?: string
   city?: string
+  linkedinUrl?: string
   companyDomain?: string
   companyIndustry?: string
   companySize?: string
@@ -114,8 +115,8 @@ export function crustdataTalkTrack(contact: ProspectContextInput): ProspectTalkT
 /** Structured talk track for rep console. */
 export function prospectTalkTrack(contact: ProspectContextInput): ProspectTalkTrack {
   if (contact.context?.length && !contact.companyIndustry?.includes('demo')) {
-    const fromCrust = crustdataTalkTrack(contact)
-    if (contact.context.some((line) => line.length > 20)) return fromCrust
+    const fromProfile = crustdataTalkTrack(contact)
+    if (contact.context.some((line) => line.length > 20)) return fromProfile
   }
   const company = contact.accountName ?? contact.company ?? 'their company'
   const h = hash(contact.id || company)

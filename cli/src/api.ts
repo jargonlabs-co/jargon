@@ -3,9 +3,7 @@ import type { JargonConfig } from './config.js'
 export type DeployResult = {
   projectId: string
   contactCount: number
-  prospectSource?: string
-  shareUrl?: string
-  shareToken?: string
+  dashboardPath?: string
   project?: { name: string; prompt: string }
 }
 
@@ -82,31 +80,19 @@ export async function createApiKey(
 
 export async function deployTool(
   cfg: JargonConfig,
-  input: { prompt: string; label?: string; share?: boolean }
+  input: { prompt: string; label?: string }
 ): Promise<DeployResult> {
   return request(cfg, '/tools/deploy', {
     method: 'POST',
     body: JSON.stringify({
       prompt: input.prompt,
-      label: input.label,
-      share: input.share !== false
+      label: input.label
     })
   })
 }
 
 export async function listProjects(cfg: JargonConfig): Promise<ProjectSummary[]> {
   return request(cfg, '/projects')
-}
-
-export async function createShare(
-  cfg: JargonConfig,
-  projectId: string,
-  label?: string
-): Promise<{ url: string }> {
-  return request(cfg, `/projects/${projectId}/share`, {
-    method: 'POST',
-    body: JSON.stringify(label ? { label } : {})
-  })
 }
 
 export async function health(apiUrl: string): Promise<{ ok: boolean }> {

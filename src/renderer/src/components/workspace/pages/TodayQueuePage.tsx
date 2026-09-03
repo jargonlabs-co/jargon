@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Contact, ProjectBundle } from '../../../api/client'
-import { api } from '../../../api/client'
 
 interface Props {
   bundle: ProjectBundle
@@ -32,9 +31,7 @@ function nextAction(c: Contact, steps: ProjectBundle['steps']): 'email' | 'call'
   return 'call'
 }
 
-export function TodayQueuePage({ bundle, onRefresh, onCall, onEmail, onOpenSequence }: Props) {
-  const [toast, setToast] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
+export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence }: Props) {
   const [starting, setStarting] = useState(false)
 
   const sequence = bundle.sequences[0]
@@ -65,28 +62,6 @@ export function TodayQueuePage({ bundle, onRefresh, onCall, onEmail, onOpenSeque
   const emailed = contacts.filter((c) => channelDone(c, 'email')).length
   const nextContact = remainingContacts[0] ?? null
   const started = remaining < contacts.length
-
-  useEffect(() => {
-    if (!toast) return
-    const id = window.setTimeout(() => setToast(null), 2200)
-    return () => window.clearTimeout(id)
-  }, [toast])
-
-  async function resync() {
-    setSyncing(true)
-    try {
-      await api.syncApollo({
-        projectId: bundle.project.id,
-        limit: Number(bundle.project.answers.prospect_count ?? 100)
-      })
-      await onRefresh()
-      setToast('Prospect list refreshed')
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Sync failed')
-    } finally {
-      setSyncing(false)
-    }
-  }
 
   async function startTodaysTasks() {
     if (!nextContact || starting) return
@@ -158,15 +133,8 @@ export function TodayQueuePage({ bundle, onRefresh, onCall, onEmail, onOpenSeque
             <strong>{emailed}</strong>
             <span>emailed</span>
           </div>
-          <div className="today-stat-actions">
-            <button type="button" className="ghost-btn" onClick={() => void resync()} disabled={syncing}>
-              {syncing ? 'Refreshing…' : 'Refresh prospects'}
-            </button>
-          </div>
         </div>
       </header>
-
-      {toast ? <div className="toast">{toast}</div> : null}
 
       <div className="today-table-wrap">
         <table className="today-table">

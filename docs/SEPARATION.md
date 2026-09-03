@@ -3,16 +3,16 @@
 | | This repo (`jargonlabs-co/jargon`) | Private ops (`jargonlabs-co/outbound-ops`) |
 |--|-----------------------------------|-------------------------------------------|
 | Visibility | Public product | Private |
-| Audience | Customers / early testers | Internal team only |
-| Surfaces | Desktop + landing + portal + CLI | Desktop + API only |
-| Billing | Stripe / portal | None |
-| Deploy | Product Railway + Vercel | Separate Railway (or local only) |
-| Data | Product Postgres / JSON DB | **Different** database |
-| Secrets | Product OAuth / Stripe / keys | Prefer separate OAuth clients + keys |
+| Audience | Customers | Internal team |
+| Surfaces | CLI + website dashboard + tool UIs | Desktop + API |
+| Outbound | Gmail, Twilio, HeyReach | Crustdata queue + Gmail/Twilio |
+| Prospect search | Not in this product | Crustdata / Apollo / Supabase |
+| Billing | None | None |
+| Deploy | Product Railway + Vercel | Separate Railway |
 
 ## Rules
 
 1. Never point both stacks at the same `DATABASE_URL`.
-2. Never reuse production OAuth redirect URIs across both (use separate Google/Twilio apps when practical).
-3. Do not import code across the two repos — copy deliberately if needed, then diverge.
-4. Customer-facing packaging (landing, portal, CLI publish, GH Releases) stays **only** in this product repo.
+2. Prefer separate Google / Twilio / HeyReach credentials.
+3. Do not import code across the two repos.
+4. Share links and Electron packaging are not part of the public product.

@@ -14,9 +14,6 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
     bundle.contacts.find((c) => c.status === 'active')?.id ?? bundle.contacts[0]?.id ?? null
   )
   const [query, setQuery] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const selected = bundle.contacts.find((c) => c.id === selectedId) ?? bundle.contacts[0]
   const filtered = bundle.contacts.filter(
     (c) =>
@@ -28,26 +25,6 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
     await api.patchContact(id, { status: 'active' })
     setSelectedId(id)
     await onRefresh()
-  }
-
-  async function enrich() {
-    if (!selected) return
-    setBusy(true)
-    setError(null)
-    try {
-      const result = await api.enrichContact(selected.id)
-      setSelectedId(result.contact.id)
-      await onRefresh()
-      const bits = [
-        result.enrichment.matchedPerson ? 'person' : null,
-        result.enrichment.matchedOrganization ? 'company' : null
-      ].filter(Boolean)
-      setToast(`Enriched via Apollo · ${bits.join(' + ') || 'no match'}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Enrichment failed')
-    } finally {
-      setBusy(false)
-    }
   }
 
   return (
@@ -113,8 +90,6 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
             </div>
           </div>
           <div className="detail-body">
-            {error ? <p className="auth-error">{error}</p> : null}
-            {toast ? <div className="toast">{toast}</div> : null}
             <div className="detail-actions">
               <button className="prod-btn primary compact" onClick={() => onCall(selected.id)}>
                 Call
@@ -124,13 +99,6 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
                 onClick={() => selected && onEmail(selected.id)}
               >
                 Email
-              </button>
-              <button
-                className="prod-btn ghost compact"
-                onClick={() => void enrich()}
-                disabled={busy}
-              >
-                {busy ? 'Enriching…' : 'Enrich with Apollo'}
               </button>
             </div>
             <div className="detail-block">

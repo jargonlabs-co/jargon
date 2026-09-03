@@ -64,7 +64,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     'Content-Type': 'application/json',
     ...(init?.headers as Record<string, string> | undefined)
   }
-  if (authToken) headers.Authorization = `Bearer ${authToken}`
+  const token =
+    authToken ??
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('jargon_web_token') : null)
+  if (token) {
+    authToken = token
+    headers.Authorization = `Bearer ${token}`
+  }
 
   const url = `${baseUrl()}${path}`
   let res: Response

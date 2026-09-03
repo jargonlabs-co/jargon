@@ -123,24 +123,88 @@ function contactFromHubSpot(
 }
 
 function demoHubSpotContacts(limit: number): ContextProspect[] {
-  const rows = [
-    ['Jordan Hale', 'Northwind Logistics', 'VP Sales', 'jordan.hale@northwind.test'],
-    ['Priya Shah', 'Prairie Health', 'Head of Growth', 'priya.shah@prairie.test'],
-    ['Marcus Lee', 'Lakeside CRM', 'CRO', 'marcus.lee@lakeside.test']
+  const rows: Array<[string, string, string, string, string]> = [
+    ['Jordan Hale', 'Northwind Logistics', 'VP Sales', 'jordan.hale@northwind.test', 'Chicago'],
+    ['Priya Shah', 'Prairie Health', 'Head of Growth', 'priya.shah@prairie.test', 'Minneapolis'],
+    ['Marcus Lee', 'Lakeside CRM', 'CRO', 'marcus.lee@lakeside.test', 'Austin'],
+    ['Sofia Grant', 'Clearstack', 'VP Revenue', 'sofia.grant@clearstack.test', 'San Francisco'],
+    ['Noah Ortiz', 'Harbor AI', 'Head of Sales', 'noah.ortiz@harborai.test', 'Seattle'],
+    ['Ava Kim', 'OrbitOps', 'GTM Lead', 'ava.kim@orbitops.test', 'Denver'],
+    ['Leo Patel', 'Ledgerly', 'VP Sales', 'leo.patel@ledgerly.test', 'New York'],
+    ['Maya Brooks', 'Vaultline', 'Head of Demand Gen', 'maya.brooks@vaultline.test', 'Boston'],
+    ['Chris Nguyen', 'Paynest', 'RevOps Lead', 'chris.nguyen@paynest.test', 'Remote'],
+    ['Elena Diaz', 'Summit Grid', 'BDR Manager', 'elena.diaz@summitgrid.test', 'Atlanta'],
+    ['Sam Cohen', 'Copperline', 'Founder', 'sam.cohen@copperline.test', 'Austin'],
+    ['Tess Walsh', 'Nimbus CRM', 'VP Marketing', 'tess.walsh@nimbuscrm.test', 'Chicago'],
+    ['Hugo Singh', 'Relaystack', 'Head of Sales', 'hugo.singh@relaystack.test', 'Detroit'],
+    ['Ivy Chen', 'Brightloop', 'SDR Manager', 'ivy.chen@brightloop.test', 'Remote'],
+    ['Jules Ross', 'Forgecloud', 'CRO', 'jules.ross@forgecloud.test', 'San Francisco'],
+    ['Amara Price', 'Midtown SaaS Co', 'VP Go-To-Market', 'amara.price@midtown.test', 'Atlanta'],
+    ['Blake Nguyen', 'Peachtree Logistics', 'Head of Growth', 'blake.nguyen@peachtree.test', 'Atlanta'],
+    ['Cora Shah', 'Buckhead Analytics', 'VP Sales', 'cora.shah@buckhead.test', 'Atlanta'],
+    ['Devon Lee', 'Perimeter Health Tech', 'Head of Sales', 'devon.lee@perimeter.test', 'Atlanta'],
+    ['Eden Grant', 'Atlantic Freight', 'RevOps Lead', 'eden.grant@atlantic.test', 'Savannah']
   ]
-  return Array.from({ length: limit }, (_, i) => {
-    const [name, company, title, email] = rows[i % rows.length]
+  return Array.from({ length: Math.min(limit, rows.length) }, (_, i) => {
+    const [name, company, title, email, city] = rows[i]
     return {
-      externalId: `hs_demo_${i + 1}`,
-      name: i < rows.length ? name : `${name} ${i + 1}`,
+      externalId: `demo_${i + 1}`,
+      name,
       company,
       title,
-      email: i < rows.length ? email : `contact${i + 1}@hubspot-demo.test`,
-      phone: '+15555550100',
-      city: 'Chicago',
-      accountName: company
+      email,
+      phone: `+1555555${String(100 + i).padStart(4, '0')}`,
+      city,
+      accountName: company,
+      companyIndustry: 'Software',
+      companySize: '50-200'
     }
   })
+}
+
+/** Mock queue for demos when HubSpot is not connected. */
+export function getDemoProspects(limit = 20): ContextProspect[] {
+  return demoHubSpotContacts(limit)
+}
+
+export function writeDemoContactsToProject(
+  store: DataStore,
+  orgId: string,
+  projectId: string,
+  limit = 20
+): number {
+  const prospects = getDemoProspects(limit)
+  let count = 0
+  store.update((db) => {
+    const project = db.projects.find((p) => p.id === projectId && p.orgId === orgId)
+    if (!project) return
+    const contacts = prospectsToContacts(orgId, project.id, prospects, 'seed')
+    db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
+    db.contacts.push(...contacts)
+    project.answers = {
+      ...project.answers,
+      data_source: 'demo',
+      prospect_source: 'demo',
+      prospect_count: String(contacts.length),
+      segment: project.answers.segment || 'Demo prospects'
+    }
+    project.updatedAt = Date.now()
+    const campaign = db.campaigns.find((x) => x.projectId === project.id && x.state === 'ACTIVE')
+    if (campaign) {
+      campaign.total = contacts.length
+      campaign.updatedAt = Date.now()
+    }
+    db.activities.unshift({
+      id: uid('act'),
+      orgId,
+      projectId: project.id,
+      kind: 'sync',
+      summary: `Loaded ${contacts.length} demo prospects`,
+      createdAt: Date.now()
+    })
+    count = contacts.length
+  })
+  return count
 }
 
 export function finishHubSpotOAuthHtml(config: ServerConfig, ok: boolean, message: string): string {

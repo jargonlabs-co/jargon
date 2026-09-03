@@ -3,7 +3,11 @@ import { getConnection, readSecrets } from './connections'
 import { seedProject } from './seed'
 import type { DataStore } from './store'
 import type { ProjectKind } from './types'
-import { fetchHubSpotContacts, writeHubSpotContactsToProjects } from './providers/hubspot'
+import {
+  fetchHubSpotContacts,
+  writeDemoContactsToProject,
+  writeHubSpotContactsToProjects
+} from './providers/hubspot'
 
 export async function createProjectRecord(
   store: DataStore,
@@ -37,8 +41,11 @@ export async function createProjectRecord(
       const prospects = await fetchHubSpotContacts(secrets.accessToken, 100, demo)
       writeHubSpotContactsToProjects(store, orgId, prospects, projectId)
     } catch {
-      /* tool still deploys; user can sync from Connections */
+      writeDemoContactsToProject(store, orgId, projectId, 20)
     }
+  } else {
+    // Demo / Claude Code flow: fill the queue without requiring HubSpot first.
+    writeDemoContactsToProject(store, orgId, projectId, 20)
   }
 
   return projectId

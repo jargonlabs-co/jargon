@@ -1,6 +1,10 @@
 # Jargon
 
-Build custom outbound tools on **Crustdata** people context — with **Gmail** and **Twilio** for email and calling.
+**Public product** — vibe-code custom outbound sales tools for customers.
+
+Build prospect queues on **Crustdata**, then email and call with **Gmail** and **Twilio**.
+
+> Internal team outbound (no landing / portal / billing) lives in a **separate private repo**: [`outbound-ops`](https://github.com/jargonlabs-co/outbound-ops). Do not share databases, OAuth apps, or deploy targets between the two. See [docs/SEPARATION.md](docs/SEPARATION.md).
 
 ## Stack
 
@@ -9,6 +13,17 @@ Build custom outbound tools on **Crustdata** people context — with **Gmail** a
 | Context | Crustdata | People search → prospect queue + talk tracks |
 | Email | Gmail OAuth | Send from rep tool surfaces |
 | Voice | Twilio | Call from dial surfaces |
+| Billing | Stripe | Customer portal Pro checkout |
+
+## Product surfaces
+
+| Surface | Path | Role |
+|---------|------|------|
+| Desktop | `src/` (Electron) | Primary builder + rep workspace |
+| API | `src/server/` | Multi-tenant hosted API (Railway) |
+| Landing | `landing/` | Marketing + web app shell (Vercel) |
+| Portal | `portal/` | Account, builds, billing, API keys (`app.jargon.app`) |
+| CLI | `cli/` | `jargon login \| deploy \| list \| share \| api-keys` |
 
 ## Quick start
 
@@ -28,29 +43,20 @@ Sign in: `demo@jargon.app` / `jargon-demo`
 
 That builds a Today tool: live Crustdata prospects in the queue, email via Gmail, calls via Twilio.
 
-Probe Crustdata without the app:
-
 ```bash
 npx tsx scripts/crustdata-probe.ts --limit 5
 ```
 
-## What's included
-
-- Electron desktop client (auth, deep-link OAuth, auto-update hook)
-- Multi-tenant hosted API (orgs, sessions, encrypted connection secrets)
-- Crustdata person search · Gmail send · Twilio Voice
-- Packaging via `electron-builder` + GitHub Release workflow
-
 ## Hosted API
 
 ```bash
-cp .env.example .env
 npm run api
 # or
 docker compose up --build
 ```
 
-See [docs/LAUNCH.md](docs/LAUNCH.md) for provider setup, packaging, and ops.
+See [docs/LAUNCH.md](docs/LAUNCH.md) for provider setup, packaging, and production checklist.  
+See [docs/EARLY-CUSTOMERS.md](docs/EARLY-CUSTOMERS.md) for customer rollout.
 
 ## Package desktop
 
@@ -68,8 +74,6 @@ npm run landing:dev
 ```
 
 ## Customer portal
-
-Web account UI (login, builds, billing, API keys) — deploy to Vercel at `app.jargon.app`:
 
 ```bash
 npm run portal:dev      # http://127.0.0.1:5181

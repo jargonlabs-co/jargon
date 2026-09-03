@@ -2,6 +2,8 @@
 
 Ship downloadable desktop + CLI deploy for org sharing.
 
+This checklist is for the **public Jargon product**. Internal team outbound runs in the private [`outbound-ops`](https://github.com/jargonlabs-co/outbound-ops) repo — keep infra and secrets separate ([SEPARATION.md](./SEPARATION.md)).
+
 ## Architecture
 
 ```

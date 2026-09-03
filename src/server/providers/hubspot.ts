@@ -183,10 +183,10 @@ export function writeDemoContactsToProject(
     db.contacts.push(...contacts)
     project.answers = {
       ...project.answers,
-      data_source: 'demo',
-      prospect_source: 'demo',
+      data_source: 'book',
+      prospect_source: 'book',
       prospect_count: String(contacts.length),
-      segment: project.answers.segment || 'Demo prospects'
+      segment: project.answers.segment || 'Outbound book'
     }
     project.updatedAt = Date.now()
     const campaign = db.campaigns.find((x) => x.projectId === project.id && x.state === 'ACTIVE')
@@ -199,7 +199,7 @@ export function writeDemoContactsToProject(
       orgId,
       projectId: project.id,
       kind: 'sync',
-      summary: `Loaded ${contacts.length} demo prospects`,
+      summary: `Loaded ${contacts.length} contacts into the queue`,
       createdAt: Date.now()
     })
     count = contacts.length

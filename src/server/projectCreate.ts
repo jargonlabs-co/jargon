@@ -44,7 +44,7 @@ export async function createProjectRecord(
       writeDemoContactsToProject(store, orgId, projectId, 20)
     }
   } else {
-    // Demo / Claude Code flow: fill the queue without requiring HubSpot first.
+    // Fill the queue when no CRM is connected yet.
     writeDemoContactsToProject(store, orgId, projectId, 20)
   }
 

@@ -78,7 +78,7 @@ async function cmdDeploy() {
 
   const open = `${appUrl()}${result.dashboardPath ?? `/tools/${result.projectId}`}`
   console.log(`Deployed ${result.project?.name ?? result.projectId}`)
-  console.log(`  Contacts: ${result.contactCount}`)
+  console.log(`  Queue: ${result.contactCount} contacts`)
   console.log(`  Open: ${open}`)
 }
 

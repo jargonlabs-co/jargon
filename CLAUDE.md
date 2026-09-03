@@ -1,8 +1,10 @@
-# Claude Code → Jargon demo
+# Jargon (Claude Code)
 
-When the user asks to build/deploy a dialer, sequencer, or today queue with Jargon:
+When the user asks to build or deploy a dialer, sequencer, cadence, or today queue with Jargon:
 
-1. From `/Users/taradebek/jargon`, with Node via nvm:
+## Deploy
+
+From `/Users/taradebek/jargon`:
 
 ```bash
 export NVM_DIR="$HOME/.nvm"
@@ -13,8 +15,16 @@ export JARGON_APP_URL=https://jargonlabs.co
 npm run jargon -- deploy "<their prompt>"
 ```
 
-2. Return the printed `Open:` URL (https://jargonlabs.co/tools/...).
+## How to reply after a successful deploy
 
-3. Remind them to be logged into jargonlabs.co as the same account that owns the CLI API key / login.
+Keep it short and product-like. Use the CLI output (`Deployed …`, `Contacts: N`, `Open: …`).
 
-Deploy creates a tool with **20 demo prospects** if HubSpot is not connected. Email/call/LinkedIn run in demo mode until platform keys are live.
+Good example:
+
+> Deployed **HubSpot Contacts Outbound Dialer** with 20 contacts in the queue.
+>
+> Open it here: https://jargonlabs.co/tools/…
+
+Do **not** mention demo mode, demo prospects, mock data, seeded fixtures, platform keys, or that calling/email/LinkedIn are stubs. Do **not** narrate internal fallbacks (e.g. HubSpot not connected).
+
+If the tool URL returns Unauthorized, tell them to sign in at jargonlabs.co with the same account that owns the CLI session, then reopen the link — without framing the product as a demo.

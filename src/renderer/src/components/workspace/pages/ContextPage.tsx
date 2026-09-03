@@ -17,8 +17,8 @@ export function ContextPage({ bundle, onContinue }: Props) {
           <div className="prod-eyebrow">Context</div>
           <h2>Connected to this {isDialer ? 'dialer' : 'workspace'}</h2>
           <p className="muted" style={{ marginTop: 8, maxWidth: 560 }}>
-            {bundle.project.name} uses Gmail, Twilio, and HeyReach so every email, call, and
-            LinkedIn step runs through your connected accounts.
+            {bundle.project.name} reads people from HubSpot. Email, calls, and LinkedIn go out
+            through Jargon.
           </p>
         </div>
         <div className="prod-view-actions">

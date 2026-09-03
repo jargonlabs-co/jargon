@@ -20,24 +20,21 @@ import {
   toPublicConnection,
   upsertConnection
 } from './connections'
-import {
-  exchangeGmailCode,
-  finishGmailOAuthHtml,
-  gmailAuthUrl,
-  refreshGmailAccessToken,
-  sendGmailMessage
-} from './providers/gmail'
+import { sendPlatformGmail } from './providers/gmail'
 import {
   createTwilioVoiceToken,
-  ensureTwilioConnection,
   voiceTwiml
 } from './providers/twilio'
 import {
-  ensureHeyReachConnection,
-  resolveHeyReachApiKey,
-  sendHeyReachLinkedInMessage,
-  validateHeyReachKey
+  sendHeyReachLinkedInMessage
 } from './providers/heyreach'
+import {
+  exchangeHubSpotCode,
+  fetchHubSpotContacts,
+  finishHubSpotOAuthHtml,
+  hubspotAuthUrl,
+  writeHubSpotContactsToProjects
+} from './providers/hubspot'
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
@@ -58,7 +55,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       multiTenant: true,
       demoMode: config.demoMode,
       providers: {
-        gmail: config.google.clientId ? 'live' : 'demo',
+        hubspot: config.hubspot.clientId ? 'live' : 'demo',
+        gmail: config.google.refreshToken ? 'live' : 'demo',
         twilio:
           config.twilio.accountSid &&
           config.twilio.apiKeySid &&
@@ -123,8 +121,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
     const user = store.db.users.find((u) => u.id === userId)!
     const org = store.db.orgs.find((o) => o.id === orgId)!
-    ensureTwilioConnection(store, orgId, config)
-    ensureHeyReachConnection(store, orgId, config)
     const { token } = createSession(store, userId, orgId)
     res.status(201).json(authPayload(store, token, user, org))
   })
@@ -146,8 +142,6 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.status(500).json({ error: 'No organization for user' })
       return
     }
-    ensureTwilioConnection(store, org.id, config)
-    ensureHeyReachConnection(store, org.id, config)
     const { token } = createSession(store, user.id, org.id)
     res.json(authPayload(store, token, user, org))
   })
@@ -189,12 +183,15 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   })
 
   app.get('/auth/me', auth, (req, res) => {
-    ensureTwilioConnection(store, req.auth!.org.id, config)
-    ensureHeyReachConnection(store, req.auth!.org.id, config)
     res.json({
       user: toPublicUser(req.auth!.user),
       org: req.auth!.org,
-      demoMode: config.demoMode
+      demoMode: config.demoMode,
+      outbound: {
+        email: config.google.refreshToken ? 'live' : 'demo',
+        voice: config.twilio.accountSid ? 'live' : 'demo',
+        linkedin: config.heyreach.apiKey ? 'live' : 'demo'
+      }
     })
   })
 
@@ -222,142 +219,107 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.json({ org })
   })
 
-  // ——— Connections ———
+  // ——— Data layer (customer) ———
   app.get('/connections', auth, (req, res) => {
-    ensureTwilioConnection(store, req.auth!.org.id, config)
-    ensureHeyReachConnection(store, req.auth!.org.id, config)
     const list = store.db.connections
-      .filter((c) => c.orgId === req.auth!.org.id)
+      .filter((c) => c.orgId === req.auth!.org.id && c.provider === 'hubspot')
       .map(toPublicConnection)
     res.json(list)
   })
 
   app.post('/connections/:provider/start', auth, async (req, res) => {
     const provider = paramId(req.params.provider)
-    const { org, user } = req.auth!
-    if (provider === 'gmail') {
-      const url = gmailAuthUrl(store, config, org.id, user.id)
-      res.json({ url })
-      return
-    }
-    if (provider === 'twilio') {
-      const conn = ensureTwilioConnection(store, org.id, config)
-      res.json({ connection: toPublicConnection(conn) })
-      return
-    }
-    if (provider === 'heyreach') {
-      const { apiKey: bodyKey } = req.body as { apiKey?: string }
-      const apiKey = (bodyKey?.trim() || config.heyreach.apiKey).trim()
-      if (!apiKey) {
-        res.status(400).json({ error: 'API key required — set HEYREACH_API_KEY or paste a key' })
-        return
-      }
-      const validated = await validateHeyReachKey(apiKey)
-      if (!validated.ok) {
-        res.status(400).json({ error: validated.error })
-        return
-      }
-      const demo = apiKey === 'demo'
-      const conn = upsertConnection(store, {
-        orgId: org.id,
-        provider: 'heyreach',
-        status: 'connected',
-        accountLabel: validated.label,
-        secrets: { accessToken: apiKey },
-        meta: {
-          mode: demo ? 'demo' : 'live',
-          source: bodyKey?.trim() ? 'manual' : 'env'
-        }
+    if (provider === 'gmail' || provider === 'twilio' || provider === 'heyreach') {
+      res.status(400).json({
+        error: 'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot for your data.'
       })
-      res.json({ connection: toPublicConnection(conn) })
       return
     }
-    res.status(400).json({ error: 'Unknown provider' })
+    if (provider !== 'hubspot') {
+      res.status(400).json({ error: 'Unknown data source. Connect HubSpot.' })
+      return
+    }
+    const { org, user } = req.auth!
+    const url = hubspotAuthUrl(store, config, org.id, user.id)
+    res.json({ url })
   })
 
-  app.get('/oauth/gmail/callback', async (req, res) => {
+  app.get('/oauth/hubspot/callback', async (req, res) => {
     try {
       const { code, state } = req.query as { code?: string; state?: string }
       if (!code || !state) {
-        res.status(400).send(finishGmailOAuthHtml(config, false, 'Missing code/state'))
+        res.status(400).send(finishHubSpotOAuthHtml(config, false, 'Missing code/state'))
         return
       }
       const oauth = consumeOAuthState(store, state)
       if (!oauth) {
-        res.status(400).send(finishGmailOAuthHtml(config, false, 'Invalid or expired state'))
+        res.status(400).send(finishHubSpotOAuthHtml(config, false, 'Invalid or expired state'))
         return
       }
-      const tokens = await exchangeGmailCode(config, code)
-      const existing = getConnection(store, oauth.orgId, 'gmail')
-      const previousSecrets = existing ? readSecrets(existing) : undefined
+      const tokens = await exchangeHubSpotCode(config, code)
       upsertConnection(store, {
         orgId: oauth.orgId,
-        provider: 'gmail',
+        provider: 'hubspot',
         status: 'connected',
         accountLabel: tokens.accountLabel,
-        secrets: {
-          ...tokens,
-          // Google may omit a refresh token on a later authorization.
-          refreshToken: tokens.refreshToken ?? previousSecrets?.refreshToken
-        },
-        meta: { mode: code === 'demo' || !config.google.clientId ? 'demo' : 'live' }
+        secrets: tokens,
+        meta: { mode: code === 'demo' || !config.hubspot.clientId ? 'demo' : 'live' }
       })
-      res.send(finishGmailOAuthHtml(config, true, 'You can return to Jargon.'))
+      const demo = tokens.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
+      const prospects = await fetchHubSpotContacts(tokens.accessToken, 100, demo)
+      writeHubSpotContactsToProjects(store, oauth.orgId, prospects)
+      res.send(
+        finishHubSpotOAuthHtml(
+          config,
+          true,
+          `Loaded ${prospects.length} contacts into your tools.`
+        )
+      )
     } catch (err) {
       res
         .status(500)
-        .send(finishGmailOAuthHtml(config, false, err instanceof Error ? err.message : 'Error'))
+        .send(finishHubSpotOAuthHtml(config, false, err instanceof Error ? err.message : 'Error'))
     }
   })
 
-  app.post('/connections/gmail/test', auth, async (req, res) => {
-    const { to } = req.body as { to?: string }
-    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      res.status(400).json({ error: 'A valid recipient email is required' })
-      return
-    }
-
+  app.post('/connections/hubspot/sync', auth, async (req, res) => {
+    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
     const orgId = req.auth!.org.id
-    const conn = getConnection(store, orgId, 'gmail')
+    const conn = getConnection(store, orgId, 'hubspot')
     if (!conn || conn.status !== 'connected') {
-      res.status(400).json({ error: 'Gmail not connected' })
+      res.status(400).json({ error: 'HubSpot not connected' })
       return
     }
-
+    const secrets = readSecrets(conn)
+    const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
     try {
-      let secrets = readSecrets(conn)
-      if (
-        secrets.accessToken !== 'demo-gmail-token' &&
-        secrets.expiresAt &&
-        secrets.expiresAt <= Date.now() + 5 * 60 * 1000
-      ) {
-        secrets = await refreshGmailAccessToken(config, secrets)
-        upsertConnection(store, {
-          orgId,
-          provider: 'gmail',
-          status: 'connected',
-          accountLabel: conn.accountLabel,
-          secrets,
-          meta: conn.meta
+      const prospects = await fetchHubSpotContacts(
+        secrets.accessToken,
+        limit ?? 100,
+        demo
+      )
+      const count = writeHubSpotContactsToProjects(store, orgId, prospects, projectId)
+      const connRow = store.db.connections.find((c) => c.id === conn.id)
+      if (connRow) {
+        store.update((db) => {
+          const c = db.connections.find((x) => x.id === conn.id)
+          if (c) {
+            c.lastSyncAt = Date.now()
+            c.updatedAt = Date.now()
+          }
         })
       }
-
-      const result = await sendGmailMessage({
-        accessToken: secrets.accessToken,
-        to,
-        subject: 'Jargon Gmail connection test',
-        body:
-          'Your Jargon Gmail connection is working.\n\nThis message was sent through the Gmail API from your connected account.',
-        demo: secrets.accessToken === 'demo-gmail-token' || !config.google.clientId
-      })
-      res.json(result)
+      if (projectId) {
+        res.json(bundleProject(store.db, projectId))
+        return
+      }
+      res.json({ count, source: 'hubspot' })
     } catch (err) {
-      res.status(502).json({ error: err instanceof Error ? err.message : 'Test send failed' })
+      res.status(502).json({ error: err instanceof Error ? err.message : 'HubSpot sync failed' })
     }
   })
 
   app.get('/voice/token', auth, (req, res) => {
-    ensureTwilioConnection(store, req.auth!.org.id, config)
     const identity = `user_${req.auth!.user.id}`
     const token = createTwilioVoiceToken(config, identity)
     res.json(token)
@@ -724,51 +686,23 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     let error: string | undefined
 
     if (finalStatus === 'sent' && messageChannel === 'email') {
-      const conn = getConnection(store, contact.orgId, 'gmail')
-      if (conn?.status === 'connected') {
-        try {
-          let secrets = readSecrets(conn)
-          if (
-            secrets.accessToken !== 'demo-gmail-token' &&
-            secrets.expiresAt &&
-            secrets.expiresAt <= Date.now() + 5 * 60 * 1000
-          ) {
-            secrets = await refreshGmailAccessToken(config, secrets)
-            upsertConnection(store, {
-              orgId: contact.orgId,
-              provider: 'gmail',
-              status: 'connected',
-              accountLabel: conn.accountLabel,
-              secrets,
-              meta: conn.meta
-            })
-          }
-          const result = await sendGmailMessage({
-            accessToken: secrets.accessToken,
-            to: contact.email,
-            subject: subject ?? '(no subject)',
-            body: body ?? '',
-            demo: secrets.accessToken === 'demo-gmail-token' || !config.google.clientId
-          })
-          mode = result.mode
-          providerMessageId = result.id
-        } catch (err) {
-          finalStatus = 'failed'
-          error = err instanceof Error ? err.message : 'Send failed'
-        }
-      } else if (config.google.clientId) {
+      try {
+        const result = await sendPlatformGmail(config, {
+          to: contact.email,
+          subject: subject ?? '(no subject)',
+          body: body ?? ''
+        })
+        mode = result.mode
+        providerMessageId = result.id
+      } catch (err) {
         finalStatus = 'failed'
-        error = 'Gmail not connected'
-      } else {
-        mode = 'demo'
-        providerMessageId = `demo_mail_${Date.now()}`
+        error = err instanceof Error ? err.message : 'Send failed'
       }
     }
 
     if (finalStatus === 'sent' && messageChannel === 'linkedin') {
-      const resolved = resolveHeyReachApiKey(store, contact.orgId, config)
-      const demo = !resolved || resolved.demo
-      const apiKey = resolved?.apiKey ?? 'demo'
+      const apiKey = config.heyreach.apiKey.trim() || 'demo'
+      const demo = !config.heyreach.apiKey.trim() || apiKey === 'demo'
       try {
         const result = await sendHeyReachLinkedInMessage({
           apiKey,
@@ -934,10 +868,6 @@ export async function startApiServer(
 ): Promise<{ server: Server; port: number; config: ServerConfig }> {
   const config = options?.config ?? loadConfig({ port: preferredPort })
   const host = options?.host ?? config.host
-  for (const org of store.db.orgs) {
-    ensureTwilioConnection(store, org.id, config)
-    ensureHeyReachConnection(store, org.id, config)
-  }
   const app = createApi(store, config)
 
   async function listen(port: number): Promise<{ server: Server; port: number }> {

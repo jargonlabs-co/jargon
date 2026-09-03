@@ -4,31 +4,10 @@ import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
 const SUGGESTED_PROMPTS = [
-  'Build a dialer for VP Sales in Austin',
-  'Create an outbound sequencer for SaaS founders',
-  'Today queue for mid-market accounts'
+  'Build a dialer for my AE book',
+  'Create an outbound sequencer',
+  'Today queue for my HubSpot contacts'
 ]
-
-const CONTEXT_PROVIDERS = [
-  {
-    id: 'gmail',
-    name: 'Gmail',
-    role: 'Email',
-    blurb: 'Send from sequencers and inbox.'
-  },
-  {
-    id: 'twilio',
-    name: 'Twilio',
-    role: 'Voice',
-    blurb: 'Call from the dial console.'
-  },
-  {
-    id: 'heyreach',
-    name: 'HeyReach',
-    role: 'LinkedIn',
-    blurb: 'Message prospects on LinkedIn.'
-  }
-] as const
 
 function statusLabel(conn: ConnectionPublic | undefined): string {
   if (!conn) return 'Not connected'
@@ -62,9 +41,7 @@ export function WebApp({
   const refresh = useCallback(async () => {
     if (preview) {
       setConnections([
-        { id: '1', provider: 'gmail', status: 'connected', accountLabel: 'demo@jargon.app' },
-        { id: '2', provider: 'twilio', status: 'disconnected' },
-        { id: '3', provider: 'heyreach', status: 'disconnected' }
+        { id: '1', provider: 'hubspot', status: 'connected', accountLabel: 'Acme HubSpot' }
       ])
       setBuilds([
         {
@@ -75,7 +52,7 @@ export function WebApp({
             prompt: 'Create an outbound sequencer',
             updatedAt: Date.now() - 86400000
           },
-          contactCount: 20
+          contactCount: 0
         }
       ])
       return
@@ -117,6 +94,24 @@ export function WebApp({
     }
   }
 
+  async function syncHubSpot() {
+    if (preview) {
+      setToast('Would reload HubSpot contacts')
+      return
+    }
+    setBusy('sync')
+    setError(null)
+    try {
+      const result = await api.syncHubSpot()
+      setToast(`Loaded ${result.count} contacts into your tools`)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function deploy(e: React.FormEvent) {
     e.preventDefault()
     if (!prompt.trim()) return
@@ -128,7 +123,7 @@ export function WebApp({
     setError(null)
     try {
       const result = await api.deploy(prompt.trim())
-      setToast(`Built "${result.project.name}" with ${result.contactCount} contacts`)
+      setToast(`Built "${result.project.name}" — connect HubSpot to fill the queue`)
       await refresh()
       onOpenTool?.(result.projectId)
     } catch (err) {
@@ -155,6 +150,9 @@ export function WebApp({
     }
   }
 
+  const hubspot = connections.find((c) => c.provider === 'hubspot')
+  const hubspotOk = hubspot?.status === 'connected'
+
   return (
     <div className="webapp">
       <header className="webapp-header">
@@ -174,42 +172,46 @@ export function WebApp({
       <main className="webapp-main">
         <section className="webapp-section">
           <div className="section-heading">
-            <p className="eyebrow">Connections</p>
-            <h1>Gmail, Twilio, HeyReach</h1>
+            <p className="eyebrow">Your data</p>
+            <h1>Connect HubSpot</h1>
             <p className="section-lede">
-              Tools you deploy from the CLI send email, place calls, and message LinkedIn through
-              these accounts.
+              Tools you deploy read this CRM. Email, calling, and LinkedIn are sent by Jargon — you
+              don’t connect those.
             </p>
           </div>
           <div className="context-grid">
-            {CONTEXT_PROVIDERS.map((provider) => {
-              const conn = connections.find((c) => c.provider === provider.id)
-              const connected = conn?.status === 'connected'
-              return (
-                <article key={provider.id} className="context-card">
-                  <div className="context-card-top">
-                    <span className="context-role">{provider.role}</span>
-                    <span className={`context-status ${connected ? 'ok' : ''}`}>
-                      {statusLabel(conn)}
-                    </span>
-                  </div>
-                  <h3>{provider.name}</h3>
-                  <p>{provider.blurb}</p>
-                  {!connected ? (
-                    <button
-                      type="button"
-                      className="btn primary btn-sm"
-                      disabled={busy === provider.id}
-                      onClick={() => void connect(provider.id)}
-                    >
-                      {busy === provider.id ? 'Connecting…' : 'Connect'}
-                    </button>
-                  ) : (
-                    <span className="context-connected">Ready</span>
-                  )}
-                </article>
-              )
-            })}
+            <article className="context-card">
+              <div className="context-card-top">
+                <span className="context-role">CRM</span>
+                <span className={`context-status ${hubspotOk ? 'ok' : ''}`}>
+                  {statusLabel(hubspot)}
+                </span>
+              </div>
+              <h3>HubSpot</h3>
+              <p>People in your portal become the queue in every tool.</p>
+              {!hubspotOk ? (
+                <button
+                  type="button"
+                  className="btn primary btn-sm"
+                  disabled={busy === 'hubspot'}
+                  onClick={() => void connect('hubspot')}
+                >
+                  {busy === 'hubspot' ? 'Connecting…' : 'Connect HubSpot'}
+                </button>
+              ) : (
+                <>
+                  <span className="context-connected">Ready</span>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm"
+                    disabled={busy === 'sync'}
+                    onClick={() => void syncHubSpot()}
+                  >
+                    {busy === 'sync' ? 'Syncing…' : 'Reload contacts'}
+                  </button>
+                </>
+              )}
+            </article>
           </div>
         </section>
 
@@ -218,8 +220,8 @@ export function WebApp({
             <p className="eyebrow">Create</p>
             <h1>Deploy a tool</h1>
             <p className="section-lede">
-              From the website or <code>jargon deploy</code> in your terminal. Open the UI here after
-              login — no share links.
+              From the website or <code>jargon deploy</code>. The UI is empty until HubSpot is
+              connected. Outbound always goes through Jargon.
             </p>
           </div>
           <form className="build-form" onSubmit={deploy}>

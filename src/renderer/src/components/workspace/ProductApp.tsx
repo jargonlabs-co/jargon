@@ -97,7 +97,7 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
       {page === 'today' ? (
         <TodayQueuePage
           bundle={bundle}
-          onRefresh={refresh}
+          onConnectData={() => setPage('connections')}
           onCall={async (id) => {
             setFocusContactId(id)
             await api.patchContact(id, { status: 'active' })
@@ -128,6 +128,7 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
         <ContactsPage
           bundle={bundle}
           onRefresh={refresh}
+          onConnectData={() => setPage('connections')}
           onCall={async (id) => {
             setFocusContactId(id)
             await api.patchContact(id, { status: 'active' })
@@ -157,8 +158,8 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
           <div className="prod-eyebrow">{page}</div>
           <h2>{page === 'settings' ? 'Settings' : 'Help'}</h2>
           <p>
-            Workspace for {bundle.project.segment}. Connect Gmail, Twilio, and HeyReach under
-            Connections.
+            Workspace for {bundle.project.segment}. Connect HubSpot under Connections. Email, calling,
+            and LinkedIn are sent by Jargon.
           </p>
           <button type="button" className="ghost-btn" onClick={() => setPage('connections')}>
             Open Connections

@@ -151,6 +151,33 @@ export async function sendGmailMessage(input: {
   return { id: json.id, mode: 'gmail' }
 }
 
+/** Send from Jargon's mailbox (env refresh token). Customers do not connect Gmail. */
+export async function sendPlatformGmail(
+  config: ServerConfig,
+  input: { to: string; subject: string; body: string }
+): Promise<{ id: string; mode: 'demo' | 'gmail' }> {
+  if (!config.google.refreshToken || !config.google.clientId) {
+    return sendGmailMessage({
+      accessToken: 'demo-gmail-token',
+      to: input.to,
+      subject: input.subject,
+      body: input.body,
+      demo: true
+    })
+  }
+  const secrets = await refreshGmailAccessToken(config, {
+    accessToken: 'pending',
+    refreshToken: config.google.refreshToken
+  })
+  return sendGmailMessage({
+    accessToken: secrets.accessToken,
+    to: input.to,
+    subject: input.subject,
+    body: input.body,
+    demo: false
+  })
+}
+
 export function finishGmailOAuthHtml(config: ServerConfig, ok: boolean, message: string): string {
   const next = `${config.appUrl}/`
   return `<!doctype html><html><body style="font-family:system-ui;padding:40px">

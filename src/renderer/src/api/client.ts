@@ -108,6 +108,11 @@ export const api = {
     }),
   voiceToken: () =>
     request<{ token: string; mode: 'demo' | 'twilio'; identity: string }>('/voice/token'),
+  syncHubSpot: (body: { projectId?: string; limit?: number } = {}) =>
+    request<ProjectBundle | { count: number; source: string }>('/connections/hubspot/sync', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (body: {

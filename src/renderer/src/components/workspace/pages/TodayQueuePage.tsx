@@ -3,10 +3,10 @@ import type { Contact, ProjectBundle } from '../../../api/client'
 
 interface Props {
   bundle: ProjectBundle
-  onRefresh: () => Promise<ProjectBundle>
   onCall: (contactId: string) => void
   onEmail: (contactId: string) => void
   onOpenSequence?: () => void
+  onConnectData?: () => void
 }
 
 function channelDone(c: Contact, channel: 'call' | 'email'): boolean {
@@ -31,7 +31,7 @@ function nextAction(c: Contact, steps: ProjectBundle['steps']): 'email' | 'call'
   return 'call'
 }
 
-export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence }: Props) {
+export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConnectData }: Props) {
   const [starting, setStarting] = useState(false)
 
   const sequence = bundle.sequences[0]
@@ -80,12 +80,27 @@ export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence }: Prop
       <header className="today-hero">
         <div>
           <p className="eyebrow">Daily tasks</p>
-          <h2>{started ? 'Continue today’s outreach' : 'Start today’s outreach'}</h2>
+          <h2>{contacts.length === 0 ? 'Connect HubSpot to fill this queue' : started ? 'Continue today’s outreach' : 'Start today’s outreach'}</h2>
           <p className="lede">
-            {remaining} of {contacts.length} prospects left in{' '}
-            <strong>{sequence?.name ?? 'your sequence'}</strong>. Work email and phone for each
-            contact before you close the day.
+            {contacts.length === 0 ? (
+              <>
+                This tool doesn’t supply leads. Load contacts from your HubSpot portal, then email,
+                call, and LinkedIn run through Jargon.
+              </>
+            ) : (
+              <>
+                {remaining} of {contacts.length} people left in{' '}
+                <strong>{sequence?.name ?? 'your sequence'}</strong>.
+              </>
+            )}
           </p>
+          {contacts.length === 0 && onConnectData ? (
+            <div className="today-primary-actions">
+              <button type="button" className="prod-btn primary" onClick={onConnectData}>
+                Connect HubSpot
+              </button>
+            </div>
+          ) : null}
           {steps.length > 0 ? (
             <ol className="today-seq-steps">
               {steps.map((s) => (

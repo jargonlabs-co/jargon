@@ -5,7 +5,8 @@
 | Visibility | Public product | Private |
 | Audience | Customers | Internal team |
 | Surfaces | CLI + website dashboard + tool UIs | Desktop + API |
-| Outbound | Gmail, Twilio, HeyReach | Crustdata queue + Gmail/Twilio |
+| Customer data | HubSpot (their portal) | Internal lists / Crustdata |
+| Outbound | Platform Gmail, Twilio, HeyReach | Crustdata queue + Gmail/Twilio |
 | Prospect search | Not in this product | Crustdata / Apollo / Supabase |
 | Billing | None | None |
 | Deploy | Product Railway + Vercel | Separate Railway |

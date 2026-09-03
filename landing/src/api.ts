@@ -115,6 +115,12 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body ?? {}) }
     )
   },
+  syncHubSpot() {
+    return request<{ count: number; source: string }>('/connections/hubspot/sync', {
+      method: 'POST',
+      body: JSON.stringify({})
+    })
+  },
   deploy(prompt: string) {
     return request<DeployResult>('/tools/deploy', {
       method: 'POST',

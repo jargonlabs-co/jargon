@@ -16,6 +16,13 @@ export interface ServerConfig {
     clientId: string
     clientSecret: string
     scopes: string
+    /** Platform mailbox refresh token — outbound is Jargon-owned, not the customer */
+    refreshToken: string
+  }
+  hubspot: {
+    clientId: string
+    clientSecret: string
+    scopes: string
   }
   twilio: {
     accountSid: string
@@ -79,7 +86,15 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
       scopes:
         process.env.GOOGLE_SCOPES ??
-        'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email'
+        'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
+      refreshToken: (process.env.GMAIL_REFRESH_TOKEN ?? process.env.GOOGLE_REFRESH_TOKEN ?? '').trim()
+    },
+    hubspot: {
+      clientId: process.env.HUBSPOT_CLIENT_ID ?? '',
+      clientSecret: process.env.HUBSPOT_CLIENT_SECRET ?? '',
+      scopes:
+        process.env.HUBSPOT_SCOPES ??
+        'crm.objects.contacts.read crm.objects.companies.read oauth'
     },
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',

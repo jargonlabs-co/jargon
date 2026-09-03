@@ -5,51 +5,25 @@ export type DeployParams = {
   answers: Record<string, string>
 }
 
-function extractProspectCount(prompt: string): string | undefined {
-  const m =
-    prompt.match(/(?:top\s+)?(\d+)\s+prospects?/i) ||
-    prompt.match(/find\s+(?:me\s+)?(\d+)/i)
-  return m?.[1]
-}
-
-function isProspectQueuePrompt(prompt: string): boolean {
-  return /today|\d+\s+prospects?|prospects?\s+to\s+contact|contact today|gtm|outbound queue/i.test(
-    prompt
-  )
-}
-
 /** Infer project kind + answers from a natural-language deploy prompt. */
 export function inferDeployParams(prompt: string): DeployParams {
-  const prospectCount = extractProspectCount(prompt)
-  if (isProspectQueuePrompt(prompt)) {
-    return {
-      kind: 'today',
-      answers: {
-        prospect_count: prospectCount ?? '20',
-        segment: 'Crustdata prospects',
-        team: 'RevOps',
-        goal: 'Contact today',
-        channels: 'Email + Call'
-      }
-    }
+  const base = {
+    segment: 'HubSpot contacts',
+    team: 'Sales',
+    data_source: 'unconfigured',
+    channels: 'Email + Call + LinkedIn'
   }
   if (/dialer|power.?dial/i.test(prompt)) {
-    return { kind: 'dialer', answers: { segment: 'General', team: 'RevOps', goal: 'Dial prospects' } }
+    return { kind: 'dialer', answers: { ...base, goal: 'Dial accounts' } }
   }
   if (/sequenc|email.?seq/i.test(prompt)) {
-    return {
-      kind: 'sequencer',
-      answers: { segment: 'General', team: 'RevOps', goal: 'Book a meeting', channels: 'Email + Call' }
-    }
+    return { kind: 'sequencer', answers: { ...base, goal: 'Book a meeting' } }
+  }
+  if (/cadence|multi.?channel|linkedin/i.test(prompt)) {
+    return { kind: 'cadence', answers: { ...base, goal: 'Run a cadence' } }
   }
   return {
     kind: 'today',
-    answers: {
-      prospect_count: prospectCount ?? '20',
-      segment: 'Crustdata prospects',
-      team: 'RevOps',
-      goal: 'Contact today',
-      channels: 'Email + Call'
-    }
+    answers: { ...base, goal: "Work today's queue" }
   }
 }

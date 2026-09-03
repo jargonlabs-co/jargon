@@ -1567,6 +1567,17 @@
   letter-spacing: -0.02em;
 }
 
+.prod-empty {
+  padding: 28px 8px 12px;
+  max-width: 36rem;
+}
+
+.prod-empty p {
+  color: var(--text-dim);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
 .prod-eyebrow {
   font-size: 11px;
   letter-spacing: 0.06em;

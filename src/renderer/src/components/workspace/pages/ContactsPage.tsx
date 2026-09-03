@@ -7,9 +7,10 @@ interface Props {
   onRefresh: () => Promise<ProjectBundle>
   onCall: (contactId: string) => void
   onEmail: (contactId: string) => void
+  onConnectData?: () => void
 }
 
-export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
+export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onConnectData }: Props) {
   const [selectedId, setSelectedId] = useState(
     bundle.contacts.find((c) => c.status === 'active')?.id ?? bundle.contacts[0]?.id ?? null
   )
@@ -33,7 +34,11 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
         <div className="prod-view-header">
           <div>
             <div className="prod-eyebrow">Contacts</div>
-            <h2>{bundle.project.segment} contacts</h2>
+            <h2>
+              {bundle.contacts.length === 0
+                ? 'No contacts yet'
+                : `${bundle.project.segment} contacts`}
+            </h2>
           </div>
           <div className="prod-search">
             <input
@@ -45,6 +50,19 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
           </div>
         </div>
 
+        {bundle.contacts.length === 0 ? (
+          <div className="prod-empty">
+            <p>
+              Connect HubSpot to load people from your portal. This tool does not generate a
+              prospect list.
+            </p>
+            {onConnectData ? (
+              <button type="button" className="prod-btn primary" onClick={onConnectData}>
+                Connect HubSpot
+              </button>
+            ) : null}
+          </div>
+        ) : (
         <div className="prod-table-wrap">
           <table className="prod-table">
             <thead>
@@ -78,6 +96,7 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail }: Props) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {selected ? (

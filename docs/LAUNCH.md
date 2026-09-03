@@ -4,7 +4,7 @@
 
 - **CLI** (`jargon deploy`): creates a tool on the hosted API
 - **Website** (`landing/`): marketing, login dashboard, authenticated tool UIs at `/tools/:id`
-- **API**: multi-tenant orgs, Gmail send, Twilio voice, HeyReach LinkedIn
+- **API**: multi-tenant orgs, HubSpot as customer data, platform Gmail / Twilio / HeyReach
 
 ## Local development
 
@@ -19,7 +19,8 @@ npm run jargon -- deploy "Build a dialer"
 
 ## Provider setup
 
-1. **Google Cloud** OAuth: redirect `https://api…/oauth/gmail/callback`, enable Gmail API. After connect, users return to `JARGON_APP_URL`.
-2. **Twilio**: Account SID, Auth Token, API Key, TwiML App Voice URL `https://api…/voice/twiml`, status `https://api…/voice/status`
-3. **HeyReach**: `HEYREACH_API_KEY` (optional; LinkedIn send uses demo mode without it)
-4. Set `JARGON_ENCRYPTION_KEY`, `JARGON_PUBLIC_URL`, and `JARGON_APP_URL` in production
+1. **HubSpot** (customer data): Jargon OAuth app. Redirect `https://api…/oauth/hubspot/callback`. Scopes: `crm.objects.contacts.read crm.objects.companies.read oauth`. Users connect **their** portal.
+2. **Gmail** (Jargon platform mailbox): `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` plus `GMAIL_REFRESH_TOKEN` for the sending inbox. Customers do not connect Gmail.
+3. **Twilio**: Account SID, Auth Token, API Key, TwiML App Voice URL `https://api…/voice/twiml`, status `https://api…/voice/status`
+4. **HeyReach**: `HEYREACH_API_KEY` (optional; LinkedIn send uses demo mode without it)
+5. Set `JARGON_ENCRYPTION_KEY`, `JARGON_PUBLIC_URL`, and `JARGON_APP_URL` in production

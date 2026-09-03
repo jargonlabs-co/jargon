@@ -11,7 +11,7 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
-export type ConnectionProvider = 'gmail' | 'twilio' | 'heyreach'
+export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface Org {
@@ -111,7 +111,7 @@ export interface Contact {
   stepIndex: number
   notes: string
   externalId?: string
-  source?: 'seed' | 'manual' | 'heyreach'
+  source?: 'seed' | 'manual' | 'hubspot' | 'heyreach'
   accountName?: string
   channelsDone?: Channel[]
   linkedinUrl?: string

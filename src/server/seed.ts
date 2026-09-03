@@ -130,11 +130,11 @@ export function seedProject(
           : `${label} for ${segment}, owned by ${team}.`,
     answers: {
       ...input.answers,
+      data_source: input.answers.data_source ?? 'unconfigured',
       ...(kind === 'today'
         ? {
             segment: todaySegment,
-            prospect_source: input.answers.prospect_source ?? 'seed',
-            channels: input.answers.channels ?? 'Phone call + Email'
+            channels: input.answers.channels ?? 'Phone call + Email + LinkedIn'
           }
         : {})
     },
@@ -146,15 +146,6 @@ export function seedProject(
 
   if (input.contacts?.length) {
     db.contacts.push(...input.contacts.map((c) => ({ ...c, projectId: project.id, orgId })))
-  } else if (kind === 'today') {
-    const count = Number(prospectCount)
-    db.contacts.push(
-      ...buildDemoGtmSoftwareContacts(orgId, project.id, Math.min(Math.max(count, 1), 100))
-    )
-  } else if (regionalAtlanta) {
-    db.contacts.push(...buildAtlantaMidMarketContacts(orgId, project.id, 12))
-  } else {
-    db.contacts.push(...buildContacts(orgId, project.id, 6, segment))
   }
 
   const contactCount = db.contacts.filter((c) => c.projectId === project.id).length
@@ -189,11 +180,9 @@ export function seedProject(
     projectId: project.id,
     kind: 'system',
     summary:
-      kind === 'today'
-        ? `Enrolled ${contactCount} GTM software prospects into outbound sequencer (email + call)`
-        : regionalAtlanta
-          ? `Loaded ${contactCount} contacts across ${ATLANTA_ACCOUNTS.length} assigned mid-market Atlanta accounts`
-          : `Created project ${project.name}`,
+      contactCount > 0
+        ? `Created ${project.name} with ${contactCount} contacts`
+        : `Created ${project.name}. Connect HubSpot to load your contacts.`,
     createdAt: now
   })
 

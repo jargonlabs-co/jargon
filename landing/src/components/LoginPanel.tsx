@@ -115,7 +115,7 @@ export function LoginPanel({ onClose }: Props) {
           </button>
         </form>
         <p className="login-hint">
-          Demo: <code>demo@jargon.app</code> / <code>jargon-demo</code>
+          Accounts use Supabase Auth. Demo: <code>demo@jargon.app</code> / <code>jargon-demo</code>
         </p>
       </div>
     </div>

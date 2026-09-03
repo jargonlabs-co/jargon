@@ -15,3 +15,4 @@ data
 *.dmg
 *.exe
 *.AppImage
+.supabase-local/

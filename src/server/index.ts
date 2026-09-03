@@ -9,10 +9,17 @@ import {
   authPayload,
   createSession,
   destroySession,
+  provisionLocalTenant,
   requireAuth,
   toPublicUser
 } from './auth'
 import { hashPassword, uid, verifyPassword } from './crypto'
+import {
+  ensureSupabaseUser,
+  signInWithPassword,
+  signUpWithPassword,
+  supabaseConfigured
+} from './providers/supabaseAuth'
 import {
   consumeOAuthState,
   getConnection,
@@ -46,7 +53,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
 
-  const auth = requireAuth(store)
+  const auth = requireAuth(store, config)
   const paramId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
   app.get('/health', (_req, res) => {
@@ -64,7 +71,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
           config.twilio.twimlAppSid
             ? 'live'
             : 'demo',
-        heyreach: config.heyreach.apiKey ? 'live' : 'unset'
+        heyreach: config.heyreach.apiKey ? 'live' : 'unset',
+        auth: supabaseConfigured(config) ? 'supabase' : 'local'
       },
       publicUrl: config.publicUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
@@ -73,8 +81,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
   })
 
-  // ——— Auth ———
-  app.post('/auth/register', (req, res) => {
+  // ——— Auth (Supabase-backed when configured) ———
+  app.post('/auth/register', async (req, res) => {
     const { email, password, name, orgName } = req.body as {
       email?: string
       password?: string
@@ -86,6 +94,31 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       return
     }
     const normalized = email.trim().toLowerCase()
+
+    if (supabaseConfigured(config)) {
+      try {
+        if (store.db.users.some((u) => u.email === normalized)) {
+          res.status(409).json({ error: 'Email already registered' })
+          return
+        }
+        const { accessToken, supabaseUser } = await signUpWithPassword(config, {
+          email: normalized,
+          password,
+          name: name?.trim()
+        })
+        const { user, org } = provisionLocalTenant(store, {
+          email: normalized,
+          name: name?.trim(),
+          orgName: orgName?.trim(),
+          supabaseUserId: supabaseUser.id
+        })
+        res.status(201).json(authPayload(store, accessToken, user, org))
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : 'Register failed' })
+      }
+      return
+    }
+
     if (store.db.users.some((u) => u.email === normalized)) {
       res.status(409).json({ error: 'Email already registered' })
       return
@@ -125,14 +158,70 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.status(201).json(authPayload(store, token, user, org))
   })
 
-  app.post('/auth/login', (req, res) => {
+  app.post('/auth/login', async (req, res) => {
     const { email, password } = req.body as { email?: string; password?: string }
     if (!email || !password) {
       res.status(400).json({ error: 'email and password required' })
       return
     }
-    const user = store.db.users.find((u) => u.email === email.trim().toLowerCase())
-    if (!user || !verifyPassword(password, user.passwordHash, user.passwordSalt)) {
+    const normalized = email.trim().toLowerCase()
+
+    if (supabaseConfigured(config)) {
+      try {
+        let accessToken: string
+        let supabaseUserId: string
+        try {
+          const signed = await signInWithPassword(config, { email: normalized, password })
+          accessToken = signed.accessToken
+          supabaseUserId = signed.supabaseUser.id
+        } catch {
+          // Legacy local-password users: migrate into Supabase on successful verify.
+          const legacy = store.db.users.find((u) => u.email === normalized)
+          if (
+            !legacy?.passwordHash ||
+            !legacy.passwordSalt ||
+            !verifyPassword(password, legacy.passwordHash, legacy.passwordSalt)
+          ) {
+            res.status(401).json({ error: 'Invalid credentials' })
+            return
+          }
+          await ensureSupabaseUser(config, {
+            email: normalized,
+            password,
+            name: legacy.name
+          })
+          const signed = await signInWithPassword(config, { email: normalized, password })
+          accessToken = signed.accessToken
+          supabaseUserId = signed.supabaseUser.id
+          store.update((db) => {
+            const row = db.users.find((u) => u.id === legacy.id)
+            if (row) {
+              row.supabaseUserId = supabaseUserId
+              row.passwordHash = undefined
+              row.passwordSalt = undefined
+              row.updatedAt = Date.now()
+            }
+          })
+        }
+
+        const { user, org } = provisionLocalTenant(store, {
+          email: normalized,
+          supabaseUserId
+        })
+        res.json(authPayload(store, accessToken, user, org))
+      } catch (err) {
+        res.status(401).json({ error: err instanceof Error ? err.message : 'Invalid credentials' })
+      }
+      return
+    }
+
+    const user = store.db.users.find((u) => u.email === normalized)
+    if (
+      !user ||
+      !user.passwordHash ||
+      !user.passwordSalt ||
+      !verifyPassword(password, user.passwordHash, user.passwordSalt)
+    ) {
       res.status(401).json({ error: 'Invalid credentials' })
       return
     }

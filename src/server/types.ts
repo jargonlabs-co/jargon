@@ -18,8 +18,11 @@ export interface User {
   id: string
   email: string
   name: string
-  passwordHash: string
-  passwordSalt: string
+  /** Present for legacy local-password users until migrated to Supabase Auth */
+  passwordHash?: string
+  passwordSalt?: string
+  /** Supabase Auth user id when login is backed by Supabase */
+  supabaseUserId?: string
   createdAt: number
   updatedAt: number
 }

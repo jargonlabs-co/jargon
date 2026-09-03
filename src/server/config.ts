@@ -35,6 +35,11 @@ export interface ServerConfig {
   heyreach: {
     apiKey: string
   }
+  supabase: {
+    url: string
+    anonKey: string
+    serviceRoleKey: string
+  }
 }
 
 let envFilesLoaded = false
@@ -106,6 +111,11 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     },
     heyreach: {
       apiKey: (process.env.HEYREACH_API_KEY ?? '').trim()
+    },
+    supabase: {
+      url: (process.env.SUPABASE_URL ?? '').trim().replace(/\/$/, ''),
+      anonKey: (process.env.SUPABASE_ANON_KEY ?? '').trim(),
+      serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
     },
     ...overrides
   }

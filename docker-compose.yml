@@ -23,6 +23,9 @@ services:
       TWILIO_TWIML_APP_SID: ${TWILIO_TWIML_APP_SID:-}
       TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
       HEYREACH_API_KEY: ${HEYREACH_API_KEY:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
     volumes:
       - jargon-data:/data
     restart: unless-stopped

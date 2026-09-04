@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { clearConfig, defaultApiUrl, loadConfig, requireConfig, saveConfig } from './config.js'
 import {
+  connectPostgres,
   createApiKey,
   deployTool,
   health,
+  listConnections,
   listProjects,
-  loginWithPassword
+  loginWithPassword,
+  syncPostgres
 } from './api.js'
 
 const args = process.argv.slice(2)
@@ -100,6 +103,63 @@ async function cmdList() {
   }
 }
 
+async function cmdConnect() {
+  const provider = args[1]
+  if (provider !== 'postgres') {
+    console.error('Usage: jargon connect postgres --database-url URL [--table jargon_prospects]')
+    process.exit(1)
+  }
+  const cfg = requireConfig()
+  const databaseUrl = opt('--database-url') || opt('--url')
+  const table = opt('--table') || 'jargon_prospects'
+  if (!databaseUrl) {
+    console.error('Usage: jargon connect postgres --database-url URL [--table jargon_prospects]')
+    process.exit(1)
+  }
+  const result = await connectPostgres(cfg, { databaseUrl, table })
+  if (flag('--json')) {
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+  console.log(`Connected Postgres prospects`)
+  console.log(`  ${result.connection.accountLabel ?? result.table}`)
+  console.log(`  Rows: ${result.rowCount}`)
+  console.log(`  Table: ${result.table}`)
+}
+
+async function cmdConnections() {
+  const cfg = requireConfig()
+  const list = await listConnections(cfg)
+  if (flag('--json')) {
+    console.log(JSON.stringify(list, null, 2))
+    return
+  }
+  if (!list.length) {
+    console.log('No data connections. Connect HubSpot or:')
+    console.log('  jargon connect postgres --database-url URL --table jargon_prospects')
+    return
+  }
+  for (const c of list) {
+    const rows = c.meta?.rowCount ? ` · ${c.meta.rowCount} rows` : ''
+    const label = c.accountLabel || c.meta?.table || ''
+    console.log(`${c.provider.padEnd(10)} ${c.status.padEnd(12)} ${label}${rows}`)
+  }
+}
+
+async function cmdSync() {
+  const provider = args[1] || 'postgres'
+  if (provider !== 'postgres') {
+    console.error('Usage: jargon sync postgres [--limit 50]')
+    process.exit(1)
+  }
+  const cfg = requireConfig()
+  const limit = opt('--limit') ? Number(opt('--limit')) : undefined
+  const result = await syncPostgres(cfg, { limit })
+  console.log(
+    `Synced ${result.count} contacts from ${result.source}${result.table ? ` (${result.table})` : ''}`
+  )
+}
+
 async function cmdApiKeysCreate() {
   const cfg = requireConfig()
   const name = opt('--name') || 'CLI'
@@ -131,6 +191,9 @@ function help() {
 Usage:
   jargon login --email you@co.com --password secret [--api-url URL]
   jargon login --api-key jarg_...
+  jargon connect postgres --database-url URL [--table jargon_prospects]
+  jargon connections
+  jargon sync postgres [--limit 50]
   jargon deploy "Build a dialer for VP Sales" [--json]
   jargon list [--json]
   jargon api-keys create --name "Claude Code"
@@ -148,6 +211,15 @@ async function main() {
     switch (command) {
       case 'login':
         await cmdLogin()
+        break
+      case 'connect':
+        await cmdConnect()
+        break
+      case 'connections':
+        await cmdConnections()
+        break
+      case 'sync':
+        await cmdSync()
         break
       case 'deploy':
         await cmdDeploy()

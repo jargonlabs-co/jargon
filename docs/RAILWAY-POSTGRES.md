@@ -45,10 +45,14 @@ On boot the API creates table `jargon_state` automatically. Check `/health`:
 
 ## Create your account
 
+Accounts use **Supabase Auth** (not Railway). Railway Postgres only stores app state
+(orgs, tools, connections) after a successful Supabase login.
+
 **Option A — Landing / portal**
 
 1. Open your site → **Log in** → **Create account**
 2. Use your real email + password (6+ chars)
+3. Confirm the user appears under Supabase → **Authentication → Users**
 
 **Option B — CLI**
 
@@ -61,20 +65,12 @@ curl -X POST "$JARGON_API_URL/auth/register" \
   -d '{"email":"you@company.com","password":"your-password","orgName":"Acme"}'
 ```
 
-Accounts persist across deploys once Postgres is wired.
+Requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` on the API service.
 
 ## Demo tenant
 
-First boot still seeds `demo@jargon.app` / `jargon-demo` if the database is empty. Your real account is separate — register with your email.
-
-To skip demo seed in production:
-
-```bash
-JARGON_DISABLE_DEMO_BOOTSTRAP=1
-```
-
-(Not implemented yet — demo coexists with real users today.)
-
+On boot the API ensures `demo@jargon.app` / `jargon-demo` exists in **Supabase Auth**
+and links a workspace row in app state. Passwords are not stored in Railway.
 ## Local dev with Postgres
 
 ```bash

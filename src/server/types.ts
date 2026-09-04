@@ -11,17 +11,17 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
-export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach'
+export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface User {
   id: string
   email: string
   name: string
-  /** Present for legacy local-password users until migrated to Supabase Auth */
+  /** Present only for legacy rows; login never uses Railway passwords. */
   passwordHash?: string
   passwordSalt?: string
-  /** Supabase Auth user id when login is backed by Supabase */
+  /** Supabase Auth user id — required for product login */
   supabaseUserId?: string
   createdAt: number
   updatedAt: number
@@ -165,7 +165,7 @@ export interface Contact {
   stepIndex: number
   notes: string
   externalId?: string
-  source?: 'seed' | 'manual' | 'hubspot' | 'heyreach'
+  source?: 'seed' | 'manual' | 'hubspot' | 'heyreach' | 'postgres'
   accountName?: string
   channelsDone?: Channel[]
   linkedinUrl?: string

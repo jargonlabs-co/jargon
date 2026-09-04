@@ -7,15 +7,13 @@ import type { ContactStatus, MessageStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
 import {
   authPayload,
-  createSession,
   destroySession,
-  provisionLocalTenant,
+  provisionWorkspace,
   requireAuth,
   toPublicUser
 } from './auth'
-import { hashPassword, uid, verifyPassword } from './crypto'
+import { uid } from './crypto'
 import {
-  ensureSupabaseUser,
   signInWithPassword,
   signUpWithPassword,
   supabaseConfigured
@@ -42,6 +40,14 @@ import {
   hubspotAuthUrl,
   writeHubSpotContactsToProjects
 } from './providers/hubspot'
+import {
+  DEFAULT_PROSPECTS_TABLE,
+  fetchPostgresProspects,
+  postgresAccountLabel,
+  readPostgresSecrets,
+  validatePostgresProspects,
+  writePostgresContactsToProjects
+} from './providers/postgresProspects'
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
@@ -72,7 +78,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
             ? 'live'
             : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
-        auth: supabaseConfigured(config) ? 'supabase' : 'local'
+        auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured'
       },
       publicUrl: config.publicUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
@@ -81,8 +87,14 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
   })
 
-  // ——— Auth (Supabase-backed when configured) ———
+  // ——— Auth: Supabase Auth only (passwords never stored on Railway) ———
   app.post('/auth/register', async (req, res) => {
+    if (!supabaseConfigured(config)) {
+      res.status(503).json({
+        error: 'Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.'
+      })
+      return
+    }
     const { email, password, name, orgName } = req.body as {
       email?: string
       password?: string
@@ -95,70 +107,36 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     }
     const normalized = email.trim().toLowerCase()
 
-    if (supabaseConfigured(config)) {
-      try {
-        if (store.db.users.some((u) => u.email === normalized)) {
-          res.status(409).json({ error: 'Email already registered' })
-          return
-        }
-        const { accessToken, supabaseUser } = await signUpWithPassword(config, {
-          email: normalized,
-          password,
-          name: name?.trim()
-        })
-        const { user, org } = provisionLocalTenant(store, {
-          email: normalized,
-          name: name?.trim(),
-          orgName: orgName?.trim(),
-          supabaseUserId: supabaseUser.id
-        })
-        res.status(201).json(authPayload(store, accessToken, user, org))
-      } catch (err) {
-        res.status(400).json({ error: err instanceof Error ? err.message : 'Register failed' })
-      }
-      return
-    }
-
-    if (store.db.users.some((u) => u.email === normalized)) {
-      res.status(409).json({ error: 'Email already registered' })
-      return
-    }
-    const now = Date.now()
-    const { hash, salt } = hashPassword(password)
-    const userId = uid('user')
-    const orgId = uid('org')
-    store.update((db) => {
-      db.users.push({
-        id: userId,
+    try {
+      const { accessToken, supabaseUser } = await signUpWithPassword(config, {
         email: normalized,
-        name: name?.trim() || normalized.split('@')[0],
-        passwordHash: hash,
-        passwordSalt: salt,
-        createdAt: now,
-        updatedAt: now
+        password,
+        name: name?.trim()
       })
-      db.orgs.push({
-        id: orgId,
-        name: orgName?.trim() || `${name || 'My'} Workspace`,
-        slug: `${normalized.split('@')[0]}-${orgId.slice(-6)}`,
-        createdAt: now,
-        updatedAt: now
+      const { user, org } = provisionWorkspace(store, {
+        email: normalized,
+        name: name?.trim(),
+        orgName: orgName?.trim(),
+        supabaseUserId: supabaseUser.id
       })
-      db.memberships.push({
-        id: uid('mem'),
-        orgId,
-        userId,
-        role: 'owner',
-        createdAt: now
-      })
-    })
-    const user = store.db.users.find((u) => u.id === userId)!
-    const org = store.db.orgs.find((o) => o.id === orgId)!
-    const { token } = createSession(store, userId, orgId)
-    res.status(201).json(authPayload(store, token, user, org))
+      res.status(201).json(authPayload(store, accessToken, user, org))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Register failed'
+      if (/already registered|sign in instead/i.test(message)) {
+        res.status(409).json({ error: message })
+        return
+      }
+      res.status(400).json({ error: message })
+    }
   })
 
   app.post('/auth/login', async (req, res) => {
+    if (!supabaseConfigured(config)) {
+      res.status(503).json({
+        error: 'Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.'
+      })
+      return
+    }
     const { email, password } = req.body as { email?: string; password?: string }
     if (!email || !password) {
       res.status(400).json({ error: 'email and password required' })
@@ -166,73 +144,16 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     }
     const normalized = email.trim().toLowerCase()
 
-    if (supabaseConfigured(config)) {
-      try {
-        let accessToken: string
-        let supabaseUserId: string
-        try {
-          const signed = await signInWithPassword(config, { email: normalized, password })
-          accessToken = signed.accessToken
-          supabaseUserId = signed.supabaseUser.id
-        } catch {
-          // Legacy local-password users: migrate into Supabase on successful verify.
-          const legacy = store.db.users.find((u) => u.email === normalized)
-          if (
-            !legacy?.passwordHash ||
-            !legacy.passwordSalt ||
-            !verifyPassword(password, legacy.passwordHash, legacy.passwordSalt)
-          ) {
-            res.status(401).json({ error: 'Invalid credentials' })
-            return
-          }
-          await ensureSupabaseUser(config, {
-            email: normalized,
-            password,
-            name: legacy.name
-          })
-          const signed = await signInWithPassword(config, { email: normalized, password })
-          accessToken = signed.accessToken
-          supabaseUserId = signed.supabaseUser.id
-          store.update((db) => {
-            const row = db.users.find((u) => u.id === legacy.id)
-            if (row) {
-              row.supabaseUserId = supabaseUserId
-              row.passwordHash = undefined
-              row.passwordSalt = undefined
-              row.updatedAt = Date.now()
-            }
-          })
-        }
-
-        const { user, org } = provisionLocalTenant(store, {
-          email: normalized,
-          supabaseUserId
-        })
-        res.json(authPayload(store, accessToken, user, org))
-      } catch (err) {
-        res.status(401).json({ error: err instanceof Error ? err.message : 'Invalid credentials' })
-      }
-      return
+    try {
+      const signed = await signInWithPassword(config, { email: normalized, password })
+      const { user, org } = provisionWorkspace(store, {
+        email: normalized,
+        supabaseUserId: signed.supabaseUser.id
+      })
+      res.json(authPayload(store, signed.accessToken, user, org))
+    } catch (err) {
+      res.status(401).json({ error: err instanceof Error ? err.message : 'Invalid credentials' })
     }
-
-    const user = store.db.users.find((u) => u.email === normalized)
-    if (
-      !user ||
-      !user.passwordHash ||
-      !user.passwordSalt ||
-      !verifyPassword(password, user.passwordHash, user.passwordSalt)
-    ) {
-      res.status(401).json({ error: 'Invalid credentials' })
-      return
-    }
-    const membership = store.db.memberships.find((m) => m.userId === user.id)
-    const org = membership && store.db.orgs.find((o) => o.id === membership.orgId)
-    if (!org) {
-      res.status(500).json({ error: 'No organization for user' })
-      return
-    }
-    const { token } = createSession(store, user.id, org.id)
-    res.json(authPayload(store, token, user, org))
   })
 
   app.post('/auth/logout', auth, (req, res) => {
@@ -311,21 +232,123 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   // ——— Data layer (customer) ———
   app.get('/connections', auth, (req, res) => {
     const list = store.db.connections
-      .filter((c) => c.orgId === req.auth!.org.id && c.provider === 'hubspot')
+      .filter(
+        (c) =>
+          c.orgId === req.auth!.org.id &&
+          (c.provider === 'hubspot' || c.provider === 'postgres')
+      )
       .map(toPublicConnection)
     res.json(list)
   })
 
+  app.post('/connections/postgres/start', auth, async (req, res) => {
+    const body = (req.body ?? {}) as {
+      databaseUrl?: string
+      table?: string
+      columnMap?: Record<string, string>
+    }
+    const databaseUrl = body.databaseUrl?.trim() || ''
+    const table = (body.table?.trim() || DEFAULT_PROSPECTS_TABLE).replace(/[^a-zA-Z0-9_]/g, '')
+    const validated = await validatePostgresProspects(databaseUrl, table)
+    if (!validated.ok) {
+      res.status(400).json({ error: validated.error })
+      return
+    }
+    const orgId = req.auth!.org.id
+    const extra: Record<string, string> = { databaseUrl, table }
+    if (body.columnMap && Object.keys(body.columnMap).length > 0) {
+      extra.columnMap = JSON.stringify(body.columnMap)
+    }
+    const connection = upsertConnection(store, {
+      orgId,
+      provider: 'postgres',
+      status: 'connected',
+      accountLabel: validated.label || postgresAccountLabel(databaseUrl, table),
+      secrets: {
+        accessToken: databaseUrl,
+        extra
+      },
+      meta: {
+        table,
+        rowCount: String(validated.rowCount),
+        mode: 'live'
+      }
+    })
+    res.json({
+      connection: toPublicConnection(connection),
+      rowCount: validated.rowCount,
+      table
+    })
+  })
+
+  app.post('/connections/postgres/sync', auth, async (req, res) => {
+    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
+    const orgId = req.auth!.org.id
+    const conn = getConnection(store, orgId, 'postgres')
+    if (!conn || conn.status !== 'connected') {
+      res.status(400).json({ error: 'Postgres prospects database not connected' })
+      return
+    }
+    const secrets = readSecrets(conn)
+    const { databaseUrl, table } = readPostgresSecrets(secrets)
+    if (!databaseUrl) {
+      res.status(400).json({ error: 'Postgres connection missing databaseUrl' })
+      return
+    }
+    try {
+      let columnMap: Record<string, string> | undefined
+      if (secrets.extra?.columnMap) {
+        try {
+          columnMap = JSON.parse(secrets.extra.columnMap) as Record<string, string>
+        } catch {
+          columnMap = undefined
+        }
+      }
+      const prospects = await fetchPostgresProspects({
+        databaseUrl,
+        table,
+        limit: limit ?? 100,
+        columnMap
+      })
+      const count = writePostgresContactsToProjects(store, orgId, prospects, projectId, {
+        table
+      })
+      store.update((db) => {
+        const c = db.connections.find((x) => x.id === conn.id)
+        if (c) {
+          c.lastSyncAt = Date.now()
+          c.updatedAt = Date.now()
+          c.meta = { ...c.meta, rowCount: String(prospects.length), table }
+        }
+      })
+      if (projectId) {
+        res.json(bundleProject(store.db, projectId))
+        return
+      }
+      res.json({ count, source: 'postgres', table })
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Postgres sync failed'
+      })
+    }
+  })
+
   app.post('/connections/:provider/start', auth, async (req, res) => {
     const provider = paramId(req.params.provider)
+    if (provider === 'postgres') {
+      res.status(400).json({
+        error: 'Use POST /connections/postgres/start with { databaseUrl, table }'
+      })
+      return
+    }
     if (provider === 'gmail' || provider === 'twilio' || provider === 'heyreach') {
       res.status(400).json({
-        error: 'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot for your data.'
+        error: 'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot or Postgres for your data.'
       })
       return
     }
     if (provider !== 'hubspot') {
-      res.status(400).json({ error: 'Unknown data source. Connect HubSpot.' })
+      res.status(400).json({ error: 'Unknown data source. Connect HubSpot or Postgres.' })
       return
     }
     const { org, user } = req.auth!

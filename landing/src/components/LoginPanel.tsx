@@ -35,7 +35,13 @@ export function LoginPanel({ onClose }: Props) {
       await refresh()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Auth failed')
+      const message = err instanceof Error ? err.message : 'Auth failed'
+      if (/already registered/i.test(message) && mode === 'register') {
+        setError('That email is already registered — switch to Sign in.')
+        setMode('login')
+      } else {
+        setError(message)
+      }
     } finally {
       setBusy(false)
     }
@@ -115,7 +121,8 @@ export function LoginPanel({ onClose }: Props) {
           </button>
         </form>
         <p className="login-hint">
-          Accounts use Supabase Auth. Demo: <code>demo@jargon.app</code> / <code>jargon-demo</code>
+          Already have an account? Use <strong>Sign in</strong>. Demo:{' '}
+          <code>demo@jargon.app</code> / <code>jargon-demo</code>
         </p>
       </div>
     </div>

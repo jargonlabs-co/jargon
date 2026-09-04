@@ -37,11 +37,20 @@ export function WebApp({
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastKey, setLastKey] = useState<string | null>(null)
+  const [pgUrl, setPgUrl] = useState('')
+  const [pgTable, setPgTable] = useState('jargon_prospects')
 
   const refresh = useCallback(async () => {
     if (preview) {
       setConnections([
-        { id: '1', provider: 'hubspot', status: 'connected', accountLabel: 'Acme HubSpot' }
+        { id: '1', provider: 'hubspot', status: 'connected', accountLabel: 'Acme HubSpot' },
+        {
+          id: '2',
+          provider: 'postgres',
+          status: 'connected',
+          accountLabel: 'db.example.com/jargon_prospects',
+          meta: { rowCount: '50', table: 'jargon_prospects' }
+        }
       ])
       setBuilds([
         {
@@ -112,6 +121,46 @@ export function WebApp({
     }
   }
 
+  async function connectPostgres() {
+    if (preview) {
+      setToast('Would connect Postgres prospects table')
+      return
+    }
+    setBusy('postgres')
+    setError(null)
+    try {
+      const result = await api.connectPostgres({
+        databaseUrl: pgUrl.trim(),
+        table: pgTable.trim() || 'jargon_prospects'
+      })
+      setToast(`Connected Postgres · ${result.rowCount} rows`)
+      setPgUrl('')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Postgres connect failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function syncPostgres() {
+    if (preview) {
+      setToast('Would reload Postgres prospects')
+      return
+    }
+    setBusy('sync-pg')
+    setError(null)
+    try {
+      const result = await api.syncPostgres()
+      setToast(`Loaded ${result.count} contacts from Postgres`)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function deploy(e: React.FormEvent) {
     e.preventDefault()
     if (!prompt.trim()) return
@@ -123,7 +172,7 @@ export function WebApp({
     setError(null)
     try {
       const result = await api.deploy(prompt.trim())
-      setToast(`Built "${result.project.name}" — connect HubSpot to fill the queue`)
+      setToast(`Built "${result.project.name}" · ${result.contactCount} contacts`)
       await refresh()
       onOpenTool?.(result.projectId)
     } catch (err) {
@@ -152,6 +201,8 @@ export function WebApp({
 
   const hubspot = connections.find((c) => c.provider === 'hubspot')
   const hubspotOk = hubspot?.status === 'connected'
+  const postgres = connections.find((c) => c.provider === 'postgres')
+  const postgresOk = postgres?.status === 'connected'
 
   return (
     <div className="webapp">
@@ -173,10 +224,10 @@ export function WebApp({
         <section className="webapp-section">
           <div className="section-heading">
             <p className="eyebrow">Your data</p>
-            <h1>Connect HubSpot</h1>
+            <h1>Connect your sources</h1>
             <p className="section-lede">
-              Tools you deploy read this CRM. Email, calling, and LinkedIn are sent by Jargon — you
-              don’t connect those.
+              Tools load people from HubSpot or a Postgres prospects table. Email, calling, and
+              LinkedIn are sent by Jargon — you don’t connect those.
             </p>
           </div>
           <div className="context-grid">
@@ -211,6 +262,64 @@ export function WebApp({
                   </button>
                 </>
               )}
+            </article>
+
+            <article className="context-card">
+              <div className="context-card-top">
+                <span className="context-role">Warehouse</span>
+                <span className={`context-status ${postgresOk ? 'ok' : ''}`}>
+                  {statusLabel(postgres)}
+                </span>
+              </div>
+              <h3>Prospects database</h3>
+              <p>Postgres table of prospects (Neon, Supabase, Railway). Used first when connected.</p>
+              {postgresOk ? (
+                <>
+                  <span className="context-connected">
+                    Ready
+                    {postgres?.meta?.rowCount ? ` · ${postgres.meta.rowCount} rows` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm"
+                    disabled={busy === 'sync-pg'}
+                    onClick={() => void syncPostgres()}
+                  >
+                    {busy === 'sync-pg' ? 'Syncing…' : 'Reload contacts'}
+                  </button>
+                </>
+              ) : null}
+              <label className="context-field">
+                Connection string
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder="postgresql://…"
+                  value={pgUrl}
+                  onChange={(e) => setPgUrl(e.target.value)}
+                />
+              </label>
+              <label className="context-field">
+                Table
+                <input
+                  type="text"
+                  value={pgTable}
+                  onChange={(e) => setPgTable(e.target.value)}
+                  placeholder="jargon_prospects"
+                />
+              </label>
+              <button
+                type="button"
+                className="btn primary btn-sm"
+                disabled={busy === 'postgres' || !pgUrl.trim()}
+                onClick={() => void connectPostgres()}
+              >
+                {busy === 'postgres'
+                  ? 'Connecting…'
+                  : postgresOk
+                    ? 'Reconnect'
+                    : 'Connect Postgres'}
+              </button>
             </article>
           </div>
         </section>

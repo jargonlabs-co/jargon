@@ -6,10 +6,12 @@ export function ConnectionsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [databaseUrl, setDatabaseUrl] = useState('')
+  const [table, setTable] = useState('jargon_prospects')
 
   const refresh = useCallback(async () => {
     const list = await api.listConnections()
-    setItems(list.filter((c) => c.provider === 'hubspot'))
+    setItems(list.filter((c) => c.provider === 'hubspot' || c.provider === 'postgres'))
   }, [])
 
   useEffect(() => {
@@ -39,8 +41,26 @@ export function ConnectionsPage() {
     }
   }
 
-  async function sync() {
-    setBusy('sync')
+  async function connectPostgres() {
+    setBusy('postgres')
+    setError(null)
+    try {
+      const result = await api.connectPostgres({
+        databaseUrl: databaseUrl.trim(),
+        table: table.trim() || 'jargon_prospects'
+      })
+      setToast(`Connected · ${result.rowCount} rows`)
+      setDatabaseUrl('')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Postgres connect failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function syncHubSpot() {
+    setBusy('sync-hubspot')
     setError(null)
     try {
       await api.syncHubSpot()
@@ -53,16 +73,32 @@ export function ConnectionsPage() {
     }
   }
 
+  async function syncPostgres() {
+    setBusy('sync-postgres')
+    setError(null)
+    try {
+      const result = await api.syncPostgres()
+      const count = 'count' in result ? result.count : 0
+      setToast(`Contacts refreshed from Postgres · ${count}`)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const hubspot = items.find((c) => c.provider === 'hubspot')
+  const postgres = items.find((c) => c.provider === 'postgres')
 
   return (
     <div className="connections-page studio-context-page">
       <header>
         <p className="ide-eyebrow">Your data</p>
-        <h2>HubSpot</h2>
+        <h2>Data sources</h2>
         <p>
-          Tools load people from your HubSpot portal. Email, calling, and LinkedIn are sent by
-          Jargon — you don’t connect those.
+          Tools load people from HubSpot or a Postgres prospects table. Email, calling, and LinkedIn
+          are sent by Jargon — you don’t connect those.
         </p>
       </header>
       {error ? <p className="auth-error">{error}</p> : null}
@@ -87,8 +123,71 @@ export function ConnectionsPage() {
                 : 'Connect HubSpot'}
           </button>
           {hubspot?.status === 'connected' ? (
-            <button type="button" onClick={() => void sync()} disabled={busy === 'sync'}>
-              {busy === 'sync' ? 'Syncing…' : 'Reload contacts'}
+            <button
+              type="button"
+              onClick={() => void syncHubSpot()}
+              disabled={busy === 'sync-hubspot'}
+            >
+              {busy === 'sync-hubspot' ? 'Syncing…' : 'Reload contacts'}
+            </button>
+          ) : null}
+        </article>
+
+        <article className="connection-card">
+          <p className="connection-role">Warehouse</p>
+          <h3>Prospects database</h3>
+          <p>
+            Connect any Postgres table of prospects (Neon, Supabase, Railway). Prefer a read-only
+            role. Used first on deploy when connected.
+          </p>
+          <p className="connection-status">
+            {postgres?.status === 'connected' ? (
+              <>
+                Connected
+                {postgres.accountLabel ? ` · ${postgres.accountLabel}` : ''}
+                {postgres.meta?.rowCount ? ` · ${postgres.meta.rowCount} rows` : ''}
+              </>
+            ) : (
+              'Not connected'
+            )}
+          </p>
+          <label>
+            Connection string
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="postgresql://user:pass@host:5432/db"
+              value={databaseUrl}
+              onChange={(e) => setDatabaseUrl(e.target.value)}
+            />
+          </label>
+          <label>
+            Table
+            <input
+              type="text"
+              value={table}
+              onChange={(e) => setTable(e.target.value)}
+              placeholder="jargon_prospects"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void connectPostgres()}
+            disabled={busy === 'postgres' || !databaseUrl.trim()}
+          >
+            {busy === 'postgres'
+              ? 'Connecting…'
+              : postgres?.status === 'connected'
+                ? 'Reconnect'
+                : 'Connect Postgres'}
+          </button>
+          {postgres?.status === 'connected' ? (
+            <button
+              type="button"
+              onClick={() => void syncPostgres()}
+              disabled={busy === 'sync-postgres'}
+            >
+              {busy === 'sync-postgres' ? 'Syncing…' : 'Reload contacts'}
             </button>
           ) : null}
         </article>

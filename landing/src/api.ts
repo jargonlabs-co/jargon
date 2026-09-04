@@ -121,6 +121,18 @@ export const api = {
       body: JSON.stringify({})
     })
   },
+  connectPostgres(body: { databaseUrl: string; table?: string }) {
+    return request<{ connection: ConnectionPublic; rowCount: number; table: string }>(
+      '/connections/postgres/start',
+      { method: 'POST', body: JSON.stringify(body) }
+    )
+  },
+  syncPostgres() {
+    return request<{ count: number; source: string; table?: string }>(
+      '/connections/postgres/sync',
+      { method: 'POST', body: JSON.stringify({}) }
+    )
+  },
   deploy(prompt: string) {
     return request<DeployResult>('/tools/deploy', {
       method: 'POST',

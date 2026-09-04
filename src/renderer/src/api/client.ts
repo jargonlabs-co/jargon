@@ -119,6 +119,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body)
     }),
+  connectPostgres: (body: { databaseUrl: string; table?: string }) =>
+    request<{ connection: ConnectionPublic; rowCount: number; table: string }>(
+      '/connections/postgres/start',
+      {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }
+    ),
+  syncPostgres: (body: { projectId?: string; limit?: number } = {}) =>
+    request<ProjectBundle | { count: number; source: string; table?: string }>(
+      '/connections/postgres/sync',
+      {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }
+    ),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (body: {

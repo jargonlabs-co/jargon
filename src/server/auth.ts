@@ -151,8 +151,8 @@ export function destroySession(store: DataStore, token: string): void {
   })
 }
 
-/** Create local user + org for a newly authenticated Supabase account. */
-export function provisionLocalTenant(
+/** Create app workspace (org) after Supabase Auth — not used for passwords. */
+export function provisionWorkspace(
   store: DataStore,
   input: {
     email: string
@@ -169,6 +169,8 @@ export function provisionLocalTenant(
         const row = db.users.find((u) => u.id === existing.id)
         if (row) {
           row.supabaseUserId = input.supabaseUserId
+          row.passwordHash = undefined
+          row.passwordSalt = undefined
           row.updatedAt = Date.now()
         }
       })
@@ -210,3 +212,7 @@ export function provisionLocalTenant(
     org: store.db.orgs.find((o) => o.id === orgId)!
   }
 }
+
+/** @deprecated Use provisionWorkspace */
+export const provisionLocalTenant = provisionWorkspace
+

@@ -95,6 +95,42 @@ export async function listProjects(cfg: JargonConfig): Promise<ProjectSummary[]>
   return request(cfg, '/projects')
 }
 
+export type ConnectionPublic = {
+  id: string
+  provider: string
+  status: string
+  accountLabel?: string
+  meta?: Record<string, string>
+  lastSyncAt?: number
+}
+
+export async function listConnections(cfg: JargonConfig): Promise<ConnectionPublic[]> {
+  return request(cfg, '/connections')
+}
+
+export async function connectPostgres(
+  cfg: JargonConfig,
+  input: { databaseUrl: string; table?: string }
+): Promise<{ connection: ConnectionPublic; rowCount: number; table: string }> {
+  return request(cfg, '/connections/postgres/start', {
+    method: 'POST',
+    body: JSON.stringify({
+      databaseUrl: input.databaseUrl,
+      table: input.table ?? 'jargon_prospects'
+    })
+  })
+}
+
+export async function syncPostgres(
+  cfg: JargonConfig,
+  body: { projectId?: string; limit?: number } = {}
+): Promise<{ count: number; source: string; table?: string }> {
+  return request(cfg, '/connections/postgres/sync', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
 export async function health(apiUrl: string): Promise<{ ok: boolean }> {
   const res = await fetch(`${apiUrl.replace(/\/$/, '')}/health`)
   if (!res.ok) throw new Error(`API unreachable (${res.status})`)

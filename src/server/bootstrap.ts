@@ -1,19 +1,19 @@
 import type { DataStore } from './store'
-import { hashPassword, uid } from './crypto'
+import { uid } from './crypto'
 import type { Membership, Org, User } from './types'
 
-/** Create a demo owner account on first boot so desktop can sign in immediately. */
+/**
+ * Ensure a demo workspace row exists for empty stores.
+ * Passwords are NOT stored here — demo credentials live in Supabase Auth only.
+ */
 export function ensureBootstrapTenant(store: DataStore): void {
   if (store.db.users.length > 0) return
 
   const now = Date.now()
-  const { hash, salt } = hashPassword('jargon-demo')
   const user: User = {
     id: uid('user'),
     email: 'demo@jargon.app',
     name: 'Tara',
-    passwordHash: hash,
-    passwordSalt: salt,
     createdAt: now,
     updatedAt: now
   }
@@ -38,5 +38,5 @@ export function ensureBootstrapTenant(store: DataStore): void {
     db.memberships.push(membership)
   })
 
-  console.log('[jargon] Bootstrapped demo tenant demo@jargon.app / jargon-demo')
+  console.log('[jargon] Bootstrapped demo workspace for demo@jargon.app (Auth via Supabase)')
 }

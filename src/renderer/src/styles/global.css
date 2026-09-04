@@ -47,6 +47,13 @@
 html,
 body,
 #root {
+  min-height: 100%;
+}
+
+/* Full-viewport app shell — only when ToolApp is mounted */
+html.tool-shell,
+html.tool-shell body,
+html.tool-shell #root {
   height: 100%;
   overflow: hidden;
 }
@@ -66,6 +73,9 @@ body {
   -webkit-font-smoothing: antialiased;
   font-size: 13.5px;
   line-height: 1.45;
+}
+
+html.tool-shell body {
   user-select: none;
 }
 

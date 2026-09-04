@@ -12,7 +12,8 @@ function toolIdFromPath(pathname: string): string | null {
 
 function Root() {
   const { user, loading } = useAuth()
-  const [loginOpen, setLoginOpen] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [path, setPath] = useState(() => window.location.pathname)
   const previewApp =
     import.meta.env.DEV &&
@@ -27,6 +28,11 @@ function Root() {
   function navigate(next: string) {
     window.history.pushState({}, '', next)
     setPath(next)
+  }
+
+  function openAuth(mode: 'login' | 'register') {
+    setAuthMode(mode)
+    setAuthOpen(true)
   }
 
   if (previewApp) {
@@ -55,8 +61,10 @@ function Root() {
 
   return (
     <>
-      <MarketingPage onLogin={() => setLoginOpen(true)} />
-      {loginOpen ? <LoginPanel onClose={() => setLoginOpen(false)} /> : null}
+      <MarketingPage onLogin={() => openAuth('login')} onSignUp={() => openAuth('register')} />
+      {authOpen ? (
+        <LoginPanel key={authMode} initialMode={authMode} onClose={() => setAuthOpen(false)} />
+      ) : null}
     </>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from './components/BrandMark'
 import { LogoMark } from './components/LogoMark'
-import { BuilderMock, ContextMock, DashboardMock, DialerMock } from './components/ProductMocks'
+import { CliDeployMock, ContextMock, DialerMock, TeamToolsMock } from './components/ProductMocks'
 
 function useReveal() {
   const ref = useRef<HTMLElement | null>(null)
@@ -44,9 +44,10 @@ function Reveal({
 
 interface Props {
   onLogin: () => void
+  onSignUp: () => void
 }
 
-export function MarketingPage({ onLogin }: Props) {
+export function MarketingPage({ onLogin, onSignUp }: Props) {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -66,9 +67,9 @@ export function MarketingPage({ onLogin }: Props) {
           <span>Jargon</span>
         </a>
         <nav className="nav-links">
-          <a href="#build">Build</a>
-          <a href="#execute">Execute</a>
-          <a href="#share">Share</a>
+          <a href="#deploy">Deploy</a>
+          <a href="#run">Run</a>
+          <a href="#data">Data</a>
           <a href="#use-cases">Use cases</a>
         </nav>
         <div className="nav-actions">
@@ -91,22 +92,22 @@ export function MarketingPage({ onLogin }: Props) {
           <div className="hero-copy">
             <h1>For those who are brave enough to build.</h1>
             <p className="hero-lede">
-              Revenue teams already build AI tools in Claude and ChatGPT. Jargon turns those
-              scattered builds into consistent, shareable infrastructure — across sales, retention,
-              account management, and ops.
+              Create enterprise-ready custom software on top of your own data layer — CRM, data
+              warehouse, and context — so revenue tools fit how you sell, not how a vendor assumed
+              you would.
             </p>
             <div className="hero-actions">
-              <button type="button" className="btn primary" onClick={onLogin}>
-                Log in to build
-              </button>
               <a
-                className="btn ghost"
-                href="https://github.com/jargonlabs-co/jargon/releases/latest"
+                className="btn primary"
+                href="https://calendly.com/tara_jargonlabs/30min"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Download app
+                Book a demo
               </a>
+              <button type="button" className="btn ghost" onClick={onSignUp}>
+                Sign up
+              </button>
             </div>
           </div>
 
@@ -115,40 +116,70 @@ export function MarketingPage({ onLogin }: Props) {
           </div>
         </section>
 
+        <Reveal className="section build-section" as="section">
+          <div className="section-inner" id="deploy">
+            <div className="section-copy centered">
+              <p className="eyebrow">For GTM Engineers</p>
+              <h2>Deploy fully functional UIs from Claude Code.</h2>
+              <p>
+                Describe the motion once. Jargon ships a working UI on your CRM, data warehouse,
+                and context layer — dialing, email, and LinkedIn included — without the tickets,
+                sprint cycles, or ongoing maintenance of a traditional engineering build. Sales
+                opens the tool in the browser and runs it.
+              </p>
+            </div>
+            <CliDeployMock />
+          </div>
+        </Reveal>
+
+        <Reveal className="section run-section" as="section">
+          <div className="section-inner" id="run">
+            <div className="section-copy centered">
+              <p className="eyebrow">For the revenue team</p>
+              <h2>Working software. Not another chat thread.</h2>
+              <p>
+                What one GTM Engineer deploys from Claude Code becomes a UI the team can open and
+                run — same quality bar, same data layer, execution wired in, without waiting on
+                engineering to build or maintain it.
+              </p>
+            </div>
+            <TeamToolsMock />
+          </div>
+        </Reveal>
+
         <Reveal className="section pillars-section" as="section">
           <div className="section-inner" id="pillars">
             <div className="section-copy centered">
               <p className="eyebrow">Three pillars</p>
-              <h2>Build. Execute. Standardize.</h2>
+              <h2>Your data. Custom software. Tools the team can run.</h2>
               <p>
-                The platform for builder-managers and the revenue leaders who champion them —
-                so every team can ship tools their whole org can run.
+                Jargon is for revenue leaders who want durable software on their stack — and for
+                the GTM Engineers who ship it.
               </p>
             </div>
             <ul className="pillar-list">
               <li>
                 <span className="pillar-num">01</span>
-                <h3>Build on your stack</h3>
+                <h3>Your data layer</h3>
                 <p>
-                  Describe what you need in natural language. Jargon builds on whatever data layer
-                  you already trust — CRM, warehouse, enrichment, outcomes — so tools fit how your
-                  teams actually work.
+                  Build on the systems you already trust — CRM, data warehouse, and context layer —
+                  so every tool speaks your source of truth, not a generic list.
                 </p>
               </li>
               <li>
                 <span className="pillar-num">02</span>
-                <h3>Execution built in</h3>
+                <h3>Custom software</h3>
                 <p>
-                  Dialing, sequencing, write-back, and workflows ship with the tool — not stitched
-                  together from a dozen APIs after the prompt ends.
+                  Describe the motion. Jargon ships a functional UI — dialers, queues, sequencers —
+                  with calling, email, and LinkedIn included, not stitched on later.
                 </p>
               </li>
               <li>
                 <span className="pillar-num">03</span>
-                <h3>Share across the org</h3>
+                <h3>Built for how you ship</h3>
                 <p>
-                  What one team builds can be standardized and shared. Leadership gets visibility;
-                  reps and managers get consistent tools that travel with the motion.
+                  GTM Engineers deploy from Claude Code or the CLI — fully functional UIs without
+                  standing up an eng backlog. Sales opens a browser tool and works the queue.
                 </p>
               </li>
             </ul>
@@ -156,98 +187,67 @@ export function MarketingPage({ onLogin }: Props) {
         </Reveal>
 
         <Reveal className="section product-section" as="section">
-          <div className="section-inner split" id="build">
+          <div className="section-inner split" id="data">
             <div className="section-copy">
-              <p className="eyebrow">Flexible by design</p>
-              <h2>Natural language on the data you already own.</h2>
+              <p className="eyebrow">Enterprise-ready on your stack</p>
+              <h2>Custom software on the data layer you already own.</h2>
               <p>
                 Claude and ChatGPT showed your teams what&apos;s possible. Jargon is the next step:
-                the same builder instinct, grounded in your context and data layers — so a retention
-                workspace, an account-prep console, or an outbound motion all speak the same
-                source of truth.
+                enterprise-ready tools grounded in your CRM, data warehouse, and context layer —
+                so a today queue, dialer, or sequencer runs on how your org actually sells.
               </p>
             </div>
             <ContextMock />
           </div>
         </Reveal>
 
-        <Reveal className="section build-section" as="section">
-          <div className="section-inner" id="execute">
-            <div className="section-copy centered">
-              <p className="eyebrow">From prompt to production</p>
-              <h2>Describe the motion. Ship something the team can run.</h2>
-              <p>
-                Tell Jargon what your team needs. It clarifies the audience, channels, and goals —
-                then builds a workspace with execution wired in, not a prompt you have to re-run
-                every Monday.
-              </p>
-            </div>
-            <BuilderMock />
-          </div>
-        </Reveal>
-
-        <Reveal className="section run-section" as="section">
-          <div className="section-inner" id="share">
-            <div className="section-copy centered">
-              <p className="eyebrow">Org-wide, not one-off</p>
-              <h2>Standardize what works. Make it visible.</h2>
-              <p>
-                Tools built by one manager become shareable infrastructure — the same quality bar
-                across sales, retention, and ops, with leadership clarity into what the org is
-                running.
-              </p>
-            </div>
-            <DashboardMock />
-          </div>
-        </Reveal>
-
         <Reveal className="section capabilities" as="section">
           <div className="section-inner" id="use-cases">
             <div className="section-copy centered">
-              <p className="eyebrow">Across the revenue center</p>
-              <h2>One platform. Every motion that matters.</h2>
+              <p className="eyebrow">What you can ship</p>
+              <h2>Custom UIs for every motion that matters.</h2>
               <p>
-                Built by the people closest to the work — shared by the org that depends on it.
+                Built by the people closest to the work — run by the reps who depend on it.
               </p>
             </div>
             <ul className="capability-list">
               <li>
-                <span className="cap-glyph">◎</span>
-                <div>
-                  <h3>Retention &amp; expansion</h3>
-                  <p>
-                    Risk queues, renewal prep, and save motions wired to health scores and CRM
-                    write-back.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span className="cap-glyph">▤</span>
-                <div>
-                  <h3>Account prep</h3>
-                  <p>
-                    Briefings and talking points pulled from your data layer — ready before the
-                    meeting, not rebuilt in a chat each time.
-                  </p>
-                </div>
-              </li>
-              <li>
                 <span className="cap-glyph">☎</span>
                 <div>
-                  <h3>Outbound</h3>
+                  <h3>Outbound dialers</h3>
                   <p>
-                    Dialers, sequencers, and cadences your teams design — on your segments, with
-                    execution included.
+                    Functional call UIs on your segments — dispositions, next steps, and write-back
+                    included.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span className="cap-glyph">⚑</span>
+                <div>
+                  <h3>Today queues</h3>
+                  <p>
+                    Prioritized worklists for AEs and SDRs, pulled from your CRM and context layer —
+                    ready when the day starts.
                   </p>
                 </div>
               </li>
               <li>
                 <span className="cap-glyph">↻</span>
                 <div>
-                  <h3>Post-call admin</h3>
+                  <h3>Sequencers &amp; cadences</h3>
                   <p>
-                    Summaries, next steps, and CRM updates that close the loop so reps stay in the
-                    conversation, not the paperwork.
+                    Multi-channel motions your GTM Engineers design — email, call, and LinkedIn in
+                    one runnable tool.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span className="cap-glyph">◎</span>
+                <div>
+                  <h3>Account &amp; retention motions</h3>
+                  <p>
+                    Prep consoles and risk queues on the same data layer — custom software that
+                    travels with the motion.
                   </p>
                 </div>
               </li>
@@ -264,13 +264,20 @@ export function MarketingPage({ onLogin }: Props) {
               only you could design.
             </h2>
             <p>
-              Jargon is for leaders who would rather create tools than rent them — and for the
-              teams who turn those builds into infrastructure the whole org can share and run.
+              Enterprise-ready custom software on your data layer — deployed by GTM Engineers from
+              Claude Code, without engineering maintenance, and run by sales as working tools.
             </p>
-            <button type="button" className="btn primary large" onClick={onLogin}>
-              Log in to build
-            </button>
-            <p className="cta-note">Connect CRM · Create tools · Share with your team</p>
+            <a
+              className="btn primary large"
+              href="https://calendly.com/tara_jargonlabs/30min"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Book a demo
+            </a>
+            <p className="cta-note">
+              Connect your data · Deploy from Claude Code · Run in the browser
+            </p>
           </div>
         </Reveal>
       </main>

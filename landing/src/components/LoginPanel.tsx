@@ -5,11 +5,12 @@ import { LogoMark } from './LogoMark'
 
 interface Props {
   onClose: () => void
+  initialMode?: 'login' | 'register'
 }
 
-export function LoginPanel({ onClose }: Props) {
+export function LoginPanel({ onClose, initialMode = 'login' }: Props) {
   const { refresh } = useAuth()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -48,7 +49,12 @@ export function LoginPanel({ onClose }: Props) {
   }
 
   return (
-    <div className="login-overlay" role="dialog" aria-modal="true" aria-label="Sign in">
+    <div
+      className="login-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
+    >
       <button type="button" className="login-backdrop" aria-label="Close" onClick={onClose} />
       <div className="login-panel">
         <button type="button" className="login-close" onClick={onClose} aria-label="Close">
@@ -57,8 +63,17 @@ export function LoginPanel({ onClose }: Props) {
         <div className="login-brand">
           <LogoMark size={28} />
           <div>
-            <h2>Welcome back</h2>
-            <p>Sign in to connect your CRM and build tools.</p>
+            {mode === 'login' ? (
+              <>
+                <h2>Welcome back</h2>
+                <p>Sign in to connect your CRM and build tools.</p>
+              </>
+            ) : (
+              <>
+                <h2>Create your account</h2>
+                <p>Sign up to connect your data and deploy tools.</p>
+              </>
+            )}
           </div>
         </div>
         <div className="login-tabs">

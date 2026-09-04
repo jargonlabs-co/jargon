@@ -121,11 +121,59 @@ export async function connectPostgres(
   })
 }
 
+export async function startRailwayOAuth(
+  cfg: JargonConfig
+): Promise<{ url: string }> {
+  return request(cfg, '/connections/railway/start', {
+    method: 'POST',
+    body: '{}'
+  })
+}
+
+export async function listRailwayResources(cfg: JargonConfig): Promise<{
+  projects: Array<{
+    projectId: string
+    projectName: string
+    environmentId: string
+    environmentName: string
+    postgresServices: Array<{ serviceId: string; serviceName: string }>
+  }>
+}> {
+  return request(cfg, '/connections/railway/resources')
+}
+
+export async function bindRailway(
+  cfg: JargonConfig,
+  body: {
+    projectId: string
+    environmentId: string
+    serviceId?: string
+    table?: string
+    projectName?: string
+    serviceName?: string
+  }
+): Promise<{ connection: ConnectionPublic; table: string }> {
+  return request(cfg, '/connections/railway/bind', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
 export async function syncPostgres(
   cfg: JargonConfig,
   body: { projectId?: string; limit?: number } = {}
 ): Promise<{ count: number; source: string; table?: string }> {
   return request(cfg, '/connections/postgres/sync', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function syncRailway(
+  cfg: JargonConfig,
+  body: { projectId?: string; limit?: number } = {}
+): Promise<{ count: number; source: string; table?: string }> {
+  return request(cfg, '/connections/railway/sync', {
     method: 'POST',
     body: JSON.stringify(body)
   })

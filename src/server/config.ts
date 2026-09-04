@@ -40,6 +40,11 @@ export interface ServerConfig {
     anonKey: string
     serviceRoleKey: string
   }
+  railway: {
+    clientId: string
+    clientSecret: string
+    scopes: string
+  }
 }
 
 let envFilesLoaded = false
@@ -116,6 +121,13 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       url: (process.env.SUPABASE_URL ?? '').trim().replace(/\/$/, ''),
       anonKey: (process.env.SUPABASE_ANON_KEY ?? '').trim(),
       serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
+    },
+    railway: {
+      clientId: (process.env.RAILWAY_CLIENT_ID ?? '').trim(),
+      clientSecret: (process.env.RAILWAY_CLIENT_SECRET ?? '').trim(),
+      scopes:
+        (process.env.RAILWAY_OAUTH_SCOPES ?? '').trim() ||
+        'openid email profile offline_access project:member'
     },
     ...overrides
   }

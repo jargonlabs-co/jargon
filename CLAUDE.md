@@ -15,19 +15,24 @@ export JARGON_APP_URL=https://jargonlabs.co
 npm run jargon -- deploy "<their prompt>"
 ```
 
-## Dogfood with Postgres prospects (warehouse)
+## Dogfood with Railway prospects (warehouse)
 
-Use the **public product** API. Connect the seeded Railway `jargon_prospects` table (outbound-ops public TCP proxy), then deploy:
+Use the **public product** API. Connect Railway via OAuth (select the outbound-ops Postgres project that has `jargon_prospects`), then deploy:
 
 ```bash
 export JARGON_API_URL=https://jargon-api-production.up.railway.app
 export JARGON_APP_URL=https://jargonlabs.co
 npm run jargon -- login --email <your-product-email> --password '<password>'
-npm run jargon -- connect postgres --database-url '<railway-public-postgres-url>' --table jargon_prospects
+npm run jargon -- connect railway
+# open the URL, authorize, share the outbound-ops project
+npm run jargon -- connect railway projects
+npm run jargon -- connect railway bind --project-id <id> --environment-id <id> --service-id <id> --table jargon_prospects
 npm run jargon -- deploy "Build a Today queue for GTM Engineers in the US"
 ```
 
-Deploy priority: Postgres prospects → HubSpot → demo book. Do **not** point `JARGON_API_URL` at outbound-ops for product dogfood.
+Or connect from the website: **Connect Railway** → pick Postgres → Use this database.
+
+Deploy priority: Railway → Postgres connection string → HubSpot → demo book. Do **not** point `JARGON_API_URL` at outbound-ops for product dogfood.
 
 ## How to reply after a successful deploy
 

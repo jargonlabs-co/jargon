@@ -13,6 +13,7 @@ import {
   readPostgresSecrets,
   writePostgresContactsToProjects
 } from './providers/postgresProspects'
+import { syncRailwayProspects } from './providers/railway'
 
 export async function createProjectRecord(
   store: DataStore,
@@ -42,6 +43,27 @@ export async function createProjectRecord(
     Math.max(Number(finalAnswers.prospect_count ?? 50), 1),
     100
   )
+
+  const railway = getConnection(store, orgId, 'railway')
+  if (
+    railway?.status === 'connected' &&
+    railway.meta?.projectId &&
+    railway.meta?.environmentId &&
+    railway.meta?.needsBind !== '1'
+  ) {
+    try {
+      const result = await syncRailwayProspects({
+        store,
+        config,
+        orgId,
+        projectId,
+        limit
+      })
+      if (result.count > 0) return projectId
+    } catch (err) {
+      console.warn('[jargon] Railway prospects load failed, trying Postgres', err)
+    }
+  }
 
   const postgres = getConnection(store, orgId, 'postgres')
   if (postgres?.status === 'connected') {

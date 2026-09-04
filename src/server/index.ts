@@ -48,6 +48,15 @@ import {
   validatePostgresProspects,
   writePostgresContactsToProjects
 } from './providers/postgresProspects'
+import {
+  exchangeRailwayCode,
+  fetchRailwayDatabaseUrl,
+  finishRailwayOAuthHtml,
+  listRailwayPostgresTargets,
+  railwayAuthUrl,
+  resolveRailwayAccessToken,
+  syncRailwayProspects
+} from './providers/railway'
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
@@ -78,6 +87,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
             ? 'live'
             : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
+        railway: config.railway.clientId ? 'live' : 'demo',
         auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured'
       },
       publicUrl: config.publicUrl,
@@ -235,10 +245,173 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       .filter(
         (c) =>
           c.orgId === req.auth!.org.id &&
-          (c.provider === 'hubspot' || c.provider === 'postgres')
+          (c.provider === 'hubspot' ||
+            c.provider === 'postgres' ||
+            c.provider === 'railway')
       )
       .map(toPublicConnection)
     res.json(list)
+  })
+
+  app.post('/connections/railway/start', auth, (req, res) => {
+    if (!config.railway.clientId) {
+      res.status(400).json({
+        error:
+          'Railway OAuth is not configured. Set RAILWAY_CLIENT_ID and RAILWAY_CLIENT_SECRET on the API.'
+      })
+      return
+    }
+    const { org, user } = req.auth!
+    const url = railwayAuthUrl(store, config, org.id, user.id)
+    res.json({ url })
+  })
+
+  app.get('/oauth/railway/callback', async (req, res) => {
+    try {
+      const { code, state } = req.query as { code?: string; state?: string }
+      if (!code || !state) {
+        res.status(400).send(finishRailwayOAuthHtml(config, false, 'Missing code/state'))
+        return
+      }
+      const oauth = consumeOAuthState(store, state)
+      if (!oauth) {
+        res.status(400).send(finishRailwayOAuthHtml(config, false, 'Invalid or expired state'))
+        return
+      }
+      const tokens = await exchangeRailwayCode(config, code)
+      upsertConnection(store, {
+        orgId: oauth.orgId,
+        provider: 'railway',
+        status: 'connected',
+        accountLabel: tokens.accountLabel,
+        secrets: tokens,
+        meta: {
+          mode: code === 'demo' || !config.railway.clientId ? 'demo' : 'live',
+          needsBind: '1',
+          table: DEFAULT_PROSPECTS_TABLE
+        }
+      })
+      res.send(
+        finishRailwayOAuthHtml(
+          config,
+          true,
+          `Signed in as ${tokens.accountLabel}. Choose a Postgres project in Jargon.`
+        )
+      )
+    } catch (err) {
+      res
+        .status(500)
+        .send(
+          finishRailwayOAuthHtml(config, false, err instanceof Error ? err.message : 'Error')
+        )
+    }
+  })
+
+  app.get('/connections/railway/resources', auth, async (req, res) => {
+    const orgId = req.auth!.org.id
+    try {
+      const resolved = await resolveRailwayAccessToken(store, config, orgId)
+      if (!resolved) {
+        res.status(400).json({ error: 'Railway not connected' })
+        return
+      }
+      const projects = await listRailwayPostgresTargets(resolved.accessToken, resolved.demo)
+      res.json({ projects })
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to list Railway projects'
+      })
+    }
+  })
+
+  app.post('/connections/railway/bind', auth, async (req, res) => {
+    const body = (req.body ?? {}) as {
+      projectId?: string
+      environmentId?: string
+      serviceId?: string
+      table?: string
+      projectName?: string
+      serviceName?: string
+    }
+    const orgId = req.auth!.org.id
+    const conn = getConnection(store, orgId, 'railway')
+    if (!conn || conn.status !== 'connected') {
+      res.status(400).json({ error: 'Railway not connected — connect OAuth first' })
+      return
+    }
+    if (!body.projectId?.trim() || !body.environmentId?.trim()) {
+      res.status(400).json({ error: 'projectId and environmentId required' })
+      return
+    }
+    const table = (body.table?.trim() || DEFAULT_PROSPECTS_TABLE).replace(/[^a-zA-Z0-9_]/g, '')
+    try {
+      const resolved = await resolveRailwayAccessToken(store, config, orgId)
+      if (!resolved) {
+        res.status(400).json({ error: 'Railway not connected' })
+        return
+      }
+      // Validate we can resolve a DB URL (fails fast if private-only)
+      if (!resolved.demo) {
+        await fetchRailwayDatabaseUrl({
+          accessToken: resolved.accessToken,
+          projectId: body.projectId.trim(),
+          environmentId: body.environmentId.trim(),
+          serviceId: body.serviceId?.trim() || undefined,
+          demo: false
+        })
+      }
+      const labelParts = [
+        body.projectName?.trim() || body.projectId.slice(0, 8),
+        body.serviceName?.trim() || 'Postgres',
+        table
+      ]
+      const connection = upsertConnection(store, {
+        orgId,
+        provider: 'railway',
+        status: 'connected',
+        accountLabel: labelParts.join(' · '),
+        secrets: readSecrets(conn),
+        meta: {
+          ...conn.meta,
+          needsBind: '0',
+          projectId: body.projectId.trim(),
+          environmentId: body.environmentId.trim(),
+          serviceId: body.serviceId?.trim() || '',
+          projectName: body.projectName?.trim() || '',
+          serviceName: body.serviceName?.trim() || '',
+          table,
+          mode: resolved.demo ? 'demo' : 'live'
+        }
+      })
+      res.json({ connection: toPublicConnection(connection), table })
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to bind Railway Postgres'
+      })
+    }
+  })
+
+  app.post('/connections/railway/sync', auth, async (req, res) => {
+    const { projectId, limit } = req.body as { projectId?: string; limit?: number }
+    const orgId = req.auth!.org.id
+    try {
+      const result = await syncRailwayProspects({
+        store,
+        config,
+        orgId,
+        projectId,
+        limit
+      })
+      if (projectId) {
+        res.json(bundleProject(store.db, projectId))
+        return
+      }
+      res.json(result)
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Railway sync failed'
+      })
+    }
   })
 
   app.post('/connections/postgres/start', auth, async (req, res) => {
@@ -335,20 +508,33 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
 
   app.post('/connections/:provider/start', auth, async (req, res) => {
     const provider = paramId(req.params.provider)
+    if (provider === 'railway') {
+      const { org, user } = req.auth!
+      if (!config.railway.clientId) {
+        res.status(400).json({
+          error:
+            'Railway OAuth is not configured. Set RAILWAY_CLIENT_ID and RAILWAY_CLIENT_SECRET.'
+        })
+        return
+      }
+      res.json({ url: railwayAuthUrl(store, config, org.id, user.id) })
+      return
+    }
     if (provider === 'postgres') {
       res.status(400).json({
-        error: 'Use POST /connections/postgres/start with { databaseUrl, table }'
+        error: 'Prefer Connect Railway (OAuth). Advanced: POST /connections/postgres/start'
       })
       return
     }
     if (provider === 'gmail' || provider === 'twilio' || provider === 'heyreach') {
       res.status(400).json({
-        error: 'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot or Postgres for your data.'
+        error:
+          'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot or Railway for your data.'
       })
       return
     }
     if (provider !== 'hubspot') {
-      res.status(400).json({ error: 'Unknown data source. Connect HubSpot or Postgres.' })
+      res.status(400).json({ error: 'Unknown data source. Connect HubSpot or Railway.' })
       return
     }
     const { org, user } = req.auth!

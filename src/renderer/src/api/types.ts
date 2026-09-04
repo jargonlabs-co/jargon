@@ -11,7 +11,7 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
-export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres'
+export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres' | 'railway'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface Org {

@@ -135,6 +135,36 @@ export const api = {
         body: JSON.stringify(body)
       }
     ),
+  listRailwayResources: () =>
+    request<{
+      projects: Array<{
+        projectId: string
+        projectName: string
+        environmentId: string
+        environmentName: string
+        postgresServices: Array<{ serviceId: string; serviceName: string }>
+      }>
+    }>('/connections/railway/resources'),
+  bindRailway: (body: {
+    projectId: string
+    environmentId: string
+    serviceId?: string
+    table?: string
+    projectName?: string
+    serviceName?: string
+  }) =>
+    request<{ connection: ConnectionPublic; table: string }>('/connections/railway/bind', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  syncRailway: (body: { projectId?: string; limit?: number } = {}) =>
+    request<ProjectBundle | { count: number; source: string; table?: string }>(
+      '/connections/railway/sync',
+      {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }
+    ),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (body: {

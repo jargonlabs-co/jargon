@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 import { clearConfig, defaultApiUrl, loadConfig, requireConfig, saveConfig } from './config.js'
 import {
+  bindRailway,
   connectPostgres,
   createApiKey,
   deployTool,
   health,
   listConnections,
   listProjects,
+  listRailwayResources,
   loginWithPassword,
-  syncPostgres
+  startRailwayOAuth,
+  syncPostgres,
+  syncRailway
 } from './api.js'
 
 const args = process.argv.slice(2)
@@ -105,11 +109,88 @@ async function cmdList() {
 
 async function cmdConnect() {
   const provider = args[1]
+  const cfg = requireConfig()
+
+  if (provider === 'railway') {
+    const sub = args[2]
+    if (sub === 'bind') {
+      const projectId = opt('--project-id')
+      const environmentId = opt('--environment-id')
+      const serviceId = opt('--service-id')
+      const table = opt('--table') || 'jargon_prospects'
+      const projectName = opt('--project-name')
+      const serviceName = opt('--service-name')
+      if (!projectId || !environmentId) {
+        console.error(
+          'Usage: jargon connect railway bind --project-id ID --environment-id ID [--service-id ID] [--table jargon_prospects]'
+        )
+        process.exit(1)
+      }
+      const result = await bindRailway(cfg, {
+        projectId,
+        environmentId,
+        serviceId,
+        table,
+        projectName,
+        serviceName
+      })
+      if (flag('--json')) {
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      console.log('Bound Railway Postgres')
+      console.log(`  ${result.connection.accountLabel ?? result.table}`)
+      console.log(`  Table: ${result.table}`)
+      return
+    }
+
+    if (sub === 'projects' || flag('--list')) {
+      const { projects } = await listRailwayResources(cfg)
+      if (flag('--json')) {
+        console.log(JSON.stringify(projects, null, 2))
+        return
+      }
+      if (!projects.length) {
+        console.log('No Railway projects shared. Run: jargon connect railway')
+        return
+      }
+      for (const p of projects) {
+        console.log(`${p.projectName}  (${p.environmentName})`)
+        console.log(`  project-id: ${p.projectId}`)
+        console.log(`  environment-id: ${p.environmentId}`)
+        for (const s of p.postgresServices) {
+          console.log(`  service: ${s.serviceName}  --service-id ${s.serviceId}`)
+        }
+      }
+      return
+    }
+
+    const { url } = await startRailwayOAuth(cfg)
+    if (flag('--json')) {
+      console.log(JSON.stringify({ url }, null, 2))
+      return
+    }
+    console.log('Open this URL to authorize Railway:')
+    console.log(url)
+    console.log('')
+    console.log('After authorizing, list projects and bind:')
+    console.log('  jargon connect railway projects')
+    console.log(
+      '  jargon connect railway bind --project-id … --environment-id … --service-id … --table jargon_prospects'
+    )
+    return
+  }
+
   if (provider !== 'postgres') {
-    console.error('Usage: jargon connect postgres --database-url URL [--table jargon_prospects]')
+    console.error('Usage:')
+    console.error('  jargon connect railway')
+    console.error('  jargon connect railway projects')
+    console.error(
+      '  jargon connect railway bind --project-id ID --environment-id ID [--service-id ID]'
+    )
+    console.error('  jargon connect postgres --database-url URL [--table jargon_prospects]')
     process.exit(1)
   }
-  const cfg = requireConfig()
   const databaseUrl = opt('--database-url') || opt('--url')
   const table = opt('--table') || 'jargon_prospects'
   if (!databaseUrl) {
@@ -136,7 +217,7 @@ async function cmdConnections() {
   }
   if (!list.length) {
     console.log('No data connections. Connect HubSpot or:')
-    console.log('  jargon connect postgres --database-url URL --table jargon_prospects')
+    console.log('  jargon connect railway')
     return
   }
   for (const c of list) {
@@ -147,14 +228,17 @@ async function cmdConnections() {
 }
 
 async function cmdSync() {
-  const provider = args[1] || 'postgres'
-  if (provider !== 'postgres') {
-    console.error('Usage: jargon sync postgres [--limit 50]')
+  const provider = args[1] || 'railway'
+  if (provider !== 'postgres' && provider !== 'railway') {
+    console.error('Usage: jargon sync railway|postgres [--limit 50]')
     process.exit(1)
   }
   const cfg = requireConfig()
   const limit = opt('--limit') ? Number(opt('--limit')) : undefined
-  const result = await syncPostgres(cfg, { limit })
+  const result =
+    provider === 'railway'
+      ? await syncRailway(cfg, { limit })
+      : await syncPostgres(cfg, { limit })
   console.log(
     `Synced ${result.count} contacts from ${result.source}${result.table ? ` (${result.table})` : ''}`
   )
@@ -191,9 +275,12 @@ function help() {
 Usage:
   jargon login --email you@co.com --password secret [--api-url URL]
   jargon login --api-key jarg_...
+  jargon connect railway
+  jargon connect railway projects
+  jargon connect railway bind --project-id ID --environment-id ID [--service-id ID] [--table jargon_prospects]
   jargon connect postgres --database-url URL [--table jargon_prospects]
   jargon connections
-  jargon sync postgres [--limit 50]
+  jargon sync railway [--limit 50]
   jargon deploy "Build a dialer for VP Sales" [--json]
   jargon list [--json]
   jargon api-keys create --name "Claude Code"

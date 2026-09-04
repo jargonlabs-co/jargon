@@ -133,6 +133,36 @@ export const api = {
       { method: 'POST', body: JSON.stringify({}) }
     )
   },
+  listRailwayResources() {
+    return request<{
+      projects: Array<{
+        projectId: string
+        projectName: string
+        environmentId: string
+        environmentName: string
+        postgresServices: Array<{ serviceId: string; serviceName: string }>
+      }>
+    }>('/connections/railway/resources')
+  },
+  bindRailway(body: {
+    projectId: string
+    environmentId: string
+    serviceId?: string
+    table?: string
+    projectName?: string
+    serviceName?: string
+  }) {
+    return request<{ connection: ConnectionPublic; table: string }>(
+      '/connections/railway/bind',
+      { method: 'POST', body: JSON.stringify(body) }
+    )
+  },
+  syncRailway() {
+    return request<{ count: number; source: string; table?: string }>(
+      '/connections/railway/sync',
+      { method: 'POST', body: JSON.stringify({}) }
+    )
+  },
   deploy(prompt: string) {
     return request<DeployResult>('/tools/deploy', {
       method: 'POST',

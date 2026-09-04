@@ -37,8 +37,17 @@ export function WebApp({
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastKey, setLastKey] = useState<string | null>(null)
-  const [pgUrl, setPgUrl] = useState('')
   const [pgTable, setPgTable] = useState('jargon_prospects')
+  const [railwayProjects, setRailwayProjects] = useState<
+    Array<{
+      projectId: string
+      projectName: string
+      environmentId: string
+      environmentName: string
+      postgresServices: Array<{ serviceId: string; serviceName: string }>
+    }>
+  >([])
+  const [selectedKey, setSelectedKey] = useState('')
 
   const refresh = useCallback(async () => {
     if (preview) {
@@ -46,12 +55,22 @@ export function WebApp({
         { id: '1', provider: 'hubspot', status: 'connected', accountLabel: 'Acme HubSpot' },
         {
           id: '2',
-          provider: 'postgres',
+          provider: 'railway',
           status: 'connected',
-          accountLabel: 'db.example.com/jargon_prospects',
-          meta: { rowCount: '50', table: 'jargon_prospects' }
+          accountLabel: 'outbound-ops · Postgres · jargon_prospects',
+          meta: { rowCount: '50', table: 'jargon_prospects', projectId: 'demo' }
         }
       ])
+      setRailwayProjects([
+        {
+          projectId: 'demo',
+          projectName: 'outbound-ops',
+          environmentId: 'env',
+          environmentName: 'production',
+          postgresServices: [{ serviceId: 'pg', serviceName: 'Postgres' }]
+        }
+      ])
+      setSelectedKey('demo|env|pg')
       setBuilds([
         {
           project: {
@@ -69,11 +88,43 @@ export function WebApp({
     const [conns, buildRes] = await Promise.all([api.connections(), api.builds()])
     setConnections(conns)
     setBuilds(buildRes.builds)
+    const railway = conns.find((c) => c.provider === 'railway')
+    if (railway?.status === 'connected') {
+      try {
+        const { projects } = await api.listRailwayResources()
+        setRailwayProjects(projects)
+        if (projects[0]) {
+          const svc = projects[0].postgresServices[0]
+          setSelectedKey(
+            `${projects[0].projectId}|${projects[0].environmentId}|${svc?.serviceId || ''}`
+          )
+        }
+      } catch {
+        setRailwayProjects([])
+      }
+    } else {
+      setRailwayProjects([])
+    }
   }, [preview])
 
   useEffect(() => {
     void refresh().catch((err: Error) => setError(err.message))
   }, [refresh])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('railway') === 'connected') {
+      setToast('Railway signed in — choose a Postgres project')
+      params.delete('railway')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    } else if (params.get('railway') === 'error') {
+      setError('Railway connection failed')
+      params.delete('railway')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    }
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -121,38 +172,50 @@ export function WebApp({
     }
   }
 
-  async function connectPostgres() {
+  async function bindRailway() {
     if (preview) {
-      setToast('Would connect Postgres prospects table')
+      setToast('Would bind Railway Postgres')
       return
     }
-    setBusy('postgres')
+    const [projectId, environmentId, serviceId] = selectedKey.split('|')
+    const project = railwayProjects.find(
+      (p) => p.projectId === projectId && p.environmentId === environmentId
+    )
+    if (!project) {
+      setError('Choose a Railway project')
+      return
+    }
+    const service = project.postgresServices.find((s) => s.serviceId === serviceId)
+    setBusy('bind-railway')
     setError(null)
     try {
-      const result = await api.connectPostgres({
-        databaseUrl: pgUrl.trim(),
+      await api.bindRailway({
+        projectId: project.projectId,
+        environmentId: project.environmentId,
+        serviceId: service?.serviceId,
+        projectName: project.projectName,
+        serviceName: service?.serviceName,
         table: pgTable.trim() || 'jargon_prospects'
       })
-      setToast(`Connected Postgres · ${result.rowCount} rows`)
-      setPgUrl('')
+      setToast('Railway Postgres ready')
       await refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Postgres connect failed')
+      setError(err instanceof Error ? err.message : 'Bind failed')
     } finally {
       setBusy(null)
     }
   }
 
-  async function syncPostgres() {
+  async function syncRailway() {
     if (preview) {
-      setToast('Would reload Postgres prospects')
+      setToast('Would reload Railway prospects')
       return
     }
-    setBusy('sync-pg')
+    setBusy('sync-railway')
     setError(null)
     try {
-      const result = await api.syncPostgres()
-      setToast(`Loaded ${result.count} contacts from Postgres`)
+      const result = await api.syncRailway()
+      setToast(`Loaded ${result.count} contacts from Railway`)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed')
@@ -201,8 +264,20 @@ export function WebApp({
 
   const hubspot = connections.find((c) => c.provider === 'hubspot')
   const hubspotOk = hubspot?.status === 'connected'
-  const postgres = connections.find((c) => c.provider === 'postgres')
-  const postgresOk = postgres?.status === 'connected'
+  const railway = connections.find((c) => c.provider === 'railway')
+  const railwayAuthed = railway?.status === 'connected'
+  const railwayBound =
+    railwayAuthed && railway?.meta?.needsBind !== '1' && !!railway?.meta?.projectId
+  const optionEntries = railwayProjects.flatMap((p) => {
+    const services =
+      p.postgresServices.length > 0
+        ? p.postgresServices
+        : [{ serviceId: '', serviceName: '(project vars)' }]
+    return services.map((s) => ({
+      key: `${p.projectId}|${p.environmentId}|${s.serviceId}`,
+      label: `${p.projectName} · ${s.serviceName} · ${p.environmentName}`
+    }))
+  })
 
   return (
     <div className="webapp">
@@ -226,8 +301,8 @@ export function WebApp({
             <p className="eyebrow">Your data</p>
             <h1>Connect your sources</h1>
             <p className="section-lede">
-              Tools load people from HubSpot or a Postgres prospects table. Email, calling, and
-              LinkedIn are sent by Jargon — you don’t connect those.
+              Tools load people from HubSpot or Railway Postgres. Email, calling, and LinkedIn are
+              sent by Jargon — you don’t connect those.
             </p>
           </div>
           <div className="context-grid">
@@ -267,59 +342,83 @@ export function WebApp({
             <article className="context-card">
               <div className="context-card-top">
                 <span className="context-role">Warehouse</span>
-                <span className={`context-status ${postgresOk ? 'ok' : ''}`}>
-                  {statusLabel(postgres)}
+                <span className={`context-status ${railwayBound ? 'ok' : ''}`}>
+                  {railwayBound
+                    ? statusLabel(railway)
+                    : railwayAuthed
+                      ? 'Choose project'
+                      : 'Not connected'}
                 </span>
               </div>
-              <h3>Prospects database</h3>
-              <p>Postgres table of prospects (Neon, Supabase, Railway). Used first when connected.</p>
-              {postgresOk ? (
+              <h3>Railway</h3>
+              <p>Sign in with Railway and pick the Postgres that holds your prospects table.</p>
+              {!railwayAuthed ? (
+                <button
+                  type="button"
+                  className="btn primary btn-sm"
+                  disabled={busy === 'railway'}
+                  onClick={() => void connect('railway')}
+                >
+                  {busy === 'railway' ? 'Connecting…' : 'Connect Railway'}
+                </button>
+              ) : (
                 <>
-                  <span className="context-connected">
-                    Ready
-                    {postgres?.meta?.rowCount ? ` · ${postgres.meta.rowCount} rows` : ''}
-                  </span>
+                  {railwayBound ? (
+                    <span className="context-connected">
+                      Ready
+                      {railway?.meta?.rowCount ? ` · ${railway.meta.rowCount} rows` : ''}
+                    </span>
+                  ) : null}
+                  {optionEntries.length > 0 ? (
+                    <label className="context-field">
+                      Project / service
+                      <select
+                        value={selectedKey}
+                        onChange={(e) => setSelectedKey(e.target.value)}
+                      >
+                        {optionEntries.map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <p className="section-lede">No projects shared — reconnect and select one.</p>
+                  )}
+                  <label className="context-field">
+                    Table
+                    <input
+                      type="text"
+                      value={pgTable}
+                      onChange={(e) => setPgTable(e.target.value)}
+                      placeholder="jargon_prospects"
+                    />
+                  </label>
                   <button
                     type="button"
-                    className="btn ghost btn-sm"
-                    disabled={busy === 'sync-pg'}
-                    onClick={() => void syncPostgres()}
+                    className="btn primary btn-sm"
+                    disabled={busy === 'bind-railway' || !selectedKey}
+                    onClick={() => void bindRailway()}
                   >
-                    {busy === 'sync-pg' ? 'Syncing…' : 'Reload contacts'}
+                    {busy === 'bind-railway'
+                      ? 'Saving…'
+                      : railwayBound
+                        ? 'Update database'
+                        : 'Use this database'}
                   </button>
+                  {railwayBound ? (
+                    <button
+                      type="button"
+                      className="btn ghost btn-sm"
+                      disabled={busy === 'sync-railway'}
+                      onClick={() => void syncRailway()}
+                    >
+                      {busy === 'sync-railway' ? 'Syncing…' : 'Reload contacts'}
+                    </button>
+                  ) : null}
                 </>
-              ) : null}
-              <label className="context-field">
-                Connection string
-                <input
-                  type="password"
-                  autoComplete="off"
-                  placeholder="postgresql://…"
-                  value={pgUrl}
-                  onChange={(e) => setPgUrl(e.target.value)}
-                />
-              </label>
-              <label className="context-field">
-                Table
-                <input
-                  type="text"
-                  value={pgTable}
-                  onChange={(e) => setPgTable(e.target.value)}
-                  placeholder="jargon_prospects"
-                />
-              </label>
-              <button
-                type="button"
-                className="btn primary btn-sm"
-                disabled={busy === 'postgres' || !pgUrl.trim()}
-                onClick={() => void connectPostgres()}
-              >
-                {busy === 'postgres'
-                  ? 'Connecting…'
-                  : postgresOk
-                    ? 'Reconnect'
-                    : 'Connect Postgres'}
-              </button>
+              )}
             </article>
           </div>
         </section>
@@ -329,8 +428,8 @@ export function WebApp({
             <p className="eyebrow">Create</p>
             <h1>Deploy a tool</h1>
             <p className="section-lede">
-              From the website or <code>jargon deploy</code>. The UI is empty until HubSpot is
-              connected. Outbound always goes through Jargon.
+              From the website or <code>jargon deploy</code>. Connect HubSpot or Railway so the queue
+              has people to work. Outbound always goes through Jargon.
             </p>
           </div>
           <form className="build-form" onSubmit={deploy}>

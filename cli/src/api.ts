@@ -70,11 +70,12 @@ export async function loginWithPassword(
 
 export async function createApiKey(
   cfg: JargonConfig,
-  name: string
-): Promise<{ key: string; prefix: string; id: string }> {
+  name: string,
+  environment: 'live' | 'sandbox' = 'live'
+): Promise<{ key: string; prefix: string; id: string; environment: 'live' | 'sandbox' }> {
   return request(cfg, '/auth/api-keys', {
     method: 'POST',
-    body: JSON.stringify({ name })
+    body: JSON.stringify({ name, environment })
   })
 }
 
@@ -93,6 +94,34 @@ export async function deployTool(
 
 export async function listProjects(cfg: JargonConfig): Promise<ProjectSummary[]> {
   return request(cfg, '/projects')
+}
+
+export type ProspectList = {
+  contacts: Array<{
+    id: string
+    name: string
+    company: string
+    title: string
+    email: string
+    status: string
+    projectId: string
+  }>
+  total: number
+  limit: number
+  offset: number
+}
+
+export async function listProspects(
+  cfg: JargonConfig,
+  query: { q?: string; status?: string; projectId?: string; limit?: number } = {}
+): Promise<ProspectList> {
+  const params = new URLSearchParams()
+  if (query.q) params.set('q', query.q)
+  if (query.status) params.set('status', query.status)
+  if (query.projectId) params.set('projectId', query.projectId)
+  if (query.limit) params.set('limit', String(query.limit))
+  const qs = params.toString()
+  return request(cfg, `/v1/prospects${qs ? `?${qs}` : ''}`)
 }
 
 export type ConnectionPublic = {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type ConnectionPublic, type PortalBuild } from '../api'
+import { api, getApiBase, type ApiKeyPublic, type ConnectionPublic, type PortalBuild } from '../api'
 import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
@@ -36,7 +36,10 @@ export function WebApp({
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [lastKey, setLastKey] = useState<string | null>(null)
+  const [apiKeys, setApiKeys] = useState<ApiKeyPublic[]>([])
+  const [lastKey, setLastKey] = useState<{ key: string; environment: 'live' | 'sandbox' } | null>(
+    null
+  )
   const [pgTable, setPgTable] = useState('jargon_prospects')
   const [railwayProjects, setRailwayProjects] = useState<
     Array<{
@@ -83,9 +86,30 @@ export function WebApp({
           contactCount: 0
         }
       ])
+      setApiKeys([
+        {
+          id: 'key_live',
+          name: 'Claude Code',
+          prefix: 'jarg_a1b2c3d4',
+          environment: 'live',
+          createdAt: Date.now()
+        },
+        {
+          id: 'key_test',
+          name: 'dev',
+          prefix: 'jarg_test_ab',
+          environment: 'sandbox',
+          createdAt: Date.now()
+        }
+      ])
       return
     }
-    const [conns, buildRes] = await Promise.all([api.connections(), api.builds()])
+    const [conns, buildRes, keys] = await Promise.all([
+      api.connections(),
+      api.builds(),
+      api.listApiKeys().catch(() => [] as ApiKeyPublic[])
+    ])
+    setApiKeys(keys)
     setConnections(conns)
     setBuilds(buildRes.builds)
     const railway = conns.find((c) => c.provider === 'railway')
@@ -245,18 +269,41 @@ export function WebApp({
     }
   }
 
-  async function mintKey() {
+  async function mintKey(environment: 'live' | 'sandbox') {
     if (preview) {
       setToast('API keys are created after login')
       return
     }
-    setBusy('apikey')
+    setBusy(`apikey-${environment}`)
+    setError(null)
     try {
-      const created = await api.createApiKey('CLI')
-      setLastKey(created.key)
-      setToast('API key created — copy it now, it is shown once')
+      const created = await api.createApiKey(
+        environment === 'sandbox' ? 'Claude sandbox' : 'Claude Code',
+        environment
+      )
+      setLastKey({ key: created.key, environment: created.environment })
+      setApiKeys(await api.listApiKeys())
+      setToast(
+        environment === 'live'
+          ? 'Live key created — it can send real email and place real calls'
+          : 'Sandbox key created — sends and dials do not reach real people'
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create API key')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function revokeKey(id: string) {
+    if (preview) return
+    setBusy(`revoke-${id}`)
+    try {
+      await api.revokeApiKey(id)
+      setApiKeys((keys) => keys.filter((k) => k.id !== id))
+      setToast('API key revoked')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke key')
     } finally {
       setBusy(null)
     }
@@ -486,21 +533,64 @@ export function WebApp({
 
         <section className="webapp-section">
           <div className="section-heading">
-            <h2>CLI</h2>
+            <h2>API keys</h2>
             <p className="section-lede">
-              <code>jargon login --api-key …</code> then{' '}
-              <code>jargon deploy &quot;Build a dialer…&quot;</code>
+              Claude Code and Cowork use a bearer key. Sandbox keys never reach real people. Live keys
+              send email and place calls.{' '}
+              <a href={`${getApiBase()}/v1/openapi.json`} target="_blank" rel="noreferrer">
+                OpenAPI spec
+              </a>
             </p>
           </div>
-          <button type="button" className="btn ghost" disabled={busy === 'apikey'} onClick={() => void mintKey()}>
-            {busy === 'apikey' ? 'Creating…' : 'Create API key'}
-          </button>
+          <div className="key-actions">
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy === 'apikey-sandbox'}
+              onClick={() => void mintKey('sandbox')}
+            >
+              {busy === 'apikey-sandbox' ? 'Creating…' : 'Create sandbox key'}
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy === 'apikey-live'}
+              onClick={() => void mintKey('live')}
+            >
+              {busy === 'apikey-live' ? 'Creating…' : 'Create live key'}
+            </button>
+          </div>
           {lastKey ? (
-            <p className="deploy-result">
-              Save this key — it is shown once:
+            <p className={`deploy-result ${lastKey.environment === 'live' ? 'deploy-result-live' : ''}`}>
+              Save this {lastKey.environment} key — it is shown once:
               <br />
-              <code>{lastKey}</code>
+              <code>{lastKey.key}</code>
             </p>
+          ) : null}
+          {apiKeys.length > 0 ? (
+            <ul className="build-list key-list">
+              {apiKeys.map((key) => (
+                <li key={key.id} className="build-row">
+                  <div>
+                    <strong>{key.name}</strong>
+                    <p>
+                      <span className={`key-badge key-badge-${key.environment ?? 'live'}`}>
+                        {key.environment ?? 'live'}
+                      </span>{' '}
+                      {key.prefix}…
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm"
+                    disabled={busy === `revoke-${key.id}`}
+                    onClick={() => void revokeKey(key.id)}
+                  >
+                    Revoke
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </section>
 

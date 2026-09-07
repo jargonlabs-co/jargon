@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { DataStore } from './store'
 import { hashToken, uid } from './crypto'
-import type { AuthPayload, Org, PublicUser, Session, User } from './types'
+import type { ApiKeyEnvironment, AuthPayload, Org, PublicUser, Session, User } from './types'
 import { resolveApiKeyAuth } from './apiKeys'
 import type { ServerConfig } from './config'
 import {
@@ -18,6 +18,7 @@ export interface AuthContext {
   token: string
   via: 'session' | 'api_key' | 'supabase'
   apiKeyId?: string
+  environment: ApiKeyEnvironment
 }
 
 declare global {
@@ -76,7 +77,8 @@ export function resolveAuth(store: DataStore, header?: string | null): AuthConte
       org: apiKeyAuth.org,
       token,
       via: 'api_key',
-      apiKeyId: apiKeyAuth.apiKey.id
+      apiKeyId: apiKeyAuth.apiKey.id,
+      environment: apiKeyAuth.apiKey.environment ?? 'live'
     }
   }
 
@@ -87,7 +89,7 @@ export function resolveAuth(store: DataStore, header?: string | null): AuthConte
   const user = store.db.users.find((u) => u.id === session.userId)
   const org = store.db.orgs.find((o) => o.id === session.orgId)
   if (!user || !org) return null
-  return { user, org, session, token, via: 'session' }
+  return { user, org, session, token, via: 'session', environment: 'live' }
 }
 
 export async function resolveAuthAsync(
@@ -123,7 +125,7 @@ export async function resolveAuthAsync(
 
   const org = orgForUser(store, user.id)
   if (!org) return null
-  return { user, org, token, via: 'supabase' }
+  return { user, org, token, via: 'supabase', environment: 'live' }
 }
 
 export function requireAuth(store: DataStore, config?: ServerConfig) {
@@ -134,6 +136,25 @@ export function requireAuth(store: DataStore, config?: ServerConfig) {
         : resolveAuth(store, req.header('authorization'))
       if (!auth) {
         res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+      req.auth = auth
+      next()
+    })().catch((err) => {
+      next(err)
+    })
+  }
+}
+
+/** Public /v1 — API keys only. Session and Supabase tokens are rejected. */
+export function requireApiKey(store: DataStore, config?: ServerConfig) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    void (async () => {
+      const auth = config
+        ? await resolveAuthAsync(store, config, req.header('authorization'))
+        : resolveAuth(store, req.header('authorization'))
+      if (!auth || auth.via !== 'api_key') {
+        res.status(401).json({ error: 'Unauthorized', code: 'api_key_required' })
         return
       }
       req.auth = auth

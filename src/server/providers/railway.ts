@@ -316,26 +316,38 @@ export async function fetchRailwayDatabaseUrl(input: {
   )
 
   const vars = data.variables || {}
-  const url =
+  const preferred =
     vars.DATABASE_PUBLIC_URL ||
     vars.DATABASE_URL ||
     vars.POSTGRES_URL ||
     vars.POSTGRES_PRISMA_URL
-  if (!url || !/^postgres(ql)?:\/\//i.test(url)) {
-    throw new Error(
-      'No DATABASE_URL found on that Railway service. Pick the Postgres service (or one with a public DATABASE_URL).'
-    )
-  }
+
   // Prefer public proxy URL when both exist — product API cannot reach *.railway.internal
   if (vars.DATABASE_PUBLIC_URL && /^postgres(ql)?:\/\//i.test(vars.DATABASE_PUBLIC_URL)) {
     return vars.DATABASE_PUBLIC_URL
   }
-  if (url.includes('railway.internal')) {
+
+  // Railway Postgres often exposes TCP proxy vars without DATABASE_PUBLIC_URL
+  const proxyDomain = vars.RAILWAY_TCP_PROXY_DOMAIN
+  const proxyPort = vars.RAILWAY_TCP_PROXY_PORT
+  const user = vars.POSTGRES_USER || vars.PGUSER || 'postgres'
+  const password = vars.POSTGRES_PASSWORD || vars.PGPASSWORD
+  const dbName = vars.POSTGRES_DB || vars.PGDATABASE || 'railway'
+  if (proxyDomain && proxyPort && password) {
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${proxyDomain}:${proxyPort}/${encodeURIComponent(dbName)}`
+  }
+
+  if (!preferred || !/^postgres(ql)?:\/\//i.test(preferred)) {
+    throw new Error(
+      'No DATABASE_URL found on that Railway service. Pick the Postgres service (or one with a public DATABASE_URL).'
+    )
+  }
+  if (preferred.includes('railway.internal')) {
     throw new Error(
       'DATABASE_URL is private (railway.internal). Enable a TCP proxy on Postgres or set DATABASE_PUBLIC_URL.'
     )
   }
-  return url
+  return preferred
 }
 
 export function finishRailwayOAuthHtml(

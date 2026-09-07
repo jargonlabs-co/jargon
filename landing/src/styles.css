@@ -340,6 +340,7 @@ button {
   border-radius: 999px;
   font-size: 14.5px;
   font-weight: 600;
+  cursor: pointer;
   transition:
     background 0.2s ease,
     color 0.2s ease,
@@ -366,6 +367,7 @@ button {
 .btn.ghost:hover {
   background: #fff;
   border-color: #d9cfc0;
+  transform: translateY(-1px);
 }
 
 .btn.large {
@@ -1822,4 +1824,39 @@ button {
 .tool-host .product-app {
   flex: 1;
   min-height: 0;
+}
+
+.key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.key-list {
+  margin-top: 16px;
+}
+
+.key-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.key-badge-live {
+  background: rgba(228, 103, 76, 0.15);
+  color: var(--accent-strong);
+}
+
+.key-badge-sandbox {
+  background: rgba(60, 90, 80, 0.12);
+  color: #3d5c52;
+}
+
+.deploy-result-live {
+  border-color: rgba(228, 103, 76, 0.45);
 }

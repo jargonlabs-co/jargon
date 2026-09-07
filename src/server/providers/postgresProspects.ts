@@ -79,6 +79,27 @@ export function postgresAccountLabel(databaseUrl: string, table: string): string
   }
 }
 
+function parseJsonArray(
+  row: Record<string, unknown>,
+  keys: string[]
+): Array<Record<string, unknown>> | undefined {
+  for (const key of keys) {
+    const raw = row[key]
+    let parsed: unknown = raw
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        continue
+      }
+    }
+    if (Array.isArray(parsed) && parsed.length) {
+      return parsed.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    }
+  }
+  return undefined
+}
+
 function mapRow(
   row: Record<string, unknown>,
   columnMap: PostgresColumnMap,
@@ -107,6 +128,58 @@ function mapRow(
   const externalId =
     pickString(row, [cols.id, 'crustdata_person_id', 'external_id']) || `postgres_${index + 1}`
 
+  const openRoleRows = parseJsonArray(row, ['company_open_roles', 'companyOpenRoles'])
+  const initiativeRows = parseJsonArray(row, ['gtm_initiatives', 'gtmInitiatives'])
+  const companyOpenRoles = openRoleRows
+    ?.map((item) => {
+      const roleTitle = typeof item.title === 'string' ? item.title.trim() : ''
+      if (!roleTitle) return null
+      return {
+        title: roleTitle,
+        url: typeof item.url === 'string' ? item.url : undefined,
+        location: typeof item.location === 'string' ? item.location : undefined,
+        category: typeof item.category === 'string' ? item.category : undefined
+      }
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+  const gtmInitiatives = initiativeRows
+    ?.map((item) => {
+      const initTitle = typeof item.title === 'string' ? item.title.trim() : ''
+      if (!initTitle) return null
+      return {
+        title: initTitle,
+        url: typeof item.url === 'string' ? item.url : undefined,
+        snippet: typeof item.snippet === 'string' ? item.snippet : undefined,
+        source: typeof item.source === 'string' ? item.source : undefined
+      }
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+
+  const context = buildProspectContext({
+    id: externalId,
+    company,
+    title,
+    companySize,
+    companyIndustry
+  })
+  if (companyOpenRoles?.length || gtmInitiatives?.length) {
+    context.length = 0
+    if (title && company) context.push(`${title} at ${company}`)
+    if (city) context.push(city)
+    if (companyOpenRoles?.length) {
+      context.push(
+        `Hiring: ${companyOpenRoles
+          .slice(0, 4)
+          .map((r) => r.title)
+          .join(' · ')}`
+      )
+    }
+    for (const hit of (gtmInitiatives ?? []).slice(0, 2)) {
+      const snippet = (hit.snippet || hit.title).replace(/\s+/g, ' ').trim()
+      if (snippet) context.push(`GTM initiative: ${snippet.slice(0, 160)}`)
+    }
+  }
+
   return {
     externalId,
     name,
@@ -122,13 +195,9 @@ function mapRow(
     companyDomain: companyDomain || undefined,
     companyIndustry: companyIndustry || undefined,
     companySize: companySize || undefined,
-    context: buildProspectContext({
-      id: externalId,
-      company,
-      title,
-      companySize,
-      companyIndustry
-    })
+    companyOpenRoles: companyOpenRoles?.length ? companyOpenRoles : undefined,
+    gtmInitiatives: gtmInitiatives?.length ? gtmInitiatives : undefined,
+    context
   }
 }
 

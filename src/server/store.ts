@@ -27,7 +27,9 @@ const EMPTY: Database = {
   messages: [],
   activities: [],
   shareLinks: [],
-  previewComments: []
+  previewComments: [],
+  idempotencyRecords: [],
+  rateWindows: []
 }
 
 function migrateDb(raw: Partial<Database>): Database {
@@ -36,6 +38,13 @@ function migrateDb(raw: Partial<Database>): Database {
   if (!db.previewComments) db.previewComments = []
   if (!db.apiKeys) db.apiKeys = []
   if (!db.subscriptions) db.subscriptions = []
+  if (!db.idempotencyRecords) db.idempotencyRecords = []
+  if (!db.rateWindows) db.rateWindows = []
+  for (const key of db.apiKeys) {
+    if (!key.environment) {
+      key.environment = key.prefix.startsWith('jarg_test_') ? 'sandbox' : 'live'
+    }
+  }
   // Backfill orgId on legacy single-tenant records
   const defaultOrgId = db.orgs[0]?.id
   if (defaultOrgId) {

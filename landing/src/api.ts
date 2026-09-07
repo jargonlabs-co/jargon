@@ -61,6 +61,7 @@ export interface ApiKeyPublic {
   id: string
   name: string
   prefix: string
+  environment?: 'live' | 'sandbox'
   createdAt: number
 }
 
@@ -175,10 +176,19 @@ export const api = {
   listApiKeys() {
     return request<ApiKeyPublic[]>('/auth/api-keys')
   },
-  createApiKey(name: string) {
-    return request<{ key: string; prefix: string; id: string; name: string }>('/auth/api-keys', {
+  createApiKey(name: string, environment: 'live' | 'sandbox' = 'live') {
+    return request<{
+      key: string
+      prefix: string
+      id: string
+      name: string
+      environment: 'live' | 'sandbox'
+    }>('/auth/api-keys', {
       method: 'POST',
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, environment })
     })
+  },
+  revokeApiKey(id: string) {
+    return request<void>(`/auth/api-keys/${id}`, { method: 'DELETE' })
   }
 }

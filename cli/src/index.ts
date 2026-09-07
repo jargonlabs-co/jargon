@@ -8,6 +8,7 @@ import {
   health,
   listConnections,
   listProjects,
+  listProspects,
   listRailwayResources,
   loginWithPassword,
   startRailwayOAuth,
@@ -87,6 +88,30 @@ async function cmdDeploy() {
   console.log(`Deployed ${result.project?.name ?? result.projectId}`)
   console.log(`  Queue: ${result.contactCount} contacts`)
   console.log(`  Open: ${open}`)
+}
+
+async function cmdProspects() {
+  const cfg = requireConfig()
+  if (!cfg.token.startsWith('jarg_')) {
+    console.error('Prospects is a /v1 route. Log in with an API key:')
+    console.error('  jargon api-keys create --name "Claude Code" --sandbox')
+    console.error('  jargon login --api-key jarg_...')
+    process.exit(1)
+  }
+  const result = await listProspects(cfg, {
+    q: opt('--q'),
+    status: opt('--status'),
+    projectId: opt('--project-id'),
+    limit: opt('--limit') ? Number(opt('--limit')) : undefined
+  })
+  if (flag('--json')) {
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+  console.log(`${result.total} prospects`)
+  for (const c of result.contacts) {
+    console.log(`${c.id}  ${c.name}  · ${c.title} @ ${c.company}  · ${c.status}`)
+  }
 }
 
 async function cmdList() {
@@ -247,9 +272,15 @@ async function cmdSync() {
 async function cmdApiKeysCreate() {
   const cfg = requireConfig()
   const name = opt('--name') || 'CLI'
-  const result = await createApiKey(cfg, name)
-  console.log('Save this key — it is shown once:')
+  const environment = flag('--sandbox') ? 'sandbox' : 'live'
+  const result = await createApiKey(cfg, name, environment)
+  console.log(`Save this ${result.environment} key — it is shown once:`)
   console.log(result.key)
+  if (result.environment === 'live') {
+    console.log('This key can send real email and place real calls.')
+  } else {
+    console.log('Sandbox: sends and dials do not reach real people.')
+  }
   console.log(`\nThen: jargon login --api-key ${result.key}`)
 }
 
@@ -283,7 +314,8 @@ Usage:
   jargon sync railway [--limit 50]
   jargon deploy "Build a dialer for VP Sales" [--json]
   jargon list [--json]
-  jargon api-keys create --name "Claude Code"
+  jargon prospects [--q text] [--status queued] [--project-id ID] [--limit 50] [--json]
+  jargon api-keys create --name "Claude Code" [--sandbox]
   jargon whoami
   jargon logout
 
@@ -314,6 +346,9 @@ async function main() {
       case 'list':
       case 'ls':
         await cmdList()
+        break
+      case 'prospects':
+        await cmdProspects()
         break
       case 'api-keys':
         if (args[1] === 'create') await cmdApiKeysCreate()

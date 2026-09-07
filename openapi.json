@@ -1,0 +1,729 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Jargon GTM Execution API",
+    "version": "1.0.0",
+    "description": "Public API for deploying workspaces and executing outbound (queue, email, voice, disposition). Tenancy is derived from the API key. Do not send org_id."
+  },
+  "servers": [
+    {
+      "url": "https://jargon-api-production.up.railway.app/v1",
+      "description": "Production"
+    }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Session" },
+    { "name": "Workspaces" },
+    { "name": "Queue" },
+    { "name": "Execute" }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "getMe",
+        "tags": ["Session"],
+        "summary": "Current user and org for this API key",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Me" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/prospects": {
+      "get": {
+        "operationId": "listProspects",
+        "tags": ["Queue"],
+        "summary": "List prospects already in this org (from connected CRM/warehouse snapshots). Do not cache PII locally.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Limit to one workspace"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/ContactStatus" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContactList" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/prospects/{id}": {
+      "get": {
+        "operationId": "getProspect",
+        "tags": ["Queue"],
+        "summary": "Get one prospect by id",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Contact" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "tags": ["Workspaces"],
+        "summary": "List workspaces for this org",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["projects"],
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Project" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/tools/deploy": {
+      "post": {
+        "operationId": "deployTool",
+        "tags": ["Workspaces"],
+        "summary": "Materialize a workspace from a prompt (hydrates contacts from the connected CRM/warehouse)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DeployRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeployResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "operationId": "getProject",
+        "tags": ["Workspaces"],
+        "summary": "Get a workspace (not the full UI bundle)",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/projects/{id}/contacts": {
+      "get": {
+        "operationId": "listContacts",
+        "tags": ["Queue"],
+        "summary": "List contacts in a workspace",
+        "parameters": [
+          { "$ref": "#/components/parameters/Id" },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/ContactStatus" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search name, company, title, email, city"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContactList" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/projects/{id}/queue/next": {
+      "get": {
+        "operationId": "queueNext",
+        "tags": ["Queue"],
+        "summary": "Next actionable contact plus current step template",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": {
+            "description": "OK — contact may be null when the queue is empty",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueueNext" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/contacts/{id}/messages": {
+      "post": {
+        "operationId": "sendMessage",
+        "tags": ["Execute"],
+        "summary": "Send email or LinkedIn (or save a draft)",
+        "parameters": [
+          { "$ref": "#/components/parameters/Id" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["message"],
+                  "properties": {
+                    "message": { "$ref": "#/components/schemas/Message" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/contacts/{id}/calls": {
+      "post": {
+        "operationId": "startCall",
+        "tags": ["Execute"],
+        "summary": "Start a dial session for a contact",
+        "parameters": [
+          { "$ref": "#/components/parameters/Id" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["call"],
+                  "properties": {
+                    "call": { "$ref": "#/components/schemas/Call" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/calls/{id}/complete": {
+      "post": {
+        "operationId": "completeCall",
+        "tags": ["Execute"],
+        "summary": "Complete an open call with a disposition",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["disposition"],
+                "properties": {
+                  "disposition": { "$ref": "#/components/schemas/ContactStatus" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["call", "next"],
+                  "properties": {
+                    "call": { "$ref": "#/components/schemas/Call" },
+                    "next": { "$ref": "#/components/schemas/QueueNext" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/contacts/{id}/disposition": {
+      "post": {
+        "operationId": "disposition",
+        "tags": ["Execute"],
+        "summary": "Log an outcome without an open call",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DispositionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["contact", "next"],
+                  "properties": {
+                    "contact": { "$ref": "#/components/schemas/Contact" },
+                    "next": { "$ref": "#/components/schemas/QueueNext" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/contacts/{id}/notes": {
+      "post": {
+        "operationId": "addNote",
+        "tags": ["Execute"],
+        "summary": "Append a note to a contact",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["note"],
+                "properties": {
+                  "note": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["contact"],
+                  "properties": {
+                    "contact": { "$ref": "#/components/schemas/Contact" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "jarg_",
+        "description": "API key from the dashboard or `jargon api-keys create`. Tenancy is implied."
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string", "minLength": 1 },
+        "description": "Required on dial/send. Replay within 24h returns the original response (Idempotent-Replay: true)."
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or non-API-key bearer token",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found in this org",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Too many send or dial requests in the current 15-minute window",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string" }
+        }
+      },
+      "ContactStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "active",
+          "completed",
+          "replied",
+          "no_answer",
+          "interested",
+          "not_interested"
+        ]
+      },
+      "ProjectKind": {
+        "type": "string",
+        "enum": ["dialer", "sequencer", "cadence", "list", "today", "generic"]
+      },
+      "User": {
+        "type": "object",
+        "required": ["id", "email", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "Org": {
+        "type": "object",
+        "required": ["id", "name", "slug"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "required": ["user", "org", "environment", "outbound"],
+        "properties": {
+          "user": { "$ref": "#/components/schemas/User" },
+          "org": { "$ref": "#/components/schemas/Org" },
+          "environment": { "type": "string", "enum": ["live", "sandbox"] },
+          "outbound": {
+            "type": "object",
+            "required": ["email", "voice", "linkedin"],
+            "properties": {
+              "email": { "type": "string", "enum": ["live", "demo", "sandbox"] },
+              "voice": { "type": "string", "enum": ["live", "demo", "sandbox"] },
+              "linkedin": { "type": "string", "enum": ["live", "demo", "sandbox"] }
+            }
+          }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "prompt",
+          "contactCount",
+          "dashboardPath",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ProjectKind" },
+          "prompt": { "type": "string" },
+          "segment": { "type": "string" },
+          "description": { "type": "string" },
+          "contactCount": { "type": "integer" },
+          "dashboardPath": {
+            "type": "string",
+            "description": "Path on jargonlabs.co, e.g. /tools/{id}"
+          },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" }
+        }
+      },
+      "DeployRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": { "type": "string", "minLength": 1 }
+        }
+      },
+      "DeployResult": {
+        "type": "object",
+        "required": ["projectId", "contactCount", "dashboardPath", "project"],
+        "properties": {
+          "projectId": { "type": "string" },
+          "contactCount": { "type": "integer" },
+          "dashboardPath": { "type": "string" },
+          "project": { "$ref": "#/components/schemas/Project" }
+        }
+      },
+      "Contact": {
+        "type": "object",
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "company",
+          "title",
+          "email",
+          "phone",
+          "status",
+          "stepIndex"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "projectId": { "type": "string" },
+          "name": { "type": "string" },
+          "company": { "type": "string" },
+          "title": { "type": "string" },
+          "email": { "type": "string" },
+          "phone": { "type": "string" },
+          "city": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/ContactStatus" },
+          "stepIndex": { "type": "integer" },
+          "notes": { "type": "string" },
+          "linkedinUrl": { "type": "string" },
+          "accountName": { "type": "string" },
+          "context": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" }
+        }
+      },
+      "ContactList": {
+        "type": "object",
+        "required": ["contacts", "total", "limit", "offset"],
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Contact" }
+          },
+          "total": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
+        }
+      },
+      "Step": {
+        "type": "object",
+        "required": ["id", "channel", "label", "order"],
+        "properties": {
+          "id": { "type": "string" },
+          "day": { "type": "integer" },
+          "channel": { "type": "string", "enum": ["email", "call", "linkedin"] },
+          "label": { "type": "string" },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "order": { "type": "integer" }
+        }
+      },
+      "QueueNext": {
+        "type": "object",
+        "required": ["contact", "step", "remaining"],
+        "properties": {
+          "contact": { "oneOf": [{ "$ref": "#/components/schemas/Contact" }, { "type": "null" }] },
+          "step": { "oneOf": [{ "$ref": "#/components/schemas/Step" }, { "type": "null" }] },
+          "remaining": { "type": "integer" }
+        }
+      },
+      "SendMessageRequest": {
+        "type": "object",
+        "required": ["body"],
+        "additionalProperties": false,
+        "properties": {
+          "channel": { "type": "string", "enum": ["email", "linkedin"], "default": "email" },
+          "status": { "type": "string", "enum": ["draft", "queued", "sent"], "default": "sent" },
+          "subject": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": ["id", "contactId", "projectId", "channel", "status", "body"],
+        "properties": {
+          "id": { "type": "string" },
+          "contactId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "channel": { "type": "string", "enum": ["email", "linkedin"] },
+          "status": { "type": "string", "enum": ["draft", "queued", "sent", "failed"] },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "mode": { "type": "string", "enum": ["demo", "gmail", "heyreach"] },
+          "createdAt": { "type": "integer" },
+          "sentAt": { "type": "integer" }
+        }
+      },
+      "Call": {
+        "type": "object",
+        "required": ["id", "contactId", "projectId", "phase", "mode", "startedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "contactId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "phase": {
+            "type": "string",
+            "enum": ["dialing", "ringing", "connected", "completed", "failed"]
+          },
+          "disposition": { "$ref": "#/components/schemas/ContactStatus" },
+          "mode": { "type": "string", "enum": ["demo", "twilio"] },
+          "startedAt": { "type": "integer" },
+          "connectedAt": { "type": "integer" },
+          "endedAt": { "type": "integer" }
+        }
+      },
+      "DispositionRequest": {
+        "type": "object",
+        "required": ["status"],
+        "additionalProperties": false,
+        "properties": {
+          "status": { "$ref": "#/components/schemas/ContactStatus" },
+          "note": { "type": "string" },
+          "advanceStep": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,14 @@ import express from 'express'
 import cors from 'cors'
 import type { Server } from 'http'
 import type { DataStore } from './store'
-import { analyticsFor, bundleProject } from './queries'
+import {
+  analyticsFor,
+  bundleProject,
+  isContactStatus,
+  listProjectContacts,
+  nextQueueContact,
+  shouldAdvanceStep
+} from './queries'
 import type { ContactStatus, MessageStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
 import {
@@ -61,6 +68,7 @@ import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
+import { createV1Router } from './v1'
 
 export function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const app = express()
@@ -70,6 +78,11 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
 
   const auth = requireAuth(store, config)
   const paramId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
+
+  app.use('/v1', createV1Router(store, config))
+  app.get('/openapi.json', (_req, res) => {
+    res.redirect(302, '/v1/openapi.json')
+  })
 
   app.get('/health', (_req, res) => {
     res.json({
@@ -174,16 +187,25 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   })
 
   app.post('/auth/api-keys', auth, (req, res) => {
-    const { name } = req.body as { name?: string }
+    const { name, environment } = req.body as {
+      name?: string
+      environment?: 'live' | 'sandbox'
+    }
+    if (environment && environment !== 'live' && environment !== 'sandbox') {
+      res.status(400).json({ error: 'environment must be live or sandbox' })
+      return
+    }
     const { apiKey, token } = createApiKey(store, {
       orgId: req.auth!.org.id,
       userId: req.auth!.user.id,
-      name: name?.trim() || 'API key'
+      name: name?.trim() || 'API key',
+      environment
     })
     res.status(201).json({
       id: apiKey.id,
       name: apiKey.name,
       prefix: apiKey.prefix,
+      environment: apiKey.environment,
       key: token,
       createdAt: apiKey.createdAt
     })
@@ -784,6 +806,61 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.json(items)
   })
 
+  /** List contacts in a workspace (agent-friendly; no full bundle). */
+  app.get('/projects/:id/contacts', auth, (req, res) => {
+    const projectId = paramId(req.params.id)
+    const project = store.db.projects.find(
+      (p) => p.id === projectId && p.orgId === req.auth!.org.id
+    )
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const statusRaw = typeof req.query.status === 'string' ? req.query.status : undefined
+    let status: ContactStatus | undefined
+    if (statusRaw !== undefined) {
+      if (!isContactStatus(statusRaw)) {
+        res.status(400).json({ error: 'invalid status' })
+        return
+      }
+      status = statusRaw
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : undefined
+    const offset = req.query.offset ? Number(req.query.offset) : undefined
+    if (
+      (limit !== undefined && !Number.isFinite(limit)) ||
+      (offset !== undefined && !Number.isFinite(offset))
+    ) {
+      res.status(400).json({ error: 'limit and offset must be numbers' })
+      return
+    }
+    const result = listProjectContacts(store.db, projectId, {
+      status,
+      q: typeof req.query.q === 'string' ? req.query.q : undefined,
+      limit,
+      offset
+    })
+    res.json(result)
+  })
+
+  /** Next actionable contact in the queue + current sequence step template. */
+  app.get('/projects/:id/queue/next', auth, (req, res) => {
+    const projectId = paramId(req.params.id)
+    const project = store.db.projects.find(
+      (p) => p.id === projectId && p.orgId === req.auth!.org.id
+    )
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const next = nextQueueContact(store.db, projectId)
+    if (!next) {
+      res.json({ contact: null, step: null, remaining: 0 })
+      return
+    }
+    res.json(next)
+  })
+
   app.post('/campaigns/:id/pause', auth, (req, res) => {
     const campaign = mutateCampaign(store, paramId(req.params.id), req.auth!.org.id, 'PAUSED')
     if (!campaign) {
@@ -810,15 +887,100 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.status(404).json({ error: 'Contact not found' })
       return
     }
+    const body = req.body as {
+      status?: ContactStatus
+      notes?: string
+      stepIndex?: number
+    }
+    if (body.status !== undefined && !isContactStatus(body.status)) {
+      res.status(400).json({ error: 'invalid status' })
+      return
+    }
+    if (body.stepIndex !== undefined && (!Number.isFinite(body.stepIndex) || body.stepIndex < 0)) {
+      res.status(400).json({ error: 'invalid stepIndex' })
+      return
+    }
     store.update((db) => {
       const c = db.contacts.find((x) => x.id === paramId(req.params.id))
       if (!c) return
-      Object.assign(c, req.body, { updatedAt: Date.now(), orgId: c.orgId, id: c.id })
+      if (body.status !== undefined) c.status = body.status
+      if (typeof body.notes === 'string') c.notes = body.notes
+      if (body.stepIndex !== undefined) c.stepIndex = Math.min(Math.floor(body.stepIndex), 99)
+      c.updatedAt = Date.now()
       contact = c
       const project = db.projects.find((p) => p.id === c.projectId)
       if (project) project.updatedAt = Date.now()
     })
     res.json(contact)
+  })
+
+  /**
+   * Log an outcome on a contact (works without an open call).
+   * Body: { status, note?, advanceStep? }
+   */
+  app.post('/contacts/:id/disposition', auth, (req, res) => {
+    const { status, note, advanceStep } = req.body as {
+      status?: ContactStatus
+      note?: string
+      advanceStep?: boolean
+    }
+    if (!isContactStatus(status)) {
+      res.status(400).json({ error: 'valid status required' })
+      return
+    }
+    const contactId = paramId(req.params.id)
+    const contact = store.db.contacts.find(
+      (c) => c.id === contactId && c.orgId === req.auth!.org.id
+    )
+    if (!contact) {
+      res.status(404).json({ error: 'Contact not found' })
+      return
+    }
+    const now = Date.now()
+    const doAdvance = shouldAdvanceStep(status, advanceStep)
+    store.update((db) => {
+      const c = db.contacts.find((x) => x.id === contactId)
+      if (!c) return
+      c.status = status
+      c.updatedAt = now
+      if (doAdvance) {
+        c.stepIndex = Math.min(c.stepIndex + 1, 99)
+      }
+      if (note?.trim()) {
+        const stamped = `${new Date(now).toLocaleString()}: ${note.trim()}`
+        c.notes = c.notes ? `${c.notes}\n${stamped}` : stamped
+      }
+      db.activities.unshift({
+        id: uid('act'),
+        orgId: c.orgId,
+        projectId: c.projectId,
+        contactId: c.id,
+        kind: 'system',
+        summary: note?.trim()
+          ? `Disposition ${status.replace('_', ' ')} · ${note.trim()}`
+          : `Disposition ${status.replace('_', ' ')}`,
+        createdAt: now
+      })
+      // Promote next queued contact when this one leaves the active slot
+      if (status !== 'active' && status !== 'queued') {
+        const next = db.contacts.find(
+          (x) => x.projectId === c.projectId && x.status === 'queued' && x.id !== c.id
+        )
+        if (next) {
+          next.status = 'active'
+          next.updatedAt = now
+        }
+      }
+      const project = db.projects.find((p) => p.id === c.projectId)
+      if (project) project.updatedAt = now
+    })
+
+    const updated = store.db.contacts.find((c) => c.id === contactId)!
+    const next = nextQueueContact(store.db, updated.projectId)
+    res.json({
+      contact: updated,
+      next: next ?? { contact: null, step: null, remaining: 0 }
+    })
   })
 
   app.post('/contacts/:id/calls', auth, (req, res) => {

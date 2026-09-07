@@ -90,26 +90,47 @@ export function crustdataTalkTrack(contact: ProspectContextInput): ProspectTalkT
   const first = contact.name.split(/\s+/)[0] || contact.name
   const company = contact.accountName ?? contact.company ?? 'their company'
   const title = contact.title || 'leader'
+  const hiring = (contact.context ?? []).filter((line) => line.startsWith('Hiring:'))
+  const initiatives = (contact.context ?? []).filter((line) =>
+    line.startsWith('GTM initiative:')
+  )
   const headline = contact.context?.[0] ?? `${title} at ${company}`
-  const hook = headline.length > 140 ? `${headline.slice(0, 137)}…` : headline
-  const opener = `Hi ${first} — ${hook} Open to a quick conversation this week?`
+  const hook =
+    initiatives[0] || hiring[0] || (headline.length > 140 ? `${headline.slice(0, 137)}…` : headline)
+  const opener = `Hi ${first} — ${hook.replace(/^GTM initiative:\s*/i, '').replace(/^Hiring:\s*/i, '')} Open to a quick conversation this week?`
 
-  return {
-    hook,
-    opener,
-    sections: [
-      {
-        id: 'profile',
-        label: 'From Crustdata',
-        items: [
-          headline,
-          `${title} · ${company}`,
-          ...(contact.city ? [contact.city] : []),
-          ...(contact.linkedinUrl ? ['LinkedIn profile available'] : [])
-        ].filter(Boolean)
-      }
-    ]
+  const sections: TalkTrackSection[] = [
+    {
+      id: 'profile',
+      label: 'From Crustdata',
+      items: [
+        headline.startsWith('Hiring:') || headline.startsWith('GTM initiative:')
+          ? `${title} · ${company}`
+          : headline,
+        `${title} · ${company}`,
+        ...(contact.city ? [contact.city] : []),
+        ...(contact.linkedinUrl ? ['LinkedIn profile available'] : [])
+      ].filter(Boolean)
+    }
+  ]
+  if (hiring.length) {
+    sections.push({
+      id: 'hiring',
+      label: 'Company hiring',
+      emphasis: 'hot',
+      items: hiring.slice(0, 3)
+    })
   }
+  if (initiatives.length) {
+    sections.push({
+      id: 'gtm',
+      label: 'GTM initiatives',
+      emphasis: 'hot',
+      items: initiatives.slice(0, 3)
+    })
+  }
+
+  return { hook: hook.length > 140 ? `${hook.slice(0, 137)}…` : hook, opener, sections }
 }
 
 /** Structured talk track for rep console. */

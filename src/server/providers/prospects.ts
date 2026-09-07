@@ -15,6 +15,18 @@ export type ContextProspect = {
   companyIndustry?: string
   companySize?: string
   context?: string[]
+  companyOpenRoles?: Array<{
+    title: string
+    url?: string
+    location?: string
+    category?: string
+  }>
+  gtmInitiatives?: Array<{
+    title: string
+    url?: string
+    snippet?: string
+    source?: string
+  }>
 }
 
 export type ProspectSearchResult = {

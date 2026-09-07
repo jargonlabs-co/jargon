@@ -52,6 +52,8 @@ export interface Session {
   expiresAt: number
 }
 
+export type ApiKeyEnvironment = 'live' | 'sandbox'
+
 export interface ApiKey {
   id: string
   orgId: string
@@ -60,6 +62,7 @@ export interface ApiKey {
   /** First 8 chars of key for display, e.g. jarg_a1b2 */
   prefix: string
   tokenHash: string
+  environment: ApiKeyEnvironment
   createdAt: number
   lastUsedAt?: number
   revokedAt?: number
@@ -69,9 +72,30 @@ export interface ApiKeyPublic {
   id: string
   name: string
   prefix: string
+  environment: ApiKeyEnvironment
   createdAt: number
   lastUsedAt?: number
   revokedAt?: number
+}
+
+export interface IdempotencyRecord {
+  id: string
+  orgId: string
+  keyHash: string
+  method: string
+  path: string
+  status: number
+  body: unknown
+  createdAt: number
+  expiresAt: number
+}
+
+export interface RateWindow {
+  id: string
+  orgId: string
+  action: 'message' | 'call'
+  windowStart: number
+  count: number
 }
 
 export interface Connection {
@@ -344,6 +368,8 @@ export interface Database {
   activities: Activity[]
   shareLinks: ShareLink[]
   previewComments: PreviewComment[]
+  idempotencyRecords: IdempotencyRecord[]
+  rateWindows: RateWindow[]
 }
 
 export interface ProjectBundle {

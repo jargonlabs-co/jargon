@@ -1,0 +1,43 @@
+# Jargon MCP
+
+Users on jargonlabs.co add Jargon to Claude. They **sign in with their Jargon account**. They do not paste an API key.
+
+Hosted endpoint: `https://jargon-api-production.up.railway.app/mcp`
+
+## What a customer does
+
+1. Create an account and connect HubSpot or Railway on [jargonlabs.co](https://jargonlabs.co).
+2. Click **Connect Claude** on the dashboard. That opens Claude’s Connectors dialog with Jargon prefilled (`https://claude.ai/customize/connectors?modal=add-custom-connector&…`).
+3. In Claude: **Add**, then **Connect**, and sign in with the same Jargon account.
+
+Claude Code (optional):
+
+```bash
+claude mcp add --transport http --scope user \
+  jargon https://jargon-api-production.up.railway.app/mcp
+```
+
+Then `/mcp` → Connect → same Jargon login.
+
+## Power-user fallback (API key)
+
+```bash
+claude mcp add --scope user \
+  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
+  --env JARGON_API_KEY=jarg_test_... \
+  jargon -- npx -y @jargon_labs/mcp
+```
+
+Or HTTP with a key:
+
+```bash
+claude mcp add --transport http --scope user \
+  --header "Authorization: Bearer jarg_..." \
+  jargon https://jargon-api-production.up.railway.app/mcp
+```
+
+## Tools
+
+`get_me` · `list_prospects` · `get_prospect` · `list_projects` · `get_project` · `deploy_tool` · `list_contacts` · `queue_next` · `send_message` · `start_call` · `complete_call` · `disposition` · `add_note`
+
+Contract: [`../openapi.json`](../openapi.json)

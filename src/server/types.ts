@@ -349,6 +349,37 @@ export interface Subscription {
   updatedAt: number
 }
 
+export interface McpOAuthClient {
+  id: string
+  clientId: string
+  clientName: string
+  redirectUris: string[]
+  createdAt: number
+}
+
+export interface McpAuthCode {
+  id: string
+  codeHash: string
+  clientId: string
+  userId: string
+  orgId: string
+  redirectUri: string
+  codeChallenge: string
+  state?: string
+  createdAt: number
+  expiresAt: number
+}
+
+export interface McpAccessToken {
+  id: string
+  tokenHash: string
+  clientId: string
+  userId: string
+  orgId: string
+  createdAt: number
+  expiresAt: number
+}
+
 export interface Database {
   users: User[]
   orgs: Org[]
@@ -370,6 +401,9 @@ export interface Database {
   previewComments: PreviewComment[]
   idempotencyRecords: IdempotencyRecord[]
   rateWindows: RateWindow[]
+  mcpOAuthClients: McpOAuthClient[]
+  mcpAuthCodes: McpAuthCode[]
+  mcpAccessTokens: McpAccessToken[]
 }
 
 export interface ProjectBundle {

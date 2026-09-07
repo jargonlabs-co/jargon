@@ -69,6 +69,7 @@ import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import { createV1Router } from './v1'
+import { mountMcp } from './mcpHttp'
 
 export function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const app = express()
@@ -80,6 +81,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
   const paramId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
   app.use('/v1', createV1Router(store, config))
+  mountMcp(app, store, config)
   app.get('/openapi.json', (_req, res) => {
     res.redirect(302, '/v1/openapi.json')
   })
@@ -106,7 +108,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       publicUrl: config.publicUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
       userCount: store.db.users.length,
-      features: { deploy: true, cli: true }
+      features: { deploy: true, cli: true, mcp: true }
     })
   })
 

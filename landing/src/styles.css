@@ -1826,6 +1826,56 @@ button {
   min-height: 0;
 }
 
+.login-embedded {
+  position: relative;
+}
+
+.login-embedded .login-panel {
+  margin: 0 auto;
+}
+
+.connect-claude {
+  max-width: 560px;
+  margin: 48px auto;
+  padding: 0 20px 64px;
+}
+
+.connect-claude-brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.connect-claude-brand h1 {
+  font-size: 1.35rem;
+  margin: 0 0 4px;
+}
+
+.connect-claude-lede,
+.connect-claude-card p {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.connect-claude-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-panel);
+}
+
+.connect-claude-cmd {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #1a1f21;
+  color: #e8eee9;
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 .key-actions {
   display: flex;
   flex-wrap: wrap;

@@ -4,6 +4,7 @@ import { LoginPanel } from './components/LoginPanel'
 import { WebApp, toolPath } from './components/WebApp'
 import { ToolApp } from './components/ToolApp'
 import { MarketingPage } from './MarketingPage'
+import { ConnectClaude } from './components/ConnectClaude'
 
 function toolIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/tools\/([^/]+)\/?$/)
@@ -44,6 +45,10 @@ function Root() {
   }
 
   const toolId = toolIdFromPath(path)
+
+  if (path === '/connect/claude' || path.startsWith('/connect/claude/')) {
+    return <ConnectClaude />
+  }
 
   if (user && toolId) {
     return <ToolApp projectId={toolId} onBack={() => navigate('/')} />

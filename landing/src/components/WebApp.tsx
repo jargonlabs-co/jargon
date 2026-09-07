@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, getApiBase, type ApiKeyPublic, type ConnectionPublic, type PortalBuild } from '../api'
+import {
+  api,
+  getApiBase,
+  getClaudeConnectorInstallUrl,
+  getMcpUrl,
+  type ApiKeyPublic,
+  type ConnectionPublic,
+  type PortalBuild
+} from '../api'
 import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
@@ -533,6 +541,30 @@ export function WebApp({
 
         <section className="webapp-section">
           <div className="section-heading">
+            <h2>Connect to Claude</h2>
+            <p className="section-lede">
+              Opens Claude → Connectors with Jargon filled in. Add the connector, then click Connect
+              and sign in with this Jargon account. No API key to paste.
+            </p>
+          </div>
+          <div className="key-actions">
+            <a
+              className="btn primary"
+              href={getClaudeConnectorInstallUrl()}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Connect Claude
+            </a>
+          </div>
+          <p className="section-lede" style={{ marginTop: 16 }}>
+            Claude Code:
+          </p>
+          <pre className="connect-claude-cmd">{`claude mcp add --transport http --scope user jargon ${getMcpUrl()}`}</pre>
+        </section>
+
+        <section className="webapp-section">
+          <div className="section-heading">
             <h2>API keys</h2>
             <p className="section-lede">
               Claude Code and Cowork use a bearer key. Sandbox keys never reach real people. Live keys
@@ -565,6 +597,14 @@ export function WebApp({
               Save this {lastKey.environment} key — it is shown once:
               <br />
               <code>{lastKey.key}</code>
+              <br />
+              <br />
+              Add to Claude Code:
+              <br />
+              <code>
+                claude mcp add --scope user --env JARGON_API_URL={getApiBase()} --env JARGON_API_KEY=
+                {lastKey.key} jargon -- npx -y @jargon_labs/mcp
+              </code>
             </p>
           ) : null}
           {apiKeys.length > 0 ? (

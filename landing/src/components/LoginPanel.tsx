@@ -4,11 +4,12 @@ import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
 interface Props {
-  onClose: () => void
+  onClose?: () => void
   initialMode?: 'login' | 'register'
+  embedded?: boolean
 }
 
-export function LoginPanel({ onClose, initialMode = 'login' }: Props) {
+export function LoginPanel({ onClose, initialMode = 'login', embedded = false }: Props) {
   const { refresh } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>(initialMode)
   const [email, setEmail] = useState('')
@@ -34,7 +35,7 @@ export function LoginPanel({ onClose, initialMode = 'login' }: Props) {
             })
       setStoredToken(payload.token)
       await refresh()
-      onClose()
+      onClose?.()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Auth failed'
       if (/already registered/i.test(message) && mode === 'register') {
@@ -50,16 +51,20 @@ export function LoginPanel({ onClose, initialMode = 'login' }: Props) {
 
   return (
     <div
-      className="login-overlay"
+      className={embedded ? 'login-embedded' : 'login-overlay'}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!embedded}
       aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
     >
-      <button type="button" className="login-backdrop" aria-label="Close" onClick={onClose} />
+      {embedded ? null : (
+        <button type="button" className="login-backdrop" aria-label="Close" onClick={() => onClose?.()} />
+      )}
       <div className="login-panel">
-        <button type="button" className="login-close" onClick={onClose} aria-label="Close">
+        {embedded ? null : (
+        <button type="button" className="login-close" onClick={() => onClose?.()} aria-label="Close">
           ×
         </button>
+        )}
         <div className="login-brand">
           <LogoMark size={28} />
           <div>

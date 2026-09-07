@@ -1,0 +1,30 @@
+{
+  "name": "@jargon_labs/mcp",
+  "version": "0.1.0",
+  "description": "Jargon GTM execution MCP server — Claude Code / Claude Desktop",
+  "type": "module",
+  "bin": {
+    "jargon-mcp": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.2"
+  }
+}

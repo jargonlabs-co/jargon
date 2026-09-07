@@ -190,5 +190,30 @@ export const api = {
   },
   revokeApiKey(id: string) {
     return request<void>(`/auth/api-keys/${id}`, { method: 'DELETE' })
+  },
+  consentMcp(input: {
+    client_id: string
+    redirect_uri: string
+    code_challenge: string
+    state?: string
+  }) {
+    return request<{ redirect: string }>('/oauth/authorize/consent', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    })
   }
+}
+
+export function getMcpUrl(): string {
+  return `${getApiBase()}/mcp`
+}
+
+/** Opens Claude’s Add custom connector dialog with Jargon prefilled. */
+export function getClaudeConnectorInstallUrl(): string {
+  const params = new URLSearchParams({
+    modal: 'add-custom-connector',
+    connectorName: 'Jargon',
+    connectorUrl: getMcpUrl()
+  })
+  return `https://claude.ai/customize/connectors?${params.toString()}`
 }

@@ -35,6 +35,17 @@ Do not build a separate store, import CSVs, or cache prospect PII locally. Conne
 
 ## Claude Code
 
+Prefer the MCP ([MCP.md](./MCP.md)):
+
+```bash
+claude mcp add --scope user \
+  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
+  --env JARGON_API_KEY=jarg_test_... \
+  jargon -- npx -y @jargon_labs/mcp
+```
+
+Or raw HTTP:
+
 ```bash
 export JARGON_API_URL=https://jargon-api-production.up.railway.app
 export JARGON_API_KEY=jarg_...

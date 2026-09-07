@@ -29,7 +29,10 @@ const EMPTY: Database = {
   shareLinks: [],
   previewComments: [],
   idempotencyRecords: [],
-  rateWindows: []
+  rateWindows: [],
+  mcpOAuthClients: [],
+  mcpAuthCodes: [],
+  mcpAccessTokens: []
 }
 
 function migrateDb(raw: Partial<Database>): Database {
@@ -40,6 +43,9 @@ function migrateDb(raw: Partial<Database>): Database {
   if (!db.subscriptions) db.subscriptions = []
   if (!db.idempotencyRecords) db.idempotencyRecords = []
   if (!db.rateWindows) db.rateWindows = []
+  if (!db.mcpOAuthClients) db.mcpOAuthClients = []
+  if (!db.mcpAuthCodes) db.mcpAuthCodes = []
+  if (!db.mcpAccessTokens) db.mcpAccessTokens = []
   for (const key of db.apiKeys) {
     if (!key.environment) {
       key.environment = key.prefix.startsWith('jarg_test_') ? 'sandbox' : 'live'

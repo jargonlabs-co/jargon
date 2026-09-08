@@ -92,9 +92,8 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
           <div className="hero-copy">
             <h1>For those who are brave enough to build.</h1>
             <p className="hero-lede">
-              Create enterprise-ready custom software on top of your own data layer — CRM, data
-              warehouse, and context — so revenue tools fit how you sell, not how a vendor assumed
-              you would.
+              Create enterprise-ready custom software on top of your own data layer so revenue tools
+              fit how you sell, not how a vendor assumed you would.
             </p>
             <div className="hero-actions">
               <a

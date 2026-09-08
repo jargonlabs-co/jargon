@@ -129,87 +129,37 @@ export function DialerMock() {
   )
 }
 
-export function TeamToolsMock() {
+export function ClaudeConnectorMock() {
   return (
-    <MockWindow className="mock-dashboard" wide>
-      <div className="product-layout">
-        <aside className="product-nav-mock compact">
-          <div className="product-brand-row">
-            <BrandMark size={26} />
-            <div>
-              <div className="product-name">Your tools</div>
-              <div className="product-kind">Deployed · browser</div>
-            </div>
+    <MockWindow className="mock-claude" wide>
+      <div className="cli-layout">
+        <div className="claude-chat">
+          <div className="claude-chat-head">
+            <span className="claude-chat-name">Claude</span>
+            <span className="claude-chat-status">Jargon connector · connected</span>
           </div>
-          <nav>
-            {['Tools', 'Connections', 'API keys', 'Team'].map((item, i) => (
-              <div key={item} className={`nav-item ${i === 0 ? 'active' : ''}`}>
-                <span>{['▣', '⚑', '▤', '↻'][i]}</span>
-                {item}
-              </div>
-            ))}
-          </nav>
-        </aside>
-
-        <div className="dash-stage">
-          <div className="stage-header">
-            <div>
-              <div className="eyebrow">What reps open</div>
-              <h3>Custom UIs on your data</h3>
-            </div>
-            <button type="button" className="mock-primary">
-              Open tool →
-            </button>
+          <div className="claude-msg user">
+            Build a today queue for my AE book and start with Maya Chen.
           </div>
-
-          <div className="metric-row">
-            {[
-              ['Deployed tools', '6'],
-              ['Reps running', '28'],
-              ['Contacts loaded', '1,240'],
-              ['Channels', 'Call · Email · LI']
-            ].map(([label, value]) => (
-              <div key={label} className="metric">
-                <div className="metric-value">{value}</div>
-                <div className="metric-label">{label}</div>
-              </div>
-            ))}
+          <div className="claude-tool">
+            <span className="claude-tool-name">Jargon</span>
+            <span className="claude-tool-action">deploy_tool</span>
           </div>
-
-          <div className="activity-panel">
-            <div className="panel-label">Recently deployed</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Builder</th>
-                  <th>Tool</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>2h ago</td>
-                  <td>
-                    <span className="type-badge call">GTM Eng</span>
-                  </td>
-                  <td>Today queue for AE book · CLI deploy</td>
-                </tr>
-                <tr>
-                  <td>Yesterday</td>
-                  <td>
-                    <span className="type-badge">GTM Eng</span>
-                  </td>
-                  <td>Mid-market dialer · CRM + context</td>
-                </tr>
-                <tr>
-                  <td>2d ago</td>
-                  <td>
-                    <span className="type-badge reply">GTM Eng</span>
-                  </td>
-                  <td>Outbound sequencer · warehouse segment</td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="claude-msg assistant">
+            Deployed <strong>Today queue for AE book</strong> — 24 contacts from HubSpot, calling
+            and email included. Open it in the browser, or I can pull the next call from here.
+          </div>
+        </div>
+        <div className="cli-aside">
+          <div className="cli-aside-label">What sales opens</div>
+          <div className="cli-aside-card">
+            <div className="cli-aside-name">Today queue · AE book</div>
+            <div className="cli-aside-meta">From Claude · call · email · LinkedIn</div>
+            <ul>
+              <li>Maya Chen · Lattice</li>
+              <li>Jordan Blake · Rippling</li>
+              <li>Priya Nair · Notion</li>
+            </ul>
           </div>
         </div>
       </div>

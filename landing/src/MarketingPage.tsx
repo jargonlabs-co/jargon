@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from './components/BrandMark'
 import { LogoMark } from './components/LogoMark'
-import { CliDeployMock, ContextMock, DialerMock, TeamToolsMock } from './components/ProductMocks'
+import { ClaudeConnectorMock, CliDeployMock, ContextMock, DialerMock } from './components/ProductMocks'
 
 function useReveal() {
   const ref = useRef<HTMLElement | null>(null)
@@ -135,15 +135,15 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
         <Reveal className="section run-section" as="section">
           <div className="section-inner" id="run">
             <div className="section-copy centered">
-              <p className="eyebrow">For the revenue team</p>
-              <h2>Working software. Not another chat thread.</h2>
+              <p className="eyebrow">For sales teams</p>
+              <h2>Connect Claude. Work your book from there.</h2>
               <p>
-                What one GTM Engineer deploys from Claude Code becomes a UI the team can open and
-                run — same quality bar, same data layer, execution wired in, without waiting on
-                engineering to build or maintain it.
+                Add Jargon as a Claude connector — sign in once, no API keys, no terminal. Ask for
+                a today queue, dialer, or sequencer on your CRM. Jargon ships a working tool on
+                your data, then you run the motion from Claude or the browser.
               </p>
             </div>
-            <TeamToolsMock />
+            <ClaudeConnectorMock />
           </div>
         </Reveal>
 
@@ -153,8 +153,8 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
               <p className="eyebrow">Three pillars</p>
               <h2>Your data. Custom software. Tools the team can run.</h2>
               <p>
-                Jargon is for revenue leaders who want durable software on their stack — and for
-                the GTM Engineers who ship it.
+                Jargon is for sales teams who want durable software on their stack — and for the
+                GTM Engineers who ship it.
               </p>
             </div>
             <ul className="pillar-list">
@@ -178,8 +178,8 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
                 <span className="pillar-num">03</span>
                 <h3>Built for how you ship</h3>
                 <p>
-                  GTM Engineers deploy from Claude Code or the CLI — fully functional UIs without
-                  standing up an eng backlog. Sales opens a browser tool and works the queue.
+                  GTM Engineers deploy from Claude Code. Sales connects Claude and runs the same
+                  tools — from chat or the browser — without an engineering backlog.
                 </p>
               </li>
             </ul>

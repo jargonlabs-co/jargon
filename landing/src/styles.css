@@ -772,6 +772,86 @@ button {
   background: var(--bg-elevated);
 }
 
+/* Claude connector mock */
+
+.claude-chat {
+  padding: 20px 22px 22px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 320px;
+}
+
+.claude-chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.claude-chat-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.claude-chat-status {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1f7a35;
+}
+
+.claude-msg {
+  max-width: 92%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.claude-msg.user {
+  align-self: flex-end;
+  background: var(--navy);
+  color: var(--cream);
+}
+
+.claude-msg.assistant {
+  align-self: flex-start;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.claude-msg.assistant strong {
+  font-weight: 650;
+}
+
+.claude-tool {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(228, 103, 76, 0.1);
+  border: 1px solid rgba(228, 103, 76, 0.22);
+  font-size: 11.5px;
+}
+
+.claude-tool-name {
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.claude-tool-action {
+  font-family: var(--mono);
+  color: var(--text-muted);
+}
+
 /* Product shell mocks */
 
 .product-layout {
@@ -1530,13 +1610,6 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
-}
-
-.login-hint {
-  margin-top: 14px;
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  text-align: center;
 }
 
 .btn-full {

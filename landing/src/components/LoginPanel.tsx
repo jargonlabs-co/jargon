@@ -140,10 +140,6 @@ export function LoginPanel({ onClose, initialMode = 'login', embedded = false }:
             {busy ? 'Working…' : mode === 'login' ? 'Continue' : 'Create account'}
           </button>
         </form>
-        <p className="login-hint">
-          Already have an account? Use <strong>Sign in</strong>. Demo:{' '}
-          <code>demo@jargon.app</code> / <code>jargon-demo</code>
-        </p>
       </div>
     </div>
   )

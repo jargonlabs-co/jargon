@@ -5,6 +5,7 @@ import { WebApp, toolPath } from './components/WebApp'
 import { ToolApp } from './components/ToolApp'
 import { MarketingPage } from './MarketingPage'
 import { ConnectClaude } from './components/ConnectClaude'
+import { IconPage } from './components/IconPage'
 
 function toolIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/tools\/([^/]+)\/?$/)
@@ -34,6 +35,10 @@ function Root() {
   function openAuth(mode: 'login' | 'register') {
     setAuthMode(mode)
     setAuthOpen(true)
+  }
+
+  if (path === '/icon' || path === '/icon/') {
+    return <IconPage />
   }
 
   if (previewApp) {

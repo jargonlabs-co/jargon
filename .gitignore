@@ -16,3 +16,4 @@ data
 *.exe
 *.AppImage
 .supabase-local/
+.vercel

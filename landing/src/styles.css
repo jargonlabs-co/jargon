@@ -1910,3 +1910,16 @@ button {
 .deploy-result-live {
   border-color: rgba(228, 103, 76, 0.45);
 }
+
+.icon-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.icon-page img {
+  display: block;
+  width: min(256px, 56vw);
+  height: auto;
+}

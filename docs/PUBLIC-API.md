@@ -22,6 +22,8 @@ npm run api:types
 
 Send/dial per org, per 15-minute window: live 60 emails / 30 calls; sandbox 120 / 60. Over limit → `429` + `Retry-After`.
 
+Live send/dial also spends credits (email 1, call 5, LinkedIn 2). Empty balance → `402` + `billingUrl`. Sandbox keys and credit checks are free. `GET /account/credits`, `GET /account/usage`, `POST /account/billing-link`.
+
 ## Prospects
 
 Already in the API’s Postgres (workspace snapshots from Railway/HubSpot). Read via:
@@ -31,7 +33,7 @@ Already in the API’s Postgres (workspace snapshots from Railway/HubSpot). Read
 - `GET /v1/projects/{id}/contacts` — one workspace
 - `GET /v1/projects/{id}/queue/next`
 
-Do not build a separate store, import CSVs, or cache prospect PII locally. Connect + deploy hydrates the list; then only use these endpoints.
+Do not build a separate store or cache prospect PII locally. Pass the working list on deploy, or connect HubSpot/Railway and let deploy hydrate.
 
 ## Claude Code
 
@@ -51,4 +53,6 @@ export JARGON_API_URL=https://jargon-api-production.up.railway.app
 export JARGON_API_KEY=jarg_...
 ```
 
-After analysis, `POST /v1/tools/deploy` with `{ "prompt": "…" }`. Open `https://jargonlabs.co` + `dashboardPath` as the same account that owns the key.
+After analysis, ingest the working list with `import_list` (MCP) or `POST /v1/tools/deploy` with `{ "prompt": "…", "contacts": [ { "name", "company", "title", "email", "phone", "linkedinUrl" } ] }`. That list becomes the queue. Omit `contacts` only to hydrate from HubSpot/Railway. Append later with `POST /v1/projects/{id}/contacts`.
+
+Open `https://jargonlabs.co` + `dashboardPath` as the same account that owns the key.

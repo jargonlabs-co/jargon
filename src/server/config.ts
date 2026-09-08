@@ -45,6 +45,11 @@ export interface ServerConfig {
     clientSecret: string
     scopes: string
   }
+  stripe: {
+    secretKey: string
+    webhookSecret: string
+    publishableKey: string
+  }
 }
 
 let envFilesLoaded = false
@@ -128,6 +133,11 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       scopes:
         (process.env.RAILWAY_OAUTH_SCOPES ?? '').trim() ||
         'openid email profile offline_access project:member'
+    },
+    stripe: {
+      secretKey: (process.env.STRIPE_SECRET_KEY ?? '').trim(),
+      webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim(),
+      publishableKey: (process.env.STRIPE_PUBLISHABLE_KEY ?? '').trim()
     },
     ...overrides
   }

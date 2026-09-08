@@ -11,10 +11,61 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Current user and org for this API key */
+        /** Current user, org, plan, and credit balance for this API key */
         get: operations["getMe"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Remaining credits, plan grant, and wallets. Does not consume credits. */
+        get: operations["getAccountCredits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit and outbound usage for the current billing period */
+        get: operations["getAccountUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/billing-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a Stripe Checkout or Customer Portal URL (or a dashboard URL while Stripe is pending) */
+        post: operations["createBillingLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -81,7 +132,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Materialize a workspace from a prompt (hydrates contacts from the connected CRM/warehouse) */
+        /** Create a workspace from a prompt. Pass contacts to use that exact queue; otherwise hydrates from the connected CRM/warehouse. */
         post: operations["deployTool"];
         delete?: never;
         options?: never;
@@ -116,7 +167,8 @@ export interface paths {
         /** List contacts in a workspace */
         get: operations["listContacts"];
         put?: never;
-        post?: never;
+        /** Append people from any source to a workspace queue */
+        post: operations["addContacts"];
         delete?: never;
         options?: never;
         head?: never;
@@ -232,6 +284,15 @@ export interface components {
         Error: {
             error: string;
             code?: string;
+            billingUrl?: string;
+            remaining?: number;
+        };
+        InsufficientCredits: {
+            error: string;
+            /** @enum {string} */
+            code: "insufficient_credits";
+            billingUrl: string;
+            remaining: number;
         };
         /** @enum {string} */
         ContactStatus: "queued" | "active" | "completed" | "replied" | "no_answer" | "interested" | "not_interested";
@@ -260,6 +321,102 @@ export interface components {
                 /** @enum {string} */
                 linkedin: "live" | "demo" | "sandbox";
             };
+            plan: components["schemas"]["AccountPlan"];
+            credits: components["schemas"]["AccountCreditBalance"];
+            payments: components["schemas"]["Payments"];
+            claude: components["schemas"]["ClaudeConnector"];
+        };
+        ClaudeConnector: {
+            connected: boolean;
+            connectedAt?: string | null;
+            mcpUrl: string;
+            /** @description Opens Claude’s Add custom connector dialog with Jargon prefilled */
+            connectorUrl: string;
+        };
+        AccountPlan: {
+            /** @enum {string} */
+            id: "free" | "team" | "scale";
+            name: string;
+            creditsIncluded: number;
+            /** @enum {string} */
+            status: "active" | "trialing" | "past_due" | "canceled";
+        };
+        AccountCreditBalance: {
+            remaining: number;
+            included: number;
+            periodStart?: string | null;
+            periodEnd?: string | null;
+            billingUrl: string;
+            wallets?: components["schemas"]["CreditWallet"][];
+            creditTopups?: components["schemas"]["CreditTopup"][];
+        };
+        AccountCredits: {
+            orgId: string;
+            /** @enum {string} */
+            plan: "free" | "team" | "scale";
+            planName: string;
+            status: string;
+            credits: number;
+            included: number;
+            periodStart?: string | null;
+            periodEnd?: string | null;
+            billingUrl: string;
+            payments: components["schemas"]["Payments"];
+            wallets?: components["schemas"]["CreditWallet"][];
+            creditTopups?: components["schemas"]["CreditTopup"][];
+        };
+        CreditWallet: {
+            /** @enum {string} */
+            type: "recurring" | "topup";
+            credits: number;
+            nextRefreshAt?: string | null;
+            expiresAt?: string | null;
+        };
+        CreditTopup: {
+            id: string;
+            /** @enum {string} */
+            type: "purchase" | "granted" | "auto_topup";
+            grantedCredits: number;
+            remainingCredits: number;
+            grantedAt: string;
+            expiresAt?: string | null;
+        };
+        Payments: {
+            /** @enum {string} */
+            provider: "stripe" | "pending";
+            ready: boolean;
+        };
+        AccountUsage: {
+            periodStart?: string | null;
+            periodEnd?: string | null;
+            totals: components["schemas"]["UsageTotals"];
+            daily: (components["schemas"]["UsageTotals"] & {
+                day: string;
+            })[];
+            byProject: (components["schemas"]["UsageTotals"] & {
+                projectId: string;
+                projectName: string;
+            })[];
+        };
+        UsageTotals: {
+            credits: number;
+            emails: number;
+            calls: number;
+            linkedin: number;
+        };
+        BillingLinkRequest: {
+            /** @enum {string} */
+            intent: "upgrade" | "topup" | "portal";
+            /** @enum {string} */
+            plan?: "team" | "scale";
+            /** @enum {string} */
+            packId?: "credits_500" | "credits_2000" | "credits_10000";
+        };
+        BillingLink: {
+            url: string;
+            /** @enum {string} */
+            provider: "stripe" | "pending";
+            message?: string;
         };
         Project: {
             id: string;
@@ -274,14 +431,34 @@ export interface components {
             createdAt: number;
             updatedAt: number;
         };
+        DeployContact: {
+            name: string;
+            company?: string;
+            title?: string;
+            email?: string;
+            phone?: string;
+            city?: string;
+            linkedinUrl?: string;
+            accountName?: string;
+            notes?: string;
+            context?: string[];
+            companyDomain?: string;
+        };
         DeployRequest: {
             prompt: string;
+            /** @description Exact people for the queue. When set, HubSpot/Railway are not used. */
+            contacts?: components["schemas"]["DeployContact"][];
         };
         DeployResult: {
             projectId: string;
             contactCount: number;
             dashboardPath: string;
             project: components["schemas"]["Project"];
+        };
+        AddContactsResult: {
+            added: number;
+            contactCount: number;
+            contacts: components["schemas"]["Contact"][];
         };
         Contact: {
             id: string;
@@ -407,6 +584,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Live send/dial requires credits. Check remaining credits or open billingUrl. */
+        PaymentRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["InsufficientCredits"];
+            };
+        };
     };
     parameters: {
         Id: string;
@@ -437,6 +623,74 @@ export interface operations {
                     "application/json": components["schemas"]["Me"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAccountCredits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountCredits"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAccountUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUsage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createBillingLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingLink"];
+                };
+            };
+            400: components["responses"]["Error"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -599,6 +853,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    addContacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    contacts: components["schemas"]["DeployContact"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddContactsResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     queueNext: {
         parameters: {
             query?: never;
@@ -649,11 +934,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         message: components["schemas"]["Message"];
+                        creditsUsed?: number;
+                        creditsRemaining?: number;
                     };
                 };
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Error"];
             429: components["responses"]["RateLimited"];
@@ -682,11 +970,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         call: components["schemas"]["Call"];
+                        creditsUsed?: number;
+                        creditsRemaining?: number;
                     };
                 };
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Error"];
             429: components["responses"]["RateLimited"];

@@ -68,7 +68,7 @@ export function ConnectClaude() {
             Connect Claude
           </a>
           <pre className="connect-claude-cmd">{`claude mcp add --transport http --scope user jargon ${getMcpUrl()}`}</pre>
-          <a className="btn ghost" href="/">
+          <a className="btn ghost" href="/claude">
             Back to dashboard
           </a>
         </div>
@@ -83,7 +83,7 @@ export function ConnectClaude() {
             <button type="button" className="btn primary" disabled={busy} onClick={() => void approve()}>
               {busy ? 'Connecting…' : 'Allow Claude'}
             </button>
-            <a className="btn ghost" href="/">
+            <a className="btn ghost" href="/claude">
               Cancel
             </a>
           </div>

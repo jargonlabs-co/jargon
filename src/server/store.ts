@@ -16,6 +16,11 @@ const EMPTY: Database = {
   sessions: [],
   apiKeys: [],
   subscriptions: [],
+  orgBilling: [],
+  creditWallets: [],
+  creditLots: [],
+  creditLedger: [],
+  usageDaily: [],
   connections: [],
   oauthStates: [],
   projects: [],
@@ -41,6 +46,11 @@ function migrateDb(raw: Partial<Database>): Database {
   if (!db.previewComments) db.previewComments = []
   if (!db.apiKeys) db.apiKeys = []
   if (!db.subscriptions) db.subscriptions = []
+  if (!db.orgBilling) db.orgBilling = []
+  if (!db.creditWallets) db.creditWallets = []
+  if (!db.creditLots) db.creditLots = []
+  if (!db.creditLedger) db.creditLedger = []
+  if (!db.usageDaily) db.usageDaily = []
   if (!db.idempotencyRecords) db.idempotencyRecords = []
   if (!db.rateWindows) db.rateWindows = []
   if (!db.mcpOAuthClients) db.mcpOAuthClients = []

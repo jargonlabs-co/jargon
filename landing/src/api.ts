@@ -25,6 +25,106 @@ export interface Org {
   slug: string
 }
 
+export type PlanId = 'free' | 'team' | 'scale'
+export type BillingIntent = 'upgrade' | 'topup' | 'portal'
+
+export interface AccountPlan {
+  id: PlanId
+  name: string
+  creditsIncluded: number
+  status: string
+}
+
+export interface CreditWallet {
+  type: 'recurring' | 'topup'
+  credits: number
+  nextRefreshAt: string | null
+  expiresAt: string | null
+}
+
+export interface CreditTopup {
+  id: string
+  type: 'purchase' | 'granted' | 'auto_topup'
+  grantedCredits: number
+  remainingCredits: number
+  grantedAt: string
+  expiresAt: string | null
+}
+
+export interface AccountCredits {
+  orgId: string
+  plan: PlanId
+  planName: string
+  status: string
+  credits: number
+  included: number
+  periodStart: string | null
+  periodEnd: string | null
+  billingUrl: string
+  payments: { provider: 'stripe' | 'pending'; ready: boolean }
+  wallets: CreditWallet[]
+  creditTopups: CreditTopup[]
+}
+
+export interface UsageTotals {
+  credits: number
+  emails: number
+  calls: number
+  linkedin: number
+}
+
+export interface AccountUsage {
+  periodStart: string | null
+  periodEnd: string | null
+  totals: UsageTotals
+  daily: Array<UsageTotals & { day: string }>
+  byProject: Array<UsageTotals & { projectId: string; projectName: string }>
+}
+
+export interface ClaudeConnector {
+  connected: boolean
+  connectedAt: string | null
+  mcpUrl: string
+  connectorUrl: string
+}
+
+export interface AccountSnapshot {
+  credits: AccountCredits
+  usage: AccountUsage
+  catalog: {
+    plans: Array<{
+      id: PlanId
+      name: string
+      monthlyCredits: number
+      amountCents: number
+      description: string
+    }>
+    packs: Array<{ id: string; credits: number; amountCents: number; label: string }>
+    costs: { email: number; call: number; linkedin: number }
+  }
+  claude?: ClaudeConnector
+}
+
+export interface BillingLink {
+  url: string
+  provider: 'stripe' | 'pending'
+  message?: string
+}
+
+export interface AccountMe {
+  plan: AccountPlan
+  credits: {
+    remaining: number
+    included: number
+    periodStart: string | null
+    periodEnd: string | null
+    billingUrl: string
+    wallets?: CreditWallet[]
+    creditTopups?: CreditTopup[]
+  }
+  payments: { provider: 'stripe' | 'pending'; ready: boolean }
+}
+
 export interface AuthPayload {
   token: string
   user: PublicUser
@@ -105,7 +205,7 @@ export const api = {
     return request<void>('/auth/logout', { method: 'POST' })
   },
   me() {
-    return request<{ user: PublicUser; org: Org }>('/auth/me')
+    return request<{ user: PublicUser; org: Org } & Partial<AccountMe>>('/auth/me')
   },
   connections() {
     return request<ConnectionPublic[]>('/connections')
@@ -190,6 +290,27 @@ export const api = {
   },
   revokeApiKey(id: string) {
     return request<void>(`/auth/api-keys/${id}`, { method: 'DELETE' })
+  },
+  account() {
+    return request<AccountSnapshot>('/account')
+  },
+  accountCredits() {
+    return request<AccountCredits>('/account/credits')
+  },
+  accountUsage() {
+    return request<AccountUsage>('/account/usage')
+  },
+  billingLink(body: { intent: BillingIntent; plan?: PlanId; packId?: string }) {
+    return request<BillingLink>('/account/billing-link', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    })
+  },
+  updateOrg(name: string) {
+    return request<{ org: Org }>('/account/org', {
+      method: 'PATCH',
+      body: JSON.stringify({ name })
+    })
   },
   consentMcp(input: {
     client_id: string

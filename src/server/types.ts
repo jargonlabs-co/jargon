@@ -1,3 +1,13 @@
+import type {
+  CreditLedgerRow,
+  CreditLotRow,
+  CreditWalletRow,
+  OrgBillingRow,
+  UsageDailyRow
+} from './billing/types'
+
+export type { PlanId } from './billing/catalog'
+
 export type ProjectKind = 'dialer' | 'sequencer' | 'cadence' | 'list' | 'today' | 'generic'
 export type CampaignState = 'ACTIVE' | 'PAUSED' | 'DRAFT'
 export type ContactStatus =
@@ -334,13 +344,13 @@ export interface SharedPreviewPayload {
   }>
 }
 
-export type PlanId = 'free' | 'pro'
+/** @deprecated Use orgBilling. Kept so hosted JSON/Postgres blobs migrate cleanly. */
 export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'canceled' | 'none'
 
 export interface Subscription {
   id: string
   orgId: string
-  plan: PlanId
+  plan: 'free' | 'pro' | 'team' | 'scale'
   status: SubscriptionStatus
   stripeCustomerId?: string
   stripeSubscriptionId?: string
@@ -348,6 +358,12 @@ export interface Subscription {
   createdAt: number
   updatedAt: number
 }
+
+export type OrgBillingRecord = OrgBillingRow
+export type CreditWalletRecord = CreditWalletRow
+export type CreditLotRecord = CreditLotRow
+export type CreditLedgerRecord = CreditLedgerRow
+export type UsageDailyRecord = UsageDailyRow
 
 export interface McpOAuthClient {
   id: string
@@ -387,6 +403,11 @@ export interface Database {
   sessions: Session[]
   apiKeys: ApiKey[]
   subscriptions: Subscription[]
+  orgBilling: OrgBillingRecord[]
+  creditWallets: CreditWalletRecord[]
+  creditLots: CreditLotRecord[]
+  creditLedger: CreditLedgerRecord[]
+  usageDaily: UsageDailyRecord[]
   connections: Connection[]
   oauthStates: OAuthState[]
   projects: Project[]

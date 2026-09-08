@@ -23,6 +23,29 @@ export function mcpResourceUrl(config: ServerConfig): string {
   return `${issuerUrl(config)}/mcp`
 }
 
+export function claudeConnectorInstallUrl(mcpUrl: string): string {
+  const params = new URLSearchParams({
+    modal: 'add-custom-connector',
+    connectorName: 'Jargon',
+    connectorUrl: mcpUrl
+  })
+  return `https://claude.ai/customize/connectors?${params.toString()}`
+}
+
+export function claudeConnectorStatus(store: DataStore, config: ServerConfig, orgId: string) {
+  const now = Date.now()
+  const token = store.db.mcpAccessTokens
+    .filter((row) => row.orgId === orgId && row.expiresAt > now)
+    .sort((a, b) => b.createdAt - a.createdAt)[0]
+  const mcpUrl = mcpResourceUrl(config)
+  return {
+    connected: Boolean(token),
+    connectedAt: token ? new Date(token.createdAt).toISOString() : null,
+    mcpUrl,
+    connectorUrl: claudeConnectorInstallUrl(mcpUrl)
+  }
+}
+
 export function protectedResourceMetadata(config: ServerConfig) {
   const issuer = issuerUrl(config)
   return {

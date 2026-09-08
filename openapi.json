@@ -14,6 +14,7 @@
   "security": [{ "bearerAuth": [] }],
   "tags": [
     { "name": "Session" },
+    { "name": "Account" },
     { "name": "Workspaces" },
     { "name": "Queue" },
     { "name": "Execute" }
@@ -23,7 +24,7 @@
       "get": {
         "operationId": "getMe",
         "tags": ["Session"],
-        "summary": "Current user and org for this API key",
+        "summary": "Current user, org, plan, and credit balance for this API key",
         "responses": {
           "200": {
             "description": "OK",
@@ -33,6 +34,69 @@
               }
             }
           },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/account/credits": {
+      "get": {
+        "operationId": "getAccountCredits",
+        "tags": ["Account"],
+        "summary": "Remaining credits, plan grant, and wallets. Does not consume credits.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountCredits" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/account/usage": {
+      "get": {
+        "operationId": "getAccountUsage",
+        "tags": ["Account"],
+        "summary": "Credit and outbound usage for the current billing period",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountUsage" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/account/billing-link": {
+      "post": {
+        "operationId": "createBillingLink",
+        "tags": ["Account"],
+        "summary": "Create a Stripe Checkout or Customer Portal URL (or a dashboard URL while Stripe is pending)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BillingLinkRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BillingLink" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
           "401": { "$ref": "#/components/responses/Unauthorized" }
         }
       }
@@ -136,7 +200,7 @@
       "post": {
         "operationId": "deployTool",
         "tags": ["Workspaces"],
-        "summary": "Materialize a workspace from a prompt (hydrates contacts from the connected CRM/warehouse)",
+        "summary": "Create a workspace from a prompt. Pass contacts to use that exact queue; otherwise hydrates from the connected CRM/warehouse.",
         "requestBody": {
           "required": true,
           "content": {
@@ -222,6 +286,45 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
+      },
+      "post": {
+        "operationId": "addContacts",
+        "tags": ["Queue"],
+        "summary": "Append people from any source to a workspace queue",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["contacts"],
+                "additionalProperties": false,
+                "properties": {
+                  "contacts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": { "$ref": "#/components/schemas/DeployContact" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AddContactsResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
       }
     },
     "/projects/{id}/queue/next": {
@@ -270,7 +373,9 @@
                   "type": "object",
                   "required": ["message"],
                   "properties": {
-                    "message": { "$ref": "#/components/schemas/Message" }
+                    "message": { "$ref": "#/components/schemas/Message" },
+                    "creditsUsed": { "type": "number" },
+                    "creditsRemaining": { "type": "number" }
                   }
                 }
               }
@@ -280,6 +385,7 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "422": { "$ref": "#/components/responses/Error" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "502": { "$ref": "#/components/responses/Error" }
         }
@@ -303,7 +409,9 @@
                   "type": "object",
                   "required": ["call"],
                   "properties": {
-                    "call": { "$ref": "#/components/schemas/Call" }
+                    "call": { "$ref": "#/components/schemas/Call" },
+                    "creditsUsed": { "type": "number" },
+                    "creditsRemaining": { "type": "number" }
                   }
                 }
               }
@@ -312,6 +420,7 @@
           "400": { "$ref": "#/components/responses/Error" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/NotFound" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
           "422": { "$ref": "#/components/responses/Error" },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
@@ -493,6 +602,14 @@
             "schema": { "$ref": "#/components/schemas/Error" }
           }
         }
+      },
+      "PaymentRequired": {
+        "description": "Live send/dial requires credits. Check remaining credits or open billingUrl.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/InsufficientCredits" }
+          }
+        }
       }
     },
     "schemas": {
@@ -501,7 +618,19 @@
         "required": ["error"],
         "properties": {
           "error": { "type": "string" },
-          "code": { "type": "string" }
+          "code": { "type": "string" },
+          "billingUrl": { "type": "string" },
+          "remaining": { "type": "number" }
+        }
+      },
+      "InsufficientCredits": {
+        "type": "object",
+        "required": ["error", "code", "billingUrl", "remaining"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string", "enum": ["insufficient_credits"] },
+          "billingUrl": { "type": "string" },
+          "remaining": { "type": "number" }
         }
       },
       "ContactStatus": {
@@ -540,7 +669,7 @@
       },
       "Me": {
         "type": "object",
-        "required": ["user", "org", "environment", "outbound"],
+        "required": ["user", "org", "environment", "outbound", "plan", "credits", "payments", "claude"],
         "properties": {
           "user": { "$ref": "#/components/schemas/User" },
           "org": { "$ref": "#/components/schemas/Org" },
@@ -553,7 +682,174 @@
               "voice": { "type": "string", "enum": ["live", "demo", "sandbox"] },
               "linkedin": { "type": "string", "enum": ["live", "demo", "sandbox"] }
             }
+          },
+          "plan": { "$ref": "#/components/schemas/AccountPlan" },
+          "credits": { "$ref": "#/components/schemas/AccountCreditBalance" },
+          "payments": { "$ref": "#/components/schemas/Payments" },
+          "claude": { "$ref": "#/components/schemas/ClaudeConnector" }
+        }
+      },
+      "ClaudeConnector": {
+        "type": "object",
+        "required": ["connected", "mcpUrl", "connectorUrl"],
+        "properties": {
+          "connected": { "type": "boolean" },
+          "connectedAt": { "type": ["string", "null"] },
+          "mcpUrl": { "type": "string" },
+          "connectorUrl": {
+            "type": "string",
+            "description": "Opens Claude’s Add custom connector dialog with Jargon prefilled"
           }
+        }
+      },
+      "AccountPlan": {
+        "type": "object",
+        "required": ["id", "name", "creditsIncluded", "status"],
+        "properties": {
+          "id": { "type": "string", "enum": ["free", "team", "scale"] },
+          "name": { "type": "string" },
+          "creditsIncluded": { "type": "number" },
+          "status": { "type": "string", "enum": ["active", "trialing", "past_due", "canceled"] }
+        }
+      },
+      "AccountCreditBalance": {
+        "type": "object",
+        "required": ["remaining", "included", "billingUrl"],
+        "properties": {
+          "remaining": { "type": "number" },
+          "included": { "type": "number" },
+          "periodStart": { "type": ["string", "null"] },
+          "periodEnd": { "type": ["string", "null"] },
+          "billingUrl": { "type": "string" },
+          "wallets": { "type": "array", "items": { "$ref": "#/components/schemas/CreditWallet" } },
+          "creditTopups": { "type": "array", "items": { "$ref": "#/components/schemas/CreditTopup" } }
+        }
+      },
+      "AccountCredits": {
+        "type": "object",
+        "required": [
+          "orgId",
+          "plan",
+          "planName",
+          "status",
+          "credits",
+          "included",
+          "billingUrl",
+          "payments"
+        ],
+        "properties": {
+          "orgId": { "type": "string" },
+          "plan": { "type": "string", "enum": ["free", "team", "scale"] },
+          "planName": { "type": "string" },
+          "status": { "type": "string" },
+          "credits": { "type": "number" },
+          "included": { "type": "number" },
+          "periodStart": { "type": ["string", "null"] },
+          "periodEnd": { "type": ["string", "null"] },
+          "billingUrl": { "type": "string" },
+          "payments": { "$ref": "#/components/schemas/Payments" },
+          "wallets": { "type": "array", "items": { "$ref": "#/components/schemas/CreditWallet" } },
+          "creditTopups": { "type": "array", "items": { "$ref": "#/components/schemas/CreditTopup" } }
+        }
+      },
+      "CreditWallet": {
+        "type": "object",
+        "required": ["type", "credits"],
+        "properties": {
+          "type": { "type": "string", "enum": ["recurring", "topup"] },
+          "credits": { "type": "number" },
+          "nextRefreshAt": { "type": ["string", "null"] },
+          "expiresAt": { "type": ["string", "null"] }
+        }
+      },
+      "CreditTopup": {
+        "type": "object",
+        "required": ["id", "type", "grantedCredits", "remainingCredits", "grantedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "enum": ["purchase", "granted", "auto_topup"] },
+          "grantedCredits": { "type": "number" },
+          "remainingCredits": { "type": "number" },
+          "grantedAt": { "type": "string" },
+          "expiresAt": { "type": ["string", "null"] }
+        }
+      },
+      "Payments": {
+        "type": "object",
+        "required": ["provider", "ready"],
+        "properties": {
+          "provider": { "type": "string", "enum": ["stripe", "pending"] },
+          "ready": { "type": "boolean" }
+        }
+      },
+      "AccountUsage": {
+        "type": "object",
+        "required": ["totals", "daily", "byProject"],
+        "properties": {
+          "periodStart": { "type": ["string", "null"] },
+          "periodEnd": { "type": ["string", "null"] },
+          "totals": { "$ref": "#/components/schemas/UsageTotals" },
+          "daily": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                { "$ref": "#/components/schemas/UsageTotals" },
+                {
+                  "type": "object",
+                  "required": ["day"],
+                  "properties": { "day": { "type": "string" } }
+                }
+              ]
+            }
+          },
+          "byProject": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                { "$ref": "#/components/schemas/UsageTotals" },
+                {
+                  "type": "object",
+                  "required": ["projectId", "projectName"],
+                  "properties": {
+                    "projectId": { "type": "string" },
+                    "projectName": { "type": "string" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "UsageTotals": {
+        "type": "object",
+        "required": ["credits", "emails", "calls", "linkedin"],
+        "properties": {
+          "credits": { "type": "number" },
+          "emails": { "type": "integer" },
+          "calls": { "type": "integer" },
+          "linkedin": { "type": "integer" }
+        }
+      },
+      "BillingLinkRequest": {
+        "type": "object",
+        "required": ["intent"],
+        "additionalProperties": false,
+        "properties": {
+          "intent": { "type": "string", "enum": ["upgrade", "topup", "portal"] },
+          "plan": { "type": "string", "enum": ["team", "scale"] },
+          "packId": {
+            "type": "string",
+            "enum": ["credits_500", "credits_2000", "credits_10000"]
+          }
+        }
+      },
+      "BillingLink": {
+        "type": "object",
+        "required": ["url", "provider"],
+        "properties": {
+          "url": { "type": "string" },
+          "provider": { "type": "string", "enum": ["stripe", "pending"] },
+          "message": { "type": "string" }
         }
       },
       "Project": {
@@ -584,12 +880,37 @@
           "updatedAt": { "type": "integer" }
         }
       },
+      "DeployContact": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "company": { "type": "string" },
+          "title": { "type": "string" },
+          "email": { "type": "string" },
+          "phone": { "type": "string" },
+          "city": { "type": "string" },
+          "linkedinUrl": { "type": "string" },
+          "accountName": { "type": "string" },
+          "notes": { "type": "string" },
+          "context": { "type": "array", "items": { "type": "string" } },
+          "companyDomain": { "type": "string" }
+        }
+      },
       "DeployRequest": {
         "type": "object",
         "required": ["prompt"],
         "additionalProperties": false,
         "properties": {
-          "prompt": { "type": "string", "minLength": 1 }
+          "prompt": { "type": "string", "minLength": 1 },
+          "contacts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": { "$ref": "#/components/schemas/DeployContact" },
+            "description": "Exact people for the queue. When set, HubSpot/Railway are not used."
+          }
         }
       },
       "DeployResult": {
@@ -600,6 +921,18 @@
           "contactCount": { "type": "integer" },
           "dashboardPath": { "type": "string" },
           "project": { "$ref": "#/components/schemas/Project" }
+        }
+      },
+      "AddContactsResult": {
+        "type": "object",
+        "required": ["added", "contactCount", "contacts"],
+        "properties": {
+          "added": { "type": "integer" },
+          "contactCount": { "type": "integer" },
+          "contacts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Contact" }
+          }
         }
       },
       "Contact": {

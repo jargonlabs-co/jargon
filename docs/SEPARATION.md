@@ -9,7 +9,7 @@
 | Auth / login | **Supabase Auth only** (passwords never on Railway) | Local / ops-specific |
 | Outbound | Platform Gmail, Twilio, HeyReach | Crustdata queue + Gmail/Twilio |
 | Prospect search / seed | Customer-connected warehouse (read) | Crustdata → seed `jargon_prospects` (write) |
-| Billing | None | None |
+| Billing | Credits + Stripe (webhooks when Atlas keys are set) | None |
 | Deploy | Product Railway + Vercel | Separate Railway |
 
 ## Dogfood pattern

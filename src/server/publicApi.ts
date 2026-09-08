@@ -15,6 +15,14 @@ import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import {
+  extractContactsFromPrompt,
+  MAX_CONTACTS,
+  PROMPT_CONTACTS_HINT,
+  promptNeedsExplicitContacts,
+  toManualContacts,
+  type DeployContactInput
+} from './deployContacts'
+import {
   isContactStatus,
   listContacts,
   nextQueueContact,
@@ -238,18 +246,32 @@ export async function deployPublicTool(
   store: DataStore,
   config: ServerConfig,
   orgId: string,
-  prompt: string
+  prompt: string,
+  contacts?: DeployContactInput[]
 ): Promise<
   | { ok: true; status: 201; body: { projectId: string; contactCount: number; dashboardPath: string; project: PublicProject } }
+  | { ok: false; status: 400; body: { error: string } }
   | { ok: false; status: 502; body: { error: string } }
 > {
+  const resolved =
+    contacts?.length ? contacts : extractContactsFromPrompt(prompt)
+  if (!resolved?.length && promptNeedsExplicitContacts(prompt)) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: `This prompt names a specific list. ${PROMPT_CONTACTS_HINT}`
+      }
+    }
+  }
   const inferred = inferDeployParams(prompt)
   try {
     const projectId = await createProjectRecord(store, config, {
       orgId,
       prompt,
       kind: inferred.kind,
-      answers: inferred.answers
+      answers: inferred.answers,
+      contacts: resolved
     })
     const project = store.db.projects.find((p) => p.id === projectId)
     if (!project) {
@@ -272,6 +294,52 @@ export async function deployPublicTool(
       status: 502,
       body: { error: err instanceof Error ? err.message : 'Deploy failed' }
     }
+  }
+}
+
+export function addPublicContacts(
+  store: DataStore,
+  orgId: string,
+  projectId: string,
+  inputs: DeployContactInput[]
+):
+  | { ok: true; added: number; contactCount: number; contacts: PublicContact[] }
+  | { ok: false; error: string } {
+  const project = findOrgProject(store, orgId, projectId)
+  if (!project) return { ok: false, error: 'Project not found' }
+  const existing = store.db.contacts.filter((c) => c.projectId === projectId)
+  if (existing.length + inputs.length > MAX_CONTACTS) {
+    return { ok: false, error: `workspace can hold ${MAX_CONTACTS} contacts` }
+  }
+  const created = toManualContacts(orgId, projectId, inputs)
+  if (existing.some((c) => c.status === 'active')) {
+    for (const contact of created) contact.status = 'queued'
+  }
+  const now = Date.now()
+  store.update((db) => {
+    db.contacts.push(...created)
+    const total = db.contacts.filter((c) => c.projectId === projectId).length
+    const campaign = db.campaigns.find((x) => x.projectId === projectId && x.state === 'ACTIVE')
+    if (campaign) {
+      campaign.total = total
+      campaign.updatedAt = now
+    }
+    const nextProject = db.projects.find((x) => x.id === projectId)
+    if (nextProject) nextProject.updatedAt = now
+    db.activities.unshift({
+      id: uid('act'),
+      orgId,
+      projectId,
+      kind: 'sync',
+      summary: `Added ${created.length} contacts`,
+      createdAt: now
+    })
+  })
+  return {
+    ok: true,
+    added: created.length,
+    contactCount: existing.length + created.length,
+    contacts: created.map(toPublicContact)
   }
 }
 

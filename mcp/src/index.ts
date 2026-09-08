@@ -21,12 +21,66 @@ function createServer(): McpServer {
     'get_me',
     {
       title: 'Who am I',
-      description: 'Current Jargon user, org, and live/sandbox outbound flags for this API key.',
+      description: 'Current Jargon user, org, plan, credit balance, and live/sandbox outbound flags.',
       annotations: { readOnlyHint: true }
     },
     async () => {
       try {
         return toolResult(await jargonFetch('GET', '/me'))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'get_credits',
+    {
+      title: 'Get credits',
+      description:
+        'Remaining API credits, monthly grant, and refresh date. Free — does not consume credits.',
+      annotations: { readOnlyHint: true }
+    },
+    async () => {
+      try {
+        return toolResult(await jargonFetch('GET', '/account/credits'))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'get_usage',
+    {
+      title: 'Get usage',
+      description: 'Credit and outbound usage for the current billing period.',
+      annotations: { readOnlyHint: true }
+    },
+    async () => {
+      try {
+        return toolResult(await jargonFetch('GET', '/account/usage'))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'create_billing_link',
+    {
+      title: 'Create billing link',
+      description:
+        'Return a URL to upgrade, buy credits, or open the billing portal. Do not collect card details — send the user to this URL.',
+      inputSchema: z.object({
+        intent: z.enum(['upgrade', 'topup', 'portal']),
+        plan: z.enum(['team', 'scale']).optional(),
+        packId: z.enum(['credits_500', 'credits_2000', 'credits_10000']).optional()
+      })
+    },
+    async (body) => {
+      try {
+        return toolResult(await jargonFetch('POST', '/account/billing-link', { body }))
       } catch (err) {
         return toolError(err)
       }
@@ -107,19 +161,79 @@ function createServer(): McpServer {
     }
   )
 
+  const ContactInput = z.object({
+    name: z.string().min(1).describe('Full name'),
+    company: z.string().optional(),
+    title: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    city: z.string().optional(),
+    linkedinUrl: z.string().optional(),
+    linkedin: z.string().optional(),
+    notes: z.string().optional(),
+    context: z.array(z.string()).optional()
+  })
+
+  server.registerTool(
+    'import_list',
+    {
+      title: 'Import list into a dialer',
+      description:
+        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway.',
+      inputSchema: z.object({
+        prompt: z.string().min(1).describe('What to build, e.g. Dialer for these 10 RevOps leaders'),
+        contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue')
+      })
+    },
+    async ({ prompt, contacts }) => {
+      try {
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts } }))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
   server.registerTool(
     'deploy_tool',
     {
-      title: 'Deploy workspace',
+      title: 'Deploy workspace from CRM',
       description:
-        'Materialize a dialer/today-queue workspace from a prompt. Hydrates contacts from the connected Railway/HubSpot source. Returns projectId, contactCount, dashboardPath.',
+        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway.',
       inputSchema: z.object({
-        prompt: z.string().min(1).describe('What to deploy, e.g. Today queue for GTM Engineers in the US')
+        prompt: z.string().min(1).describe('What to deploy from the connected CRM/warehouse'),
+        contacts: z
+          .array(ContactInput)
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('Optional override list. Prefer import_list when you already have people.')
       })
     },
-    async ({ prompt }) => {
+    async ({ prompt, contacts }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt } }))
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts } }))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'add_contacts',
+    {
+      title: 'Add contacts to a workspace',
+      description: 'Append people from any source to an existing workspace queue.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        contacts: z.array(ContactInput).min(1).max(100)
+      })
+    },
+    async ({ projectId, contacts }) => {
+      try {
+        return toolResult(
+          await jargonFetch('POST', `/projects/${projectId}/contacts`, { body: { contacts } })
+        )
       } catch (err) {
         return toolError(err)
       }

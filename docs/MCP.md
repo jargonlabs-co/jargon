@@ -38,6 +38,10 @@ claude mcp add --transport http --scope user \
 
 ## Tools
 
-`get_me` · `list_prospects` · `get_prospect` · `list_projects` · `get_project` · `deploy_tool` · `list_contacts` · `queue_next` · `send_message` · `start_call` · `complete_call` · `disposition` · `add_note`
+`get_me` · `get_credits` · `get_usage` · `create_billing_link` · `import_list` · `deploy_tool` · `add_contacts` · `list_prospects` · `get_prospect` · `list_projects` · `get_project` · `list_contacts` · `queue_next` · `send_message` · `start_call` · `complete_call` · `disposition` · `add_note`
+
+`import_list` is how Claude turns any researched list into a dialer when that tool is visible. If Claude only has `deploy_tool`, put the people in `prompt` as JSON or a markdown table — Jargon extracts that list and uses it as the queue.
+
+`deploy_tool` without `contacts` hydrates the connected CRM/warehouse. `add_contacts` appends people to an existing workspace.
 
 Contract: [`../openapi.json`](../openapi.json)

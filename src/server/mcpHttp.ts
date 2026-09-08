@@ -17,15 +17,21 @@ import {
   type McpActor
 } from './mcpOauth'
 import { registerJargonTools } from './mcpTools'
+import type { BillingService } from './billing/types'
 
 const actorStore = new AsyncLocalStorage<McpActor>()
 
-export function mountMcp(app: Express, store: DataStore, config: ServerConfig): void {
+export function mountMcp(
+  app: Express,
+  store: DataStore,
+  config: ServerConfig,
+  billing: BillingService
+): void {
   const handler = createMcpHandler(() => {
     const actor = actorStore.getStore()
     if (!actor) throw new Error('MCP actor missing')
-    const server = new McpServer({ name: 'jargon', version: '1.0.0' })
-    registerJargonTools(server, store, config, actor)
+    const server = new McpServer({ name: 'jargon', version: '1.1.0' })
+    registerJargonTools(server, store, config, actor, billing)
     return server
   })
   const node = toNodeHandler(handler)

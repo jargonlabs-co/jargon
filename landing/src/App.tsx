@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './auth'
 import { LoginPanel } from './components/LoginPanel'
-import { WebApp, toolPath } from './components/WebApp'
+import { AccountApp, toolPath } from './components/account/AccountApp'
 import { ToolApp } from './components/ToolApp'
 import { MarketingPage } from './MarketingPage'
 import { ConnectClaude } from './components/ConnectClaude'
@@ -42,7 +42,7 @@ function Root() {
   }
 
   if (previewApp) {
-    return <WebApp preview />
+    return <AccountApp preview path={path} onNavigate={navigate} />
   }
 
   if (loading) {
@@ -56,12 +56,14 @@ function Root() {
   }
 
   if (user && toolId) {
-    return <ToolApp projectId={toolId} onBack={() => navigate('/')} />
+    return <ToolApp projectId={toolId} onBack={() => navigate('/tools')} />
   }
 
   if (user) {
     return (
-      <WebApp
+      <AccountApp
+        path={path}
+        onNavigate={navigate}
         onOpenTool={(id) => {
           navigate(toolPath(id))
         }}

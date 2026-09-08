@@ -7,7 +7,9 @@ import type { ServerConfig } from './config'
 import { requireApiKey, toPublicUser } from './auth'
 import { readIdempotency, writeIdempotency } from './idempotency'
 import { consumeRateLimit } from './rateLimit'
+import { parseDeployContacts, parseRequiredContacts } from './deployContacts'
 import {
+  addPublicContacts,
   addPublicNote,
   applyDisposition,
   completePublicCall,
@@ -27,6 +29,9 @@ import {
   toPublicProject,
   toPublicQueueNext
 } from './publicApi'
+import type { BillingService } from './billing/types'
+import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
+import { claudeConnectorStatus } from './mcpOauth'
 
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
@@ -81,7 +86,7 @@ function parseContactListQuery(req: {
   }
 }
 
-export function createV1Router(store: DataStore, config: ServerConfig): Router {
+export function createV1Router(store: DataStore, config: ServerConfig, billing: BillingService): Router {
   const router = Router()
   const auth = requireApiKey(store, config)
   const openapi = loadOpenApi()
@@ -90,10 +95,11 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
     res.json(openapi)
   })
 
-  router.get('/me', auth, (req, res) => {
+  router.get('/me', auth, async (req, res) => {
     const org = req.auth!.org
     const environment = req.auth!.environment
     const sandbox = environment === 'sandbox'
+    const credits = await billing.getCredits(org.id)
     res.json({
       user: toPublicUser(req.auth!.user),
       org: { id: org.id, name: org.name, slug: org.slug },
@@ -102,8 +108,39 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
         email: sandbox ? 'sandbox' : config.google.refreshToken ? 'live' : 'demo',
         voice: sandbox ? 'sandbox' : config.twilio.accountSid ? 'live' : 'demo',
         linkedin: sandbox ? 'sandbox' : config.heyreach.apiKey ? 'live' : 'demo'
-      }
+      },
+      ...meBillingFields(credits),
+      claude: claudeConnectorStatus(store, config, org.id)
     })
+  })
+
+  router.get('/account/credits', auth, async (req, res) => {
+    res.json(await billing.getCredits(req.auth!.org.id))
+  })
+
+  router.get('/account/usage', auth, async (req, res) => {
+    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id)))
+  })
+
+  router.post('/account/billing-link', auth, async (req, res) => {
+    const intent = req.body?.intent as 'upgrade' | 'topup' | 'portal' | undefined
+    if (intent !== 'upgrade' && intent !== 'topup' && intent !== 'portal') {
+      res.status(400).json({ error: 'intent must be upgrade, topup, or portal' })
+      return
+    }
+    try {
+      const link = await billing.createBillingLink({
+        orgId: req.auth!.org.id,
+        email: req.auth!.user.email,
+        name: req.auth!.org.name,
+        intent,
+        plan: req.body?.plan,
+        packId: req.body?.packId
+      })
+      res.json(link)
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not create billing link' })
+    }
   })
 
   router.get('/projects', auth, (req, res) => {
@@ -116,7 +153,18 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
       res.status(400).json({ error: 'prompt required' })
       return
     }
-    const result = await deployPublicTool(store, config, req.auth!.org.id, prompt)
+    const parsed = parseDeployContacts(req.body?.contacts)
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    const result = await deployPublicTool(
+      store,
+      config,
+      req.auth!.org.id,
+      prompt,
+      parsed.contacts
+    )
     res.status(result.status).json(result.body)
   })
 
@@ -141,6 +189,25 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
       return
     }
     res.json(listPublicContacts(store, project.id, parsed))
+  })
+
+  router.post('/projects/:id/contacts', auth, (req, res) => {
+    const project = findOrgProject(store, req.auth!.org.id, paramId(req.params.id))
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const parsed = parseRequiredContacts(req.body?.contacts)
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    const result = addPublicContacts(store, req.auth!.org.id, project.id, parsed.contacts)
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.status(201).json(result)
   })
 
   router.get('/prospects', auth, (req, res) => {
@@ -231,18 +298,49 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
       res.status(400).json({ error: 'invalid channel' })
       return
     }
+    const sandbox = req.auth!.environment === 'sandbox'
+    const willSend = (status ?? 'sent') === 'sent'
+    const billableReason = channel === 'linkedin' ? 'linkedin' : 'email'
+    let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
+    if (willSend) {
+      charge = await chargeIfLive(billing, {
+        orgId: req.auth!.org.id,
+        sandbox,
+        reason: billableReason,
+        projectId: contact.projectId,
+        apiKeyId: req.auth!.apiKeyId
+      })
+      if (!charge.ok) {
+        res.status(402).json({
+          error: charge.error,
+          code: charge.code,
+          billingUrl: charge.billingUrl,
+          remaining: charge.remaining
+        })
+        return
+      }
+      res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+      res.setHeader('X-Credits-Remaining', String(charge.remaining))
+    }
     const result = await sendPublicMessage(store, config, contact, {
       subject,
       body,
       status,
       channel,
-      sandbox: req.auth!.environment === 'sandbox'
+      sandbox
     })
-    writeIdempotency(store, req.auth!.org.id, idemKey, 'POST', path, result.status, result.body)
-    res.status(result.status).json(result.body)
+    if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
+      await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+    }
+    const payload =
+      result.ok && charge?.ok
+        ? { ...result.body, creditsUsed: charge.creditsUsed, creditsRemaining: charge.remaining }
+        : result.body
+    writeIdempotency(store, req.auth!.org.id, idemKey, 'POST', path, result.status, payload)
+    res.status(result.status).json(payload)
   })
 
-  router.post('/contacts/:id/calls', auth, (req, res) => {
+  router.post('/contacts/:id/calls', auth, async (req, res) => {
     const idemKey = idempotencyHeader(req)
     if (!idemKey) {
       res.status(400).json({ error: 'Idempotency-Key required', code: 'idempotency_required' })
@@ -270,8 +368,27 @@ export function createV1Router(store: DataStore, config: ServerConfig): Router {
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    const call = startPublicCall(store, config, contact, req.auth!.environment === 'sandbox')
-    const body = { call }
+    const sandbox = req.auth!.environment === 'sandbox'
+    const charge = await chargeIfLive(billing, {
+      orgId: req.auth!.org.id,
+      sandbox,
+      reason: 'call',
+      projectId: contact.projectId,
+      apiKeyId: req.auth!.apiKeyId
+    })
+    if (!charge.ok) {
+      res.status(402).json({
+        error: charge.error,
+        code: charge.code,
+        billingUrl: charge.billingUrl,
+        remaining: charge.remaining
+      })
+      return
+    }
+    const call = startPublicCall(store, config, contact, sandbox)
+    const body = { call, creditsUsed: charge.creditsUsed, creditsRemaining: charge.remaining }
+    res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+    res.setHeader('X-Credits-Remaining', String(charge.remaining))
     writeIdempotency(store, req.auth!.org.id, idemKey, 'POST', path, 201, body)
     res.status(201).json(body)
   })

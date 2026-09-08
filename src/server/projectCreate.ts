@@ -14,6 +14,11 @@ import {
   writePostgresContactsToProjects
 } from './providers/postgresProspects'
 import { syncRailwayProspects } from './providers/railway'
+import {
+  providedSegment,
+  toManualContacts,
+  type DeployContactInput
+} from './deployContacts'
 
 export async function createProjectRecord(
   store: DataStore,
@@ -23,10 +28,24 @@ export async function createProjectRecord(
     prompt: string
     kind: ProjectKind
     answers?: Record<string, string>
+    contacts?: DeployContactInput[]
   }
 ): Promise<string> {
   const { orgId, prompt, kind } = input
-  const finalAnswers = input.answers ?? {}
+  const provided = input.contacts?.length ? input.contacts : undefined
+  const finalAnswers = {
+    ...(input.answers ?? {}),
+    ...(provided
+      ? {
+          data_source: 'provided',
+          prospect_count: String(provided.length),
+          segment:
+            input.answers?.segment && input.answers.segment !== 'HubSpot contacts'
+              ? input.answers.segment
+              : providedSegment(provided)
+        }
+      : {})
+  }
   let projectId = ''
 
   store.update((db) => {
@@ -34,10 +53,13 @@ export async function createProjectRecord(
       orgId,
       prompt,
       kind,
-      answers: finalAnswers
+      answers: finalAnswers,
+      contacts: provided ? toManualContacts(orgId, '', provided) : undefined
     })
     projectId = project.id
   })
+
+  if (provided) return projectId
 
   const limit = Math.min(
     Math.max(Number(finalAnswers.prospect_count ?? 50), 1),

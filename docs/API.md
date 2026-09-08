@@ -15,7 +15,7 @@ MCP comes later and will wrap `/v1` 1:1.
 
 | Method | Path | Notes |
 |--------|------|--------|
-| `GET` | `/auth/me` | User, org, outbound live/demo flags |
+| `GET` | `/auth/me` | User, org, plan, credits, Claude connector status |
 | `POST` | `/auth/api-keys` | `{ name }` → returns key once |
 | `GET` | `/auth/api-keys` | List keys (no secrets) |
 

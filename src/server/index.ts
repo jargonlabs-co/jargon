@@ -70,18 +70,33 @@ import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import { createV1Router } from './v1'
 import { mountMcp } from './mcpHttp'
+import { claudeConnectorStatus } from './mcpOauth'
+import { parseDeployContacts } from './deployContacts'
+import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 
-export function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
+export async function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
+  const billing = await createBillingService(store, config)
   const app = express()
   app.use(cors({ origin: true, credentials: true }))
+  app.post('/billing/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    try {
+      const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}))
+      const result = await billing.applyStripeWebhook(raw, req.header('stripe-signature'))
+      res.json(result)
+    } catch (err) {
+      const status =
+        err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 400
+      res.status(status || 400).json({ error: err instanceof Error ? err.message : 'Webhook failed' })
+    }
+  })
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
 
   const auth = requireAuth(store, config)
   const paramId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
-  app.use('/v1', createV1Router(store, config))
-  mountMcp(app, store, config)
+  app.use('/v1', createV1Router(store, config, billing))
+  mountMcp(app, store, config, billing)
   app.get('/openapi.json', (_req, res) => {
     res.redirect(302, '/v1/openapi.json')
   })
@@ -103,7 +118,9 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
             : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
         railway: config.railway.clientId ? 'live' : 'demo',
-        auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured'
+        auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured',
+        billing: billing.backend,
+        stripe: billing.paymentsReady ? 'live' : 'pending'
       },
       publicUrl: config.publicUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
@@ -226,7 +243,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     res.status(204).end()
   })
 
-  app.get('/auth/me', auth, (req, res) => {
+  app.get('/auth/me', auth, async (req, res) => {
+    const credits = await billing.getCredits(req.auth!.org.id)
     res.json({
       user: toPublicUser(req.auth!.user),
       org: req.auth!.org,
@@ -235,7 +253,9 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         email: config.google.refreshToken ? 'live' : 'demo',
         voice: config.twilio.accountSid ? 'live' : 'demo',
         linkedin: config.heyreach.apiKey ? 'live' : 'demo'
-      }
+      },
+      ...meBillingFields(credits),
+      claude: claudeConnectorStatus(store, config, req.auth!.org.id)
     })
   })
 
@@ -261,6 +281,43 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
     const org = store.db.orgs.find((o) => o.id === orgId)!
     res.json({ org })
+  })
+
+  app.get('/account', auth, async (req, res) => {
+    const snapshot = await billing.snapshot(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id))
+    res.json({
+      ...snapshot,
+      claude: claudeConnectorStatus(store, config, req.auth!.org.id)
+    })
+  })
+
+  app.get('/account/credits', auth, async (req, res) => {
+    res.json(await billing.getCredits(req.auth!.org.id))
+  })
+
+  app.get('/account/usage', auth, async (req, res) => {
+    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id)))
+  })
+
+  app.post('/account/billing-link', auth, async (req, res) => {
+    const intent = req.body?.intent as 'upgrade' | 'topup' | 'portal' | undefined
+    if (intent !== 'upgrade' && intent !== 'topup' && intent !== 'portal') {
+      res.status(400).json({ error: 'intent must be upgrade, topup, or portal' })
+      return
+    }
+    try {
+      const link = await billing.createBillingLink({
+        orgId: req.auth!.org.id,
+        email: req.auth!.user.email,
+        name: req.auth!.org.name,
+        intent,
+        plan: req.body?.plan,
+        packId: req.body?.packId
+      })
+      res.json(link)
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not create billing link' })
+    }
   })
 
   // ——— Data layer (customer) ———
@@ -722,6 +779,11 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.status(400).json({ error: 'prompt required' })
       return
     }
+    const parsed = parseDeployContacts((req.body as { contacts?: unknown }).contacts)
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
     const inferred = inferDeployParams(prompt.trim())
     const orgId = req.auth!.org.id
     try {
@@ -729,7 +791,8 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
         orgId,
         prompt: prompt.trim(),
         kind: kind ?? inferred.kind,
-        answers: { ...inferred.answers, ...(answers ?? {}) }
+        answers: { ...inferred.answers, ...(answers ?? {}) },
+        contacts: parsed.contacts
       })
       const bundle = bundleProject(store.db, projectId)
       if (!bundle) {
@@ -985,7 +1048,7 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
   })
 
-  app.post('/contacts/:id/calls', auth, (req, res) => {
+  app.post('/contacts/:id/calls', auth, async (req, res) => {
     const contact = store.db.contacts.find(
       (c) => c.id === paramId(req.params.id) && c.orgId === req.auth!.org.id
     )
@@ -993,6 +1056,24 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       res.status(404).json({ error: 'Contact not found' })
       return
     }
+    const charge = await chargeIfLive(billing, {
+      orgId: req.auth!.org.id,
+      sandbox: req.auth!.environment === 'sandbox',
+      reason: 'call',
+      projectId: contact.projectId,
+      apiKeyId: req.auth!.apiKeyId
+    })
+    if (!charge.ok) {
+      res.status(402).json({
+        error: charge.error,
+        code: charge.code,
+        billingUrl: charge.billingUrl,
+        remaining: charge.remaining
+      })
+      return
+    }
+    res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+    res.setHeader('X-Credits-Remaining', String(charge.remaining))
     const now = Date.now()
     const callId = uid('call')
     const twilioReady = Boolean(config.twilio.accountSid && config.twilio.apiKeySid)
@@ -1052,7 +1133,11 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
       }, 1100)
     }
 
-    res.status(201).json(store.db.calls.find((c) => c.id === callId))
+    res.status(201).json({
+      ...store.db.calls.find((c) => c.id === callId),
+      creditsUsed: charge.creditsUsed,
+      creditsRemaining: charge.remaining
+    })
   })
 
   app.post('/calls/:id/complete', auth, (req, res) => {
@@ -1146,6 +1231,28 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     let mode: 'demo' | 'gmail' | 'heyreach' = 'demo'
     let providerMessageId: string | undefined
     let error: string | undefined
+    let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
+
+    if (finalStatus === 'sent') {
+      charge = await chargeIfLive(billing, {
+        orgId: req.auth!.org.id,
+        sandbox: req.auth!.environment === 'sandbox',
+        reason: messageChannel === 'linkedin' ? 'linkedin' : 'email',
+        projectId: contact.projectId,
+        apiKeyId: req.auth!.apiKeyId
+      })
+      if (!charge.ok) {
+        res.status(402).json({
+          error: charge.error,
+          code: charge.code,
+          billingUrl: charge.billingUrl,
+          remaining: charge.remaining
+        })
+        return
+      }
+      res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+      res.setHeader('X-Credits-Remaining', String(charge.remaining))
+    }
 
     if (finalStatus === 'sent' && messageChannel === 'email') {
       try {
@@ -1236,6 +1343,9 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
     })
 
     if (finalStatus === 'failed') {
+      if (charge?.ok && charge.creditsUsed > 0) {
+        await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+      }
       res.status(502).json({
         error: error ?? 'Send failed',
         message: store.db.messages.find((m) => m.id === messageId),
@@ -1246,7 +1356,9 @@ export function createApi(store: DataStore, config: ServerConfig = loadConfig())
 
     res.status(201).json({
       message: store.db.messages.find((m) => m.id === messageId),
-      bundle: bundleProject(store.db, contact.projectId)
+      bundle: bundleProject(store.db, contact.projectId),
+      creditsUsed: charge?.creditsUsed ?? 0,
+      creditsRemaining: charge?.remaining
     })
   })
 
@@ -1330,7 +1442,7 @@ export async function startApiServer(
 ): Promise<{ server: Server; port: number; config: ServerConfig }> {
   const config = options?.config ?? loadConfig({ port: preferredPort })
   const host = options?.host ?? config.host
-  const app = createApi(store, config)
+  const app = await createApi(store, config)
 
   async function listen(port: number): Promise<{ server: Server; port: number }> {
     return await new Promise((resolve, reject) => {

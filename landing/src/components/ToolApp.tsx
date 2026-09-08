@@ -18,7 +18,7 @@ export function ToolApp({ projectId, onBack }: { projectId: string; onBack: () =
   return (
     <div className="tool-host">
       <button type="button" className="tool-back" onClick={onBack}>
-        Dashboard
+        Account
       </button>
       <ProductApp projectId={projectId} />
     </div>

@@ -15,7 +15,7 @@ import { DataPage } from './DataPage'
 import { OverviewPage } from './OverviewPage'
 import { ToolsPage, SettingsPage } from './ToolsSettingsPages'
 import { UsagePage } from './UsagePage'
-import { ACCOUNT_NAV, accountPageFromPath, formatCredits, PREVIEW_BUILDS, previewSnapshot } from './nav'
+import { ACCOUNT_NAV, accountPageFromPath, fallbackSnapshot, formatCredits, PREVIEW_BUILDS, previewSnapshot } from './nav'
 
 export function toolPath(projectId: string): string {
   return `/tools/${projectId}`
@@ -95,12 +95,12 @@ export function AccountApp({
       return
     }
     const [account, conns, buildRes, keys] = await Promise.all([
-      api.account(),
+      api.account().catch(() => null),
       api.connections(),
       api.builds(),
       api.listApiKeys().catch(() => [] as ApiKeyPublic[])
     ])
-    setSnapshot(account)
+    setSnapshot(account ?? fallbackSnapshot())
     setApiKeys(keys)
     setConnections(conns)
     setBuilds(buildRes.builds)

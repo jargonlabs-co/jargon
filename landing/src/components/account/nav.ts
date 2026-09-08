@@ -100,7 +100,28 @@ export function previewSnapshot(): AccountSnapshot {
   }
 }
 
-export const PREVIEW_BUILDS: PortalBuild[] = [
+export function fallbackSnapshot(): AccountSnapshot {
+  const preview = previewSnapshot()
+  return {
+    ...preview,
+    credits: {
+      ...preview.credits,
+      orgId: '',
+      credits: 0,
+      wallets: [
+        { type: 'recurring', credits: 0, nextRefreshAt: preview.credits.periodEnd, expiresAt: null },
+        { type: 'topup', credits: 0, nextRefreshAt: null, expiresAt: null }
+      ],
+      creditTopups: []
+    },
+    usage: {
+      ...preview.usage,
+      totals: { credits: 0, emails: 0, calls: 0, linkedin: 0 },
+      daily: [],
+      byProject: []
+    }
+  }
+}
   {
     project: {
       id: 'proj_demo',

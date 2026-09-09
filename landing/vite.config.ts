@@ -11,7 +11,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@renderer': resolve(dir, '../src/renderer/src')
+      '@renderer': resolve(dir, '../src/renderer/src'),
+      '@twilio/voice-sdk': resolve(dir, 'node_modules/@twilio/voice-sdk')
     }
   },
   optimizeDeps: {

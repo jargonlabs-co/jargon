@@ -10,6 +10,7 @@ import { createHostedStore } from './store'
 import { startApiServer } from './index'
 import { ensureSupabaseUser, supabaseConfigured } from './providers/supabaseAuth'
 import { provisionWorkspace } from './auth'
+import { syncTwilioTwimlApp } from './providers/twilio'
 
 async function main() {
   const config = loadConfig({
@@ -52,6 +53,15 @@ async function main() {
   console.log(`[jargon] Demo mode: ${live.demoMode}`)
   console.log(`[jargon] Auth: ${supabaseConfigured(live) ? 'supabase' : 'unconfigured'}`)
   console.log(`[jargon] App state: ${backend} (${label})`)
+  try {
+    await syncTwilioTwimlApp(live)
+    console.log(`[jargon] Twilio TwiML app voice URL: ${live.publicUrl}/voice/twiml`)
+  } catch (err) {
+    console.warn(
+      '[jargon] Could not sync Twilio TwiML app URLs:',
+      err instanceof Error ? err.message : err
+    )
+  }
 }
 
 main().catch((err) => {

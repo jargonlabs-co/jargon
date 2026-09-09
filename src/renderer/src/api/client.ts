@@ -187,6 +187,11 @@ export const api = {
       body: '{}'
     }),
   getCall: (callId: string) => request<CallSession>(`/calls/${callId}`),
+  reportCallProgress: (callId: string, phase: 'ringing' | 'connected' | 'failed') =>
+    request<CallSession>(`/calls/${callId}/progress`, {
+      method: 'POST',
+      body: JSON.stringify({ phase })
+    }),
   completeCall: (callId: string, disposition: ContactStatus) =>
     request<{ call: CallSession; bundle: ProjectBundle }>(`/calls/${callId}/complete`, {
       method: 'POST',

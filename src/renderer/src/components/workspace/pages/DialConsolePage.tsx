@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CallSession, ContactStatus, ProjectBundle } from '../../../api/client'
 import { api } from '../../../api/client'
+import { connectTwilioCall, hangupTwilioCall, toE164 } from '../../../lib/twilioVoice'
 
 interface Props {
   bundle: ProjectBundle
@@ -19,6 +20,13 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
   const [seconds, setSeconds] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const liveCallId = useRef<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      void hangupTwilioCall()
+    }
+  }, [])
 
   useEffect(() => {
     if (initialContactId) setSelectedId(initialContactId)
@@ -67,14 +75,49 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
 
   async function startCall() {
     if (!selected || busy) return
+    const phone = toE164(selected.phone ?? '')
+    if (!phone) {
+      setToast('This contact has no valid phone number')
+      return
+    }
     setBusy(true)
     try {
       setSeconds(0)
-      await api.voiceToken().catch(() => undefined)
+      const token = await api.voiceToken()
       const next = await api.startCall(selected.id)
+      liveCallId.current = next.id
       setCall(next)
       setToast(`Dialing ${selected.name}`)
       await onRefresh()
+      if (token.mode === 'twilio') {
+        await connectTwilioCall({
+          token: token.token,
+          to: phone,
+          callId: next.id,
+          onAccept: () => {
+            setCall((current) =>
+              current && current.id === next.id ? { ...current, phase: 'connected' } : current
+            )
+            void api.reportCallProgress(next.id, 'connected')
+            setToast(`Connected with ${selected.name}`)
+          },
+          onDisconnect: () => {
+            if (liveCallId.current !== next.id) return
+            setCall((current) =>
+              current && current.id === next.id && current.phase !== 'completed'
+                ? { ...current, phase: 'completed' }
+                : current
+            )
+          },
+          onError: (message) => {
+            setToast(message)
+            void api.reportCallProgress(next.id, 'failed').catch(() => undefined)
+          }
+        })
+      }
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not start call')
+      await hangupTwilioCall()
     } finally {
       setBusy(false)
     }
@@ -84,6 +127,8 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
     if (!call) return
     setBusy(true)
     try {
+      liveCallId.current = null
+      await hangupTwilioCall()
       const result = await api.completeCall(call.id, disposition)
       setCall(result.call)
       setToast(`Logged ${disposition.replace('_', ' ')}`)
@@ -107,7 +152,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
           <div className="prod-eyebrow">Dial console</div>
           <h2>Live queue</h2>
         </div>
-        <div className="muted">Softphone · Dial console</div>
+        <div className="muted">Softphone · Twilio</div>
       </div>
 
       <div className="dial-layout">

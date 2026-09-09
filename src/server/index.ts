@@ -12,7 +12,7 @@ import {
   nextQueueContact,
   shouldAdvanceStep
 } from './queries'
-import type { ContactStatus, MessageStatus, ProjectKind } from './types'
+import type { CallPhase, ContactStatus, MessageStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
 import {
   authPayload,
@@ -37,6 +37,8 @@ import {
 import { sendPlatformGmail } from './providers/gmail'
 import {
   createTwilioVoiceToken,
+  hangupTwilioPstn,
+  toE164,
   voiceTwiml
 } from './providers/twilio'
 import {
@@ -726,9 +728,18 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   })
 
   app.post('/voice/twiml', (req, res) => {
-    const to = String(req.body.To ?? req.query.To ?? '')
+    const body = req.body as Record<string, string | undefined>
+    const to = String(body.Phone ?? body.To ?? req.query.To ?? '')
+    const callId = String(body.CallId ?? req.query.CallId ?? '')
+    const callSid = String(body.CallSid ?? '')
     const from = config.twilio.fromNumber || '+15555550100'
-    res.type('text/xml').send(voiceTwiml(to, from))
+    if (callId && callSid) {
+      store.update((db) => {
+        const call = db.calls.find((c) => c.id === callId)
+        if (call) call.providerCallSid = callSid
+      })
+    }
+    res.type('text/xml').send(voiceTwiml(to, from, `${config.publicUrl.replace(/\/$/, '')}/voice/status`))
   })
 
   app.post('/voice/status', (req, res) => {
@@ -1078,6 +1089,10 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(404).json({ error: 'Contact not found' })
       return
     }
+    if (!toE164(contact.phone ?? '')) {
+      res.status(400).json({ error: 'Contact has no valid phone number' })
+      return
+    }
     const charge = await chargeIfLive(billing, {
       orgId: req.auth!.org.id,
       sandbox: req.auth!.environment === 'sandbox',
@@ -1162,6 +1177,29 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     })
   })
 
+  app.post('/calls/:id/progress', auth, (req, res) => {
+    const phase = (req.body as { phase?: CallPhase }).phase
+    if (phase !== 'ringing' && phase !== 'connected' && phase !== 'failed') {
+      res.status(400).json({ error: 'phase must be ringing, connected, or failed' })
+      return
+    }
+    const call = store.db.calls.find(
+      (c) => c.id === paramId(req.params.id) && c.orgId === req.auth!.org.id
+    )
+    if (!call) {
+      res.status(404).json({ error: 'Call not found' })
+      return
+    }
+    const now = Date.now()
+    store.update((db) => {
+      const c = db.calls.find((x) => x.id === paramId(req.params.id))
+      if (!c || c.phase === 'completed') return
+      c.phase = phase
+      if (phase === 'connected') c.connectedAt = c.connectedAt ?? now
+    })
+    res.json(store.db.calls.find((c) => c.id === paramId(req.params.id)))
+  })
+
   app.post('/calls/:id/complete', auth, (req, res) => {
     const { disposition } = req.body as { disposition?: ContactStatus }
     if (!disposition) {
@@ -1176,6 +1214,9 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       return
     }
     const now = Date.now()
+    if (call.providerCallSid) {
+      void hangupTwilioPstn(config, call.providerCallSid).catch(() => undefined)
+    }
     store.update((db) => {
       const c = db.calls.find((x) => x.id === paramId(req.params.id))
       if (!c) return

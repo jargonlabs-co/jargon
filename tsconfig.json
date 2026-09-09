@@ -20,7 +20,7 @@
   "include": [
     "src/renderer/src/api/**/*",
     "src/renderer/src/components/workspace/**/*",
-    "src/renderer/src/lib/prospectContext.ts",
+    "src/renderer/src/lib/**/*",
     "src/renderer/src/env.d.ts",
     "src/server/**/*"
   ]

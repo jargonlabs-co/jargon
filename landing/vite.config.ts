@@ -14,5 +14,8 @@ export default defineConfig({
       '@renderer': resolve(dir, '../src/renderer/src')
     }
   },
+  optimizeDeps: {
+    include: ['@twilio/voice-sdk']
+  },
   server: { port: 5180, strictPort: true }
 })

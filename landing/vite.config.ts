@@ -11,12 +11,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@renderer': resolve(dir, '../src/renderer/src'),
-      '@twilio/voice-sdk': resolve(dir, 'node_modules/@twilio/voice-sdk')
+      '@renderer': resolve(dir, '../src/renderer/src')
     }
-  },
-  optimizeDeps: {
-    include: ['@twilio/voice-sdk']
   },
   server: { port: 5180, strictPort: true }
 })

@@ -1,25 +1,11 @@
 import type { Call, Device } from '@twilio/voice-sdk'
+import type { DialerVoice } from '../../../src/renderer/src/lib/dialerVoice'
 
 let device: Device | null = null
 let activeCall: Call | null = null
 
-export function toE164(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (digits.length >= 8 && digits.length <= 15) return `+${digits}`
-  return null
-}
-
-export async function connectTwilioCall(opts: {
-  token: string
-  to: string
-  callId: string
-  onAccept: () => void
-  onDisconnect: () => void
-  onError: (message: string) => void
-}): Promise<void> {
-  await hangupTwilioCall()
+async function connect(opts: Parameters<DialerVoice['connect']>[0]): Promise<void> {
+  await hangup()
   const { Device } = await import('@twilio/voice-sdk')
   const next = new Device(opts.token, { closeProtection: true, logLevel: 'error' })
   device = next
@@ -39,7 +25,7 @@ export async function connectTwilioCall(opts: {
   call.on('error', (err) => opts.onError(err.message || 'Call failed'))
 }
 
-export async function hangupTwilioCall(): Promise<void> {
+async function hangup(): Promise<void> {
   try {
     activeCall?.disconnect()
   } catch {
@@ -56,3 +42,5 @@ export async function hangupTwilioCall(): Promise<void> {
   device.destroy()
   device = null
 }
+
+export const twilioVoice: DialerVoice = { connect, hangup }

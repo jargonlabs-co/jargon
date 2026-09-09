@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ProjectBundle } from '../../api/client'
 import { api } from '../../api/client'
+import type { DialerVoice } from '../../lib/dialerVoice'
 import { ProductShell, type NavItem } from './ProductShell'
 import { DashboardPage } from './pages/DashboardPage'
 import { CampaignsPage } from './pages/CampaignsPage'
@@ -16,9 +17,10 @@ import { ContextPage } from './pages/ContextPage'
 interface Props {
   projectId: string
   onBundleChange?: (bundle: ProjectBundle) => void
+  voice?: DialerVoice
 }
 
-export function ProductApp({ projectId, onBundleChange }: Props) {
+export function ProductApp({ projectId, onBundleChange, voice }: Props) {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -146,6 +148,7 @@ export function ProductApp({ projectId, onBundleChange }: Props) {
           bundle={bundle}
           onRefresh={refresh}
           initialContactId={focusContactId}
+          voice={voice}
         />
       ) : null}
       {page === 'inbox' ? (

@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CallSession, ContactStatus, ProjectBundle } from '../../../api/client'
 import { api } from '../../../api/client'
-import { connectTwilioCall, hangupTwilioCall, toE164 } from '../../../lib/twilioVoice'
+import { toE164, type DialerVoice } from '../../../lib/dialerVoice'
 
 interface Props {
   bundle: ProjectBundle
   onRefresh: () => Promise<ProjectBundle>
   initialContactId?: string | null
+  voice?: DialerVoice
 }
 
-export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) {
+export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: Props) {
   const active =
     (initialContactId && bundle.contacts.find((c) => c.id === initialContactId)) ||
     bundle.contacts.find((c) => c.status === 'active') ||
@@ -24,9 +25,9 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
 
   useEffect(() => {
     return () => {
-      void hangupTwilioCall()
+      void voice?.hangup()
     }
-  }, [])
+  }, [voice])
 
   useEffect(() => {
     if (initialContactId) setSelectedId(initialContactId)
@@ -90,7 +91,11 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
       setToast(`Dialing ${selected.name}`)
       await onRefresh()
       if (token.mode === 'twilio') {
-        await connectTwilioCall({
+        if (!voice) {
+          setToast('Calling is not available in this app')
+          return
+        }
+        await voice.connect({
           token: token.token,
           to: phone,
           callId: next.id,
@@ -117,7 +122,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
       }
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Could not start call')
-      await hangupTwilioCall()
+      await voice?.hangup()
     } finally {
       setBusy(false)
     }
@@ -128,7 +133,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId }: Props) 
     setBusy(true)
     try {
       liveCallId.current = null
-      await hangupTwilioCall()
+      await voice?.hangup()
       const result = await api.completeCall(call.id, disposition)
       setCall(result.call)
       setToast(`Logged ${disposition.replace('_', ' ')}`)

@@ -21,7 +21,6 @@
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@supabase/supabase-js": "^2.115.0",
-    "@twilio/voice-sdk": "^2.18.4",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.16.0",

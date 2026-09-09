@@ -35,7 +35,6 @@ export function LoginPanel({ onClose, initialMode = 'login', embedded = false }:
             })
       setStoredToken(payload.token)
       await refresh()
-      onClose?.()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Auth failed'
       if (/already registered/i.test(message) && mode === 'register') {

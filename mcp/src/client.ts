@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 export function apiBase(): string {
-  const raw = (process.env.JARGON_API_URL ?? 'https://jargon-api-production.up.railway.app').replace(
+  const raw = (process.env.JARGON_API_URL ?? 'https://www.jargonlabs.co').replace(
     /\/$/,
     ''
   )

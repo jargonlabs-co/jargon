@@ -137,9 +137,9 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
               <p className="eyebrow">For sales teams</p>
               <h2>Connect Claude. Work your book from there.</h2>
               <p>
-                Add Jargon as a Claude connector — sign in once, no API keys, no terminal. Ask for
-                a today queue, dialer, or sequencer on your CRM. Jargon ships a working tool on
-                your data, then you run the motion from Claude or the browser.
+                Add Jargon as a Claude connector — sign in once, no API keys, no terminal. Instantly
+                create outbound sequences, queues, or dialers in Claude and run them there — no
+                switching tabs.
               </p>
             </div>
             <ClaudeConnectorMock />

@@ -1,4 +1,4 @@
-import { getClaudeConnectorInstallUrl, type AccountSnapshot, type ConnectionPublic, type PortalBuild } from '../../api'
+import { getClaudeConnectorInstallUrl, resolveMcpUrl, type AccountSnapshot, type ConnectionPublic, type PortalBuild } from '../../api'
 import { formatCredits, formatWhen, statusLabel } from './nav'
 
 export function OverviewPage({
@@ -20,7 +20,7 @@ export function OverviewPage({
   const dataReady =
     hubspot?.status === 'connected' ||
     (railway?.status === 'connected' && railway.meta?.needsBind !== '1' && !!railway.meta?.projectId)
-  const connectorUrl = claude?.connectorUrl ?? getClaudeConnectorInstallUrl()
+  const connectorUrl = getClaudeConnectorInstallUrl(resolveMcpUrl(claude?.mcpUrl))
   const claudeConnected = Boolean(claude?.connected)
 
   return (

@@ -155,6 +155,7 @@ export interface DeployResult {
   project: { id: string; name: string; kind: string; prompt: string }
   contactCount: number
   dashboardPath?: string
+  dashboardUrl?: string
 }
 
 export interface ApiKeyPublic {
@@ -325,16 +326,34 @@ export const api = {
   }
 }
 
+/** Public MCP origin Claude should use (logo + OAuth). Do not point this at Railway. */
+export const PUBLIC_MCP_URL = 'https://www.jargonlabs.co/mcp'
+
+function isLocalApi(base: string): boolean {
+  return /localhost|127\.0\.0\.1/i.test(base)
+}
+
+function isRailwayHosted(url: string): boolean {
+  return /railway\.app|jargon-api-production/i.test(url)
+}
+
 export function getMcpUrl(): string {
-  return `${getApiBase()}/mcp`
+  const base = getApiBase()
+  if (isLocalApi(base)) return `${base}/mcp`
+  return PUBLIC_MCP_URL
+}
+
+export function resolveMcpUrl(url?: string | null): string {
+  if (!url || isRailwayHosted(url)) return getMcpUrl()
+  return url
 }
 
 /** Opens Claude’s Add custom connector dialog with Jargon prefilled. */
-export function getClaudeConnectorInstallUrl(): string {
+export function getClaudeConnectorInstallUrl(mcpUrl = getMcpUrl()): string {
   const params = new URLSearchParams({
     modal: 'add-custom-connector',
     connectorName: 'Jargon',
-    connectorUrl: getMcpUrl()
+    connectorUrl: resolveMcpUrl(mcpUrl)
   })
   return `https://claude.ai/customize/connectors?${params.toString()}`
 }

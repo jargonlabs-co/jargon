@@ -1,9 +1,9 @@
-import { getApiBase, getClaudeConnectorInstallUrl, getMcpUrl, type ApiKeyPublic, type ClaudeConnector } from '../../api'
+import { getApiBase, getClaudeConnectorInstallUrl, resolveMcpUrl, type ApiKeyPublic, type ClaudeConnector } from '../../api'
 import { formatWhen } from './nav'
 
 export function ClaudePage({ claude }: { claude?: ClaudeConnector }) {
-  const connectorUrl = claude?.connectorUrl ?? getClaudeConnectorInstallUrl()
-  const mcpUrl = claude?.mcpUrl ?? getMcpUrl()
+  const mcpUrl = resolveMcpUrl(claude?.mcpUrl)
+  const connectorUrl = getClaudeConnectorInstallUrl(mcpUrl)
   const connected = Boolean(claude?.connected)
 
   return (

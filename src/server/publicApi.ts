@@ -38,6 +38,7 @@ export type PublicProject = {
   description: string
   contactCount: number
   dashboardPath: string
+  dashboardUrl: string
   createdAt: number
   updatedAt: number
 }
@@ -102,7 +103,16 @@ export type QueueNextPublic = {
   remaining: number
 }
 
-export function toPublicProject(dbContacts: Contact[], project: Project): PublicProject {
+export function dashboardFor(projectId: string, appUrl: string): { dashboardPath: string; dashboardUrl: string } {
+  const dashboardPath = `/tools/${projectId}`
+  return {
+    dashboardPath,
+    dashboardUrl: `${appUrl.replace(/\/$/, '')}${dashboardPath}`
+  }
+}
+
+export function toPublicProject(dbContacts: Contact[], project: Project, appUrl: string): PublicProject {
+  const { dashboardPath, dashboardUrl } = dashboardFor(project.id, appUrl)
   return {
     id: project.id,
     name: project.name,
@@ -111,7 +121,8 @@ export function toPublicProject(dbContacts: Contact[], project: Project): Public
     segment: project.segment,
     description: project.description,
     contactCount: dbContacts.filter((c) => c.projectId === project.id).length,
-    dashboardPath: `/tools/${project.id}`,
+    dashboardPath,
+    dashboardUrl,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt
   }
@@ -207,11 +218,11 @@ export function findOrgCall(store: DataStore, orgId: string, callId: string) {
   return store.db.calls.find((c) => c.id === callId && c.orgId === orgId) ?? null
 }
 
-export function listPublicProjects(store: DataStore, orgId: string): PublicProject[] {
+export function listPublicProjects(store: DataStore, orgId: string, appUrl: string): PublicProject[] {
   return store.db.projects
     .filter((p) => p.orgId === orgId)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map((p) => toPublicProject(store.db.contacts, p))
+    .map((p) => toPublicProject(store.db.contacts, p, appUrl))
 }
 
 export function listPublicContacts(
@@ -249,7 +260,17 @@ export async function deployPublicTool(
   prompt: string,
   contacts?: DeployContactInput[]
 ): Promise<
-  | { ok: true; status: 201; body: { projectId: string; contactCount: number; dashboardPath: string; project: PublicProject } }
+  | {
+      ok: true
+      status: 201
+      body: {
+        projectId: string
+        contactCount: number
+        dashboardPath: string
+        dashboardUrl: string
+        project: PublicProject
+      }
+    }
   | { ok: false; status: 400; body: { error: string } }
   | { ok: false; status: 502; body: { error: string } }
 > {
@@ -277,7 +298,7 @@ export async function deployPublicTool(
     if (!project) {
       return { ok: false, status: 502, body: { error: 'Project created but could not be loaded' } }
     }
-    const publicProject = toPublicProject(store.db.contacts, project)
+    const publicProject = toPublicProject(store.db.contacts, project, config.appUrl)
     return {
       ok: true,
       status: 201,
@@ -285,6 +306,7 @@ export async function deployPublicTool(
         projectId,
         contactCount: publicProject.contactCount,
         dashboardPath: publicProject.dashboardPath,
+        dashboardUrl: publicProject.dashboardUrl,
         project: publicProject
       }
     }

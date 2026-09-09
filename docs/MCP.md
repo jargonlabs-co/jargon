@@ -2,7 +2,7 @@
 
 Users on jargonlabs.co add Jargon to Claude. They **sign in with their Jargon account**. They do not paste an API key.
 
-Hosted endpoint: `https://jargon-api-production.up.railway.app/mcp`
+Hosted endpoint: `https://www.jargonlabs.co/mcp`
 
 ## What a customer does
 
@@ -14,7 +14,7 @@ Claude Code (optional):
 
 ```bash
 claude mcp add --transport http --scope user \
-  jargon https://jargon-api-production.up.railway.app/mcp
+  jargon https://www.jargonlabs.co/mcp
 ```
 
 Then `/mcp` → Connect → same Jargon login.
@@ -23,7 +23,7 @@ Then `/mcp` → Connect → same Jargon login.
 
 ```bash
 claude mcp add --scope user \
-  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
+  --env JARGON_API_URL=https://www.jargonlabs.co \
   --env JARGON_API_KEY=jarg_test_... \
   jargon -- npx -y @jargon_labs/mcp
 ```
@@ -33,7 +33,7 @@ Or HTTP with a key:
 ```bash
 claude mcp add --transport http --scope user \
   --header "Authorization: Bearer jarg_..." \
-  jargon https://jargon-api-production.up.railway.app/mcp
+  jargon https://www.jargonlabs.co/mcp
 ```
 
 ## Tools

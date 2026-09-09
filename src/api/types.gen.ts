@@ -426,8 +426,10 @@ export interface components {
             segment?: string;
             description?: string;
             contactCount: number;
-            /** @description Path on jargonlabs.co, e.g. /tools/{id} */
+            /** @description Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with www.jargonlabs.co. */
             dashboardPath: string;
+            /** @description Absolute URL to open the tool in the browser, e.g. https://jargonlabs.co/tools/{id} */
+            dashboardUrl: string;
             createdAt: number;
             updatedAt: number;
         };
@@ -453,6 +455,7 @@ export interface components {
             projectId: string;
             contactCount: number;
             dashboardPath: string;
+            dashboardUrl: string;
             project: components["schemas"]["Project"];
         };
         AddContactsResult: {

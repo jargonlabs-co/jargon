@@ -861,6 +861,7 @@
           "prompt",
           "contactCount",
           "dashboardPath",
+          "dashboardUrl",
           "createdAt",
           "updatedAt"
         ],
@@ -874,7 +875,11 @@
           "contactCount": { "type": "integer" },
           "dashboardPath": {
             "type": "string",
-            "description": "Path on jargonlabs.co, e.g. /tools/{id}"
+            "description": "Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with www.jargonlabs.co."
+          },
+          "dashboardUrl": {
+            "type": "string",
+            "description": "Absolute URL to open the tool in the browser, e.g. https://jargonlabs.co/tools/{id}"
           },
           "createdAt": { "type": "integer" },
           "updatedAt": { "type": "integer" }
@@ -915,11 +920,12 @@
       },
       "DeployResult": {
         "type": "object",
-        "required": ["projectId", "contactCount", "dashboardPath", "project"],
+        "required": ["projectId", "contactCount", "dashboardPath", "dashboardUrl", "project"],
         "properties": {
           "projectId": { "type": "string" },
           "contactCount": { "type": "integer" },
           "dashboardPath": { "type": "string" },
+          "dashboardUrl": { "type": "string" },
           "project": { "$ref": "#/components/schemas/Project" }
         }
       },

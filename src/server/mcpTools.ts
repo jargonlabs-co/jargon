@@ -189,24 +189,25 @@ export function registerJargonTools(
     'list_projects',
     {
       title: 'List workspaces',
-      description: 'List workspaces for this account.',
+      description: 'List workspaces for this account. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.',
       annotations: { readOnlyHint: true }
     },
-    async () => ok({ projects: listPublicProjects(store, actor.orgId) })
+    async () => ok({ projects: listPublicProjects(store, actor.orgId, config.appUrl) })
   )
 
   server.registerTool(
     'get_project',
     {
       title: 'Get workspace',
-      description: 'Get one workspace. dashboardPath is on jargonlabs.co.',
+      description:
+        'Get one workspace. Share dashboardUrl with the user (https://jargonlabs.co/tools/…). Never prefix dashboardPath with www.jargonlabs.co — that host is the API.',
       inputSchema: z.object({ id: z.string() }),
       annotations: { readOnlyHint: true }
     },
     async ({ id }) => {
       const project = findOrgProject(store, actor.orgId, id)
       if (!project) return fail('Project not found')
-      return ok(toPublicProject(store.db.contacts, project))
+      return ok(toPublicProject(store.db.contacts, project, config.appUrl))
     }
   )
 
@@ -228,7 +229,7 @@ export function registerJargonTools(
     {
       title: 'Import list into a dialer',
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway.',
+        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         prompt: z
           .string()
@@ -261,7 +262,7 @@ export function registerJargonTools(
     {
       title: 'Deploy workspace from CRM',
       description:
-        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway.',
+        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to deploy from the connected CRM/warehouse'),
         contacts: z

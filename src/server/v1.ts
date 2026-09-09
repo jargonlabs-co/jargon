@@ -144,7 +144,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
   })
 
   router.get('/projects', auth, (req, res) => {
-    res.json({ projects: listPublicProjects(store, req.auth!.org.id) })
+    res.json({ projects: listPublicProjects(store, req.auth!.org.id, config.appUrl) })
   })
 
   router.post('/tools/deploy', auth, async (req, res) => {
@@ -174,7 +174,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(404).json({ error: 'Project not found' })
       return
     }
-    res.json(toPublicProject(store.db.contacts, project))
+    res.json(toPublicProject(store.db.contacts, project, config.appUrl))
   })
 
   router.get('/projects/:id/contacts', auth, (req, res) => {

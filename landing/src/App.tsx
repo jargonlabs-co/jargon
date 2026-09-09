@@ -71,6 +71,16 @@ function Root() {
     )
   }
 
+  if (toolId) {
+    return (
+      <LoginPanel
+        key="tool-login"
+        initialMode="login"
+        onClose={() => navigate('/')}
+      />
+    )
+  }
+
   return (
     <>
       <MarketingPage onLogin={() => openAuth('login')} onSignUp={() => openAuth('register')} />

@@ -6,7 +6,7 @@ MCP server for the Jargon GTM execution API. Tools map 1:1 to `openapi.json` / `
 
 ```bash
 claude mcp add --scope user \
-  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
+  --env JARGON_API_URL=https://www.jargonlabs.co \
   --env JARGON_API_KEY=jarg_test_YOUR_KEY \
   jargon -- npx -y @jargon_labs/mcp
 ```
@@ -29,7 +29,7 @@ In MCP settings, stdio server:
 cd mcp && npm install && npm run build
 
 claude mcp add --scope user \
-  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
+  --env JARGON_API_URL=https://www.jargonlabs.co \
   --env JARGON_API_KEY=jarg_test_YOUR_KEY \
   jargon -- node /ABS/PATH/TO/jargon/mcp/dist/index.js
 ```

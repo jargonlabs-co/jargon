@@ -132,7 +132,7 @@ function createServer(): McpServer {
     'list_projects',
     {
       title: 'List workspaces',
-      description: 'List Jargon workspaces (dialer / today queue) for this API key.',
+      description: 'List Jargon workspaces for this API key. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.',
       annotations: { readOnlyHint: true }
     },
     async () => {
@@ -148,7 +148,8 @@ function createServer(): McpServer {
     'get_project',
     {
       title: 'Get workspace',
-      description: 'Get one workspace. dashboardPath is relative to https://jargonlabs.co.',
+      description:
+        'Get one workspace. Share dashboardUrl with the user (https://jargonlabs.co/tools/…). Never prefix dashboardPath with www.jargonlabs.co — that host is the API.',
       inputSchema: z.object({ id: z.string() }),
       annotations: { readOnlyHint: true }
     },
@@ -179,7 +180,7 @@ function createServer(): McpServer {
     {
       title: 'Import list into a dialer',
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway.',
+        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to build, e.g. Dialer for these 10 RevOps leaders'),
         contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue')
@@ -199,7 +200,7 @@ function createServer(): McpServer {
     {
       title: 'Deploy workspace from CRM',
       description:
-        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway.',
+        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to deploy from the connected CRM/warehouse'),
         contacts: z

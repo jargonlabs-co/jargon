@@ -1,5 +1,7 @@
 import express from 'express'
 import cors from 'cors'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import type { Server } from 'http'
 import type { DataStore } from './store'
 import {
@@ -72,12 +74,20 @@ import { createV1Router } from './v1'
 import { mountMcp } from './mcpHttp'
 import { claudeConnectorStatus } from './mcpOauth'
 import { parseDeployContacts } from './deployContacts'
+import { dashboardFor } from './publicApi'
 import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 
 export async function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const billing = await createBillingService(store, config)
   const app = express()
   app.use(cors({ origin: true, credentials: true }))
+  app.use(
+    express.static(join(dirname(fileURLToPath(import.meta.url)), 'public'), {
+      maxAge: '7d',
+      index: false,
+      fallthrough: true
+    })
+  )
   app.post('/billing/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     try {
       const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}))
@@ -127,6 +137,17 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       userCount: store.db.users.length,
       features: { deploy: true, cli: true, mcp: true }
     })
+  })
+
+  // Claude concatenates the MCP host (www.jargonlabs.co) with dashboardPath.
+  // www is this API; the tool UI lives on JARGON_APP_URL (jargonlabs.co).
+  app.get('/tools/:id', (req, res) => {
+    const id = paramId(req.params.id)
+    if (!id || !/^[\w-]+$/.test(id)) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    res.redirect(302, dashboardFor(id, config.appUrl).dashboardUrl)
   })
 
   // ——— Auth: Supabase Auth only (passwords never stored on Railway) ———
@@ -799,12 +820,13 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         res.status(500).json({ error: 'Project created but could not be loaded' })
         return
       }
+      const dashboard = dashboardFor(projectId, config.appUrl)
       res.status(201).json({
         projectId,
         project: bundle.project,
         contactCount: bundle.contacts.length,
         bundle,
-        dashboardPath: `/tools/${projectId}`
+        ...dashboard
       })
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : 'Deploy failed' })

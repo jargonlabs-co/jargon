@@ -1,5 +1,6 @@
 import type { ProjectBundle } from '../../../api/client'
 import { ConnectedContextSection } from '../ConnectedContextSection'
+import { hasChannel, primaryAction, specOf } from '../../../lib/workspaceSpec'
 
 interface Props {
   bundle: ProjectBundle
@@ -8,6 +9,8 @@ interface Props {
 
 export function DashboardPage({ bundle, onNavigate }: Props) {
   const { analytics, project, campaigns, activities } = bundle
+  const spec = specOf(project)
+  const action = primaryAction(spec)
   const activeCampaigns = campaigns.filter((c) => c.state === 'ACTIVE').length
 
   return (
@@ -18,19 +21,13 @@ export function DashboardPage({ bundle, onNavigate }: Props) {
           <h2>{project.name}</h2>
         </div>
         <div className="prod-view-actions">
-          {project.kind === 'dialer' ? (
-            <button className="prod-btn primary" onClick={() => onNavigate('dial')}>
-              Open dial console
-            </button>
-          ) : (
-            <button className="prod-btn primary" onClick={() => onNavigate('inbox')}>
-              Open inbox
-            </button>
-          )}
+          <button className="prod-btn primary" onClick={() => onNavigate(action.page)}>
+            {action.label}
+          </button>
         </div>
       </div>
 
-      {project.kind === 'dialer' || project.kind === 'today' ? (
+      {project.kind === 'dialer' || project.kind === 'today' || spec.primarySurface === 'queue' ? (
         <ConnectedContextSection />
       ) : null}
 
@@ -39,10 +36,14 @@ export function DashboardPage({ bundle, onNavigate }: Props) {
         <DashCard label="Contacted" value={String(analytics.contacted)} />
         <DashCard label="Replied" value={String(analytics.replied)} />
         <DashCard label="Booked" value={String(analytics.booked)} />
-        <DashCard label="Calls" value={String(analytics.calls)} />
-        <DashCard label="Emails sent" value={String(analytics.emailsSent)} />
+        {hasChannel(spec, 'call') ? <DashCard label="Calls" value={String(analytics.calls)} /> : null}
+        {hasChannel(spec, 'email') ? (
+          <DashCard label="Emails sent" value={String(analytics.emailsSent)} />
+        ) : null}
         <DashCard label="Active campaigns" value={String(activeCampaigns)} />
-        <DashCard label="Answer rate" value={`${analytics.answerRate.toFixed(1)}%`} />
+        {hasChannel(spec, 'call') ? (
+          <DashCard label="Answer rate" value={`${analytics.answerRate.toFixed(1)}%`} />
+        ) : null}
       </div>
 
       <div className="prod-table-wrap">

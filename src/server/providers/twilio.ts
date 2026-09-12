@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import twilio from 'twilio'
 import type { ServerConfig } from '../config'
 import { upsertConnection } from '../connections'
 import type { DataStore } from '../store'
@@ -23,47 +23,65 @@ function twilioBasicAuth(config: ServerConfig): string {
   return Buffer.from(`${config.twilio.accountSid}:${config.twilio.authToken}`).toString('base64')
 }
 
-/**
- * Twilio Client capability token (JWT) for softphone.
- * Uses API Key credentials when configured; otherwise returns a demo token marker.
- */
+export function inspectTwilioVoice(
+  config: ServerConfig
+): { ok: true } | { ok: false; error: string } {
+  const { accountSid, apiKeySid, apiKeySecret, twimlAppSid, fromNumber } = config.twilio
+  if (!accountSid && !apiKeySid && !apiKeySecret && !twimlAppSid) {
+    return { ok: false, error: 'Twilio is not configured' }
+  }
+  if (!accountSid.startsWith('AC') || accountSid.length !== 34) {
+    return { ok: false, error: 'TWILIO_ACCOUNT_SID must be the AC… Account SID' }
+  }
+  if (!apiKeySid.startsWith('SK') || apiKeySid.length !== 34) {
+    return {
+      ok: false,
+      error:
+        'TWILIO_API_KEY_SID must be the SK… API Key SID from Twilio Console → API keys. It is missing or a placeholder.'
+    }
+  }
+  if (apiKeySecret.startsWith('SK') || apiKeySecret.length < 16) {
+    return {
+      ok: false,
+      error:
+        'TWILIO_API_KEY_SECRET looks like an SID, not a secret. Paste the API Key Secret from that same key — not the SK… SID.'
+    }
+  }
+  if (!twimlAppSid.startsWith('AP') || twimlAppSid.length !== 34) {
+    return { ok: false, error: 'TWILIO_TWIML_APP_SID must be the AP… TwiML App SID' }
+  }
+  if (!toE164(fromNumber)) {
+    return {
+      ok: false,
+      error:
+        'TWILIO_FROM_NUMBER must be a real E.164 number on this Twilio account (for example +15551234567), not a placeholder.'
+    }
+  }
+  return { ok: true }
+}
+
 export function createTwilioVoiceToken(
   config: ServerConfig,
   identity: string
 ): { token: string; mode: 'demo' | 'twilio'; identity: string } {
-  if (
-    !config.twilio.accountSid ||
-    !config.twilio.apiKeySid ||
-    !config.twilio.apiKeySecret ||
-    !config.twilio.twimlAppSid
-  ) {
-    return { token: 'demo-twilio-token', mode: 'demo', identity }
+  const ready = inspectTwilioVoice(config)
+  if (!ready.ok) {
+    throw new Error(ready.error)
   }
-
-  const now = Math.floor(Date.now() / 1000)
-  const header = { alg: 'HS256', typ: 'JWT', cty: 'twilio-fpa;v=1' }
-  const grants = {
-    identity,
-    voice: {
-      incoming: { allow: true },
-      outgoing: { application_sid: config.twilio.twimlAppSid }
-    }
-  }
-  const payload = {
-    jti: `${config.twilio.apiKeySid}-${now}`,
-    iss: config.twilio.apiKeySid,
-    sub: config.twilio.accountSid,
-    nbf: now,
-    exp: now + 60 * 60,
-    grants
-  }
-
-  const enc = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url')
-  const unsigned = `${enc(header)}.${enc(payload)}`
-  const sig = createHmac('sha256', config.twilio.apiKeySecret)
-    .update(unsigned)
-    .digest('base64url')
-  return { token: `${unsigned}.${sig}`, mode: 'twilio', identity }
+  const AccessToken = twilio.jwt.AccessToken
+  const token = new AccessToken(
+    config.twilio.accountSid,
+    config.twilio.apiKeySid,
+    config.twilio.apiKeySecret,
+    { identity, ttl: 3600 }
+  )
+  token.addGrant(
+    new AccessToken.VoiceGrant({
+      outgoingApplicationSid: config.twilio.twimlAppSid,
+      incomingAllow: true
+    })
+  )
+  return { token: token.toJwt(), mode: 'twilio', identity }
 }
 
 export function voiceTwiml(to: string, fromNumber: string, statusUrl?: string): string {

@@ -11,8 +11,35 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
+export type FieldOrigin = 'identity' | 'attrs'
+export type FieldType = 'string' | 'number' | 'list'
+
+export interface FieldDef {
+  key: string
+  label: string
+  type: FieldType
+  origin: FieldOrigin
+}
+export type PrimarySurface = 'queue' | 'dial' | 'inbox' | 'linkedin' | 'sequence'
 export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres' | 'railway'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
+
+export interface WorkspaceSpecStep {
+  day: number
+  channel: Channel
+  label: string
+  subject?: string
+  body?: string
+}
+
+export interface WorkspaceSpec {
+  goal: string
+  segment: string
+  primarySurface: PrimarySurface
+  channels: Channel[]
+  steps: WorkspaceSpecStep[]
+  kind: ProjectKind
+}
 
 export interface Org {
   id: string
@@ -55,6 +82,8 @@ export interface Project {
   team: string
   description: string
   answers: Record<string, string>
+  spec?: WorkspaceSpec
+  fieldCatalog?: FieldDef[]
   createdAt: number
   updatedAt: number
 }
@@ -121,6 +150,7 @@ export interface Contact {
   companyRevenue?: string
   /** Short talk-track snippets for dialer / queue (e.g. tenure, funding). */
   context?: string[]
+  attrs?: Record<string, unknown>
   enrichedAt?: number
   createdAt: number
   updatedAt: number
@@ -154,6 +184,7 @@ export interface Message {
   createdAt: number
   updatedAt: number
   sentAt?: number
+  sendAt?: number
   error?: string
 }
 

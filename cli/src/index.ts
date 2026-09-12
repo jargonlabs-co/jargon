@@ -73,7 +73,7 @@ async function cmdDeploy() {
   )
   const prompt = promptParts.join(' ').trim() || opt('--prompt')
   if (!prompt) {
-    console.error('Usage: jargon deploy "Build a dialer for VP Sales"')
+    console.error('Usage: jargon deploy "Build a LinkedIn queue for VP Sales"')
     process.exit(1)
   }
 
@@ -312,7 +312,7 @@ Usage:
   jargon connect postgres --database-url URL [--table jargon_prospects]
   jargon connections
   jargon sync railway [--limit 50]
-  jargon deploy "Build a dialer for VP Sales" [--json]
+  jargon deploy "Build a LinkedIn queue for VP Sales" [--json]
   jargon list [--json]
   jargon prospects [--q text] [--status queued] [--project-id ID] [--limit 50] [--json]
   jargon api-keys create --name "Claude Code" [--sandbox]

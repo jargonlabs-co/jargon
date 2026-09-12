@@ -2,6 +2,8 @@ import pg from 'pg'
 import { uid } from '../crypto'
 import type { DataStore } from '../store'
 import { buildProspectContext, prospectsToContacts, type ContextProspect } from './prospects'
+import { extraAttrs } from '../../shared/fieldCatalog'
+import { setProjectCatalog } from '../fieldCatalogSync'
 
 const { Pool } = pg
 
@@ -180,6 +182,49 @@ function mapRow(
     }
   }
 
+  const attrs = extraAttrs(row, [
+    cols.id,
+    cols.name,
+    cols.email,
+    cols.phone,
+    cols.title,
+    cols.company,
+    cols.city,
+    cols.linkedinUrl,
+    cols.companyDomain,
+    cols.companyIndustry,
+    cols.companySize,
+    'full_name',
+    'contact_name',
+    'company_name',
+    'account_name',
+    'employer',
+    'job_title',
+    'current_title',
+    'work_email',
+    'business_email',
+    'phone_number',
+    'linkedin',
+    'profile_url',
+    'linkedin_profile_url',
+    'domain',
+    'website',
+    'industry',
+    'employee_count',
+    'headcount',
+    'updated_at',
+    'created_at'
+  ])
+  if (companyOpenRoles?.length) {
+    attrs.hiring = companyOpenRoles.slice(0, 6).map((r) => r.title)
+  }
+  if (gtmInitiatives?.length) {
+    attrs.gtm_initiative = gtmInitiatives
+      .slice(0, 3)
+      .map((hit) => (hit.snippet || hit.title).replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+  }
+
   return {
     externalId,
     name,
@@ -197,7 +242,8 @@ function mapRow(
     companySize: companySize || undefined,
     companyOpenRoles: companyOpenRoles?.length ? companyOpenRoles : undefined,
     gtmInitiatives: gtmInitiatives?.length ? gtmInitiatives : undefined,
-    context
+    context,
+    attrs
   }
 }
 
@@ -289,6 +335,7 @@ export function writePostgresContactsToProjects(
       const contacts = prospectsToContacts(orgId, project.id, prospects, 'postgres')
       db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
       db.contacts.push(...contacts)
+      setProjectCatalog(db, project.id)
       project.answers = {
         ...project.answers,
         data_source: 'postgres',

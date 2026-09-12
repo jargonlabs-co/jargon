@@ -20,6 +20,7 @@ export type {
   AuthPayload,
   CallSession,
   Campaign,
+  Channel,
   ConnectionPublic,
   ConnectionProvider,
   Contact,

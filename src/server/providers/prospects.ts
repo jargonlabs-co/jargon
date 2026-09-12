@@ -27,6 +27,7 @@ export type ContextProspect = {
     snippet?: string
     source?: string
   }>
+  attrs?: Record<string, unknown>
 }
 
 export type ProspectSearchResult = {
@@ -111,6 +112,7 @@ export function prospectsToContacts(
         companySize: p.companySize,
         companyIndustry: p.companyIndustry
       }),
+    attrs: p.attrs && Object.keys(p.attrs).length ? p.attrs : {},
     channelsDone: [],
     createdAt: now,
     updatedAt: now

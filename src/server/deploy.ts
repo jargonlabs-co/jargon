@@ -1,29 +1,18 @@
-import type { ProjectKind } from './types'
+import type { DeploySpecInput, ProjectKind, WorkspaceSpec } from './types'
+import { compileWorkspaceSpec, specToAnswers } from '../shared/workspaceSpec'
 
 export type DeployParams = {
   kind: ProjectKind
   answers: Record<string, string>
+  spec: WorkspaceSpec
 }
 
-/** Infer project kind + answers from a natural-language deploy prompt. */
-export function inferDeployParams(prompt: string): DeployParams {
-  const base = {
-    segment: 'HubSpot contacts',
-    team: 'Sales',
-    data_source: 'unconfigured',
-    channels: 'Email + Call + LinkedIn'
-  }
-  if (/dialer|power.?dial/i.test(prompt)) {
-    return { kind: 'dialer', answers: { ...base, goal: 'Dial accounts' } }
-  }
-  if (/sequenc|email.?seq/i.test(prompt)) {
-    return { kind: 'sequencer', answers: { ...base, goal: 'Book a meeting' } }
-  }
-  if (/cadence|multi.?channel|linkedin/i.test(prompt)) {
-    return { kind: 'cadence', answers: { ...base, goal: 'Run a cadence' } }
-  }
+/** Compile a deploy prompt (and optional spec override) into a workspace motion. */
+export function inferDeployParams(prompt: string, override?: DeploySpecInput): DeployParams {
+  const spec = compileWorkspaceSpec(prompt, override)
   return {
-    kind: 'today',
-    answers: { ...base, goal: "Work today's queue" }
+    kind: spec.kind,
+    answers: specToAnswers(spec),
+    spec
   }
 }

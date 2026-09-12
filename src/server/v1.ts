@@ -13,25 +13,32 @@ import {
   addPublicNote,
   applyDisposition,
   completePublicCall,
+  deliverPublicMessage,
   deployPublicTool,
   emptyQueue,
   findOrgCall,
   findOrgContact,
+  findOrgMessage,
   findOrgProject,
+  getPublicSequence,
   isContactStatus,
   listPublicContacts,
+  listPublicMessages,
   listPublicProspects,
   listPublicProjects,
   toPublicContact,
   nextQueueContact,
+  patchPublicMessage,
   sendPublicMessage,
   startPublicCall,
   toPublicProject,
-  toPublicQueueNext
+  toPublicQueueNext,
+  updatePublicSequence
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
+import { inspectTwilioVoice } from './providers/twilio'
 
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
@@ -52,6 +59,18 @@ function loadOpenApi(): unknown {
     }
   }
   return { error: 'openapi.json not found' }
+}
+
+function parseSendAt(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const asNum = Number(value)
+    if (Number.isFinite(asNum) && value.trim() !== '') return asNum
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
 }
 
 function idempotencyHeader(req: { header: (n: string) => string | undefined }): string {
@@ -106,7 +125,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       environment,
       outbound: {
         email: sandbox ? 'sandbox' : config.google.refreshToken ? 'live' : 'demo',
-        voice: sandbox ? 'sandbox' : config.twilio.accountSid ? 'live' : 'demo',
+        voice: sandbox ? 'sandbox' : inspectTwilioVoice(config).ok ? 'live' : 'demo',
         linkedin: sandbox ? 'sandbox' : config.heyreach.apiKey ? 'live' : 'demo'
       },
       ...meBillingFields(credits),
@@ -163,7 +182,8 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       config,
       req.auth!.org.id,
       prompt,
-      parsed.contacts
+      parsed.contacts,
+      req.body?.spec
     )
     res.status(result.status).json(result.body)
   })
@@ -249,7 +269,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     const next = nextQueueContact(store.db, project.id)
-    res.json(next ? toPublicQueueNext(next) : emptyQueue())
+    res.json(next ? toPublicQueueNext(next, project.fieldCatalog) : emptyQueue())
   })
 
   router.post('/contacts/:id/messages', auth, async (req, res) => {
@@ -280,11 +300,12 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    const { subject, body, status, channel } = req.body as {
+    const { subject, body, status, channel, sendAt } = req.body as {
       subject?: string
       body?: string
       status?: 'draft' | 'queued' | 'sent'
       channel?: 'email' | 'linkedin'
+      sendAt?: number | string
     }
     if (body === undefined || typeof body !== 'string') {
       res.status(400).json({ error: 'body required' })
@@ -296,6 +317,15 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
     }
     if (channel && channel !== 'email' && channel !== 'linkedin') {
       res.status(400).json({ error: 'invalid channel' })
+      return
+    }
+    if (status === 'queued' && sendAt == null) {
+      res.status(400).json({ error: 'sendAt is required when status is queued' })
+      return
+    }
+    const sendAtMs = parseSendAt(sendAt)
+    if (status === 'queued' && sendAtMs == null) {
+      res.status(400).json({ error: 'sendAt must be a unix timestamp (ms) or ISO date' })
       return
     }
     const sandbox = req.auth!.environment === 'sandbox'
@@ -327,7 +357,8 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       body,
       status,
       channel,
-      sandbox
+      sandbox,
+      sendAt: sendAtMs
     })
     if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
@@ -437,6 +468,112 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     res.json({ contact: addPublicNote(store, contact.id, note) })
+  })
+
+  router.get('/projects/:id/sequence', auth, (req, res) => {
+    const sequence = getPublicSequence(store, req.auth!.org.id, paramId(req.params.id))
+    if (!sequence) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json(sequence)
+  })
+
+  router.patch('/projects/:id/sequence', auth, (req, res) => {
+    const result = updatePublicSequence(store, req.auth!.org.id, paramId(req.params.id), {
+      goal: typeof req.body?.goal === 'string' ? req.body.goal : undefined,
+      steps: req.body?.steps
+    })
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.json(result.sequence)
+  })
+
+  router.get('/projects/:id/messages', auth, (req, res) => {
+    const project = findOrgProject(store, req.auth!.org.id, paramId(req.params.id))
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const statusRaw = typeof req.query.status === 'string' ? req.query.status : undefined
+    if (statusRaw && !['draft', 'queued', 'sent', 'failed'].includes(statusRaw)) {
+      res.status(400).json({ error: 'invalid status' })
+      return
+    }
+    res.json(
+      listPublicMessages(store, {
+        orgId: req.auth!.org.id,
+        projectId: project.id,
+        contactId: typeof req.query.contactId === 'string' ? req.query.contactId : undefined,
+        status: statusRaw as 'draft' | 'queued' | 'sent' | 'failed' | undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        offset: req.query.offset ? Number(req.query.offset) : undefined
+      })
+    )
+  })
+
+  router.patch('/messages/:id', auth, (req, res) => {
+    const sendAtMs = parseSendAt(req.body?.sendAt)
+    const result = patchPublicMessage(store, req.auth!.org.id, paramId(req.params.id), {
+      subject: typeof req.body?.subject === 'string' ? req.body.subject : undefined,
+      body: typeof req.body?.body === 'string' ? req.body.body : undefined,
+      status:
+        req.body?.status === 'draft' || req.body?.status === 'queued' ? req.body.status : undefined,
+      sendAt: sendAtMs
+    })
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.json({ message: result.message })
+  })
+
+  router.post('/messages/:id/send', auth, async (req, res) => {
+    const message = findOrgMessage(store, req.auth!.org.id, paramId(req.params.id))
+    if (!message) {
+      res.status(404).json({ error: 'Message not found' })
+      return
+    }
+    const sandbox = req.auth!.environment === 'sandbox'
+    const charge = await chargeIfLive(billing, {
+      orgId: req.auth!.org.id,
+      sandbox,
+      reason: message.channel === 'linkedin' ? 'linkedin' : 'email',
+      projectId: message.projectId,
+      apiKeyId: req.auth!.apiKeyId
+    })
+    if (!charge.ok) {
+      res.status(402).json({
+        error: charge.error,
+        code: charge.code,
+        billingUrl: charge.billingUrl,
+        remaining: charge.remaining
+      })
+      return
+    }
+    const result = await deliverPublicMessage(
+      store,
+      config,
+      req.auth!.org.id,
+      message.id,
+      sandbox
+    )
+    if (!result.ok && charge.creditsUsed > 0) {
+      await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+    }
+    if (!result.ok) {
+      res.status(result.status).json(result.body)
+      return
+    }
+    res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+    res.setHeader('X-Credits-Remaining', String(charge.remaining))
+    res.json({
+      ...result.body,
+      creditsUsed: charge.creditsUsed,
+      creditsRemaining: charge.remaining
+    })
   })
 
   return router

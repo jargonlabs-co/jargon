@@ -1,5 +1,6 @@
 import { uid } from './crypto'
 import type { Contact } from './types'
+import { extraAttrs } from '../shared/fieldCatalog'
 
 export type DeployContactInput = {
   name: string
@@ -13,6 +14,7 @@ export type DeployContactInput = {
   notes?: string
   context?: string[]
   companyDomain?: string
+  attrs?: Record<string, unknown>
 }
 
 export const MAX_CONTACTS = 100
@@ -57,7 +59,8 @@ function normalizeContactRow(
     accountName: pick(record, ['accountName', 'account_name', 'company']),
     notes: pick(record, ['notes', 'note', 'reason', 'signal']),
     context: asStringList(record.context),
-    companyDomain: pick(record, ['companyDomain', 'company_domain', 'domain'])
+    companyDomain: pick(record, ['companyDomain', 'company_domain', 'domain']),
+    attrs: extraAttrs(record)
   }
 }
 
@@ -146,8 +149,9 @@ function isTableDivider(line: string): boolean {
   return /^\s*\|?\s*:?-{2,}/.test(line)
 }
 
-function headerField(cell: string): keyof DeployContactInput | null {
+function headerField(cell: string): string | null {
   const t = cell.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!t) return null
   if (/^(contact|name|person|full name)$/.test(t)) return 'name'
   if (/company|account/.test(t)) return 'company'
   if (/title|role|job/.test(t)) return 'title'
@@ -156,7 +160,7 @@ function headerField(cell: string): keyof DeployContactInput | null {
   if (/linkedin|profile/.test(t)) return 'linkedinUrl'
   if (/notes|signal/.test(t)) return 'notes'
   if (/city|location/.test(t)) return 'city'
-  return null
+  return t.replace(/\s+/g, '_')
 }
 
 function cellUrl(cell: string): string | undefined {
@@ -246,6 +250,7 @@ export function toManualContacts(
       linkedinUrl: p.linkedinUrl,
       companyDomain: p.companyDomain,
       context: p.context,
+      attrs: p.attrs && Object.keys(p.attrs).length ? p.attrs : {},
       channelsDone: [],
       createdAt: now,
       updatedAt: now

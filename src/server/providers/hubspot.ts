@@ -3,9 +3,79 @@ import type { ServerConfig } from '../config'
 import { createOAuthState, oauthRedirectUri, type ProviderSecrets } from '../connections'
 import type { DataStore } from '../store'
 import { prospectsToContacts, type ContextProspect } from './prospects'
+import { extraAttrs } from '../../shared/fieldCatalog'
+import { setProjectCatalog } from '../fieldCatalogSync'
 
 const HUBSPOT_TOKEN = 'https://api.hubapi.com/oauth/v1/token'
 const HUBSPOT_CONTACTS = 'https://api.hubapi.com/crm/v3/objects/contacts'
+const HUBSPOT_PROPERTIES = 'https://api.hubapi.com/crm/v3/properties/contacts'
+const HUBSPOT_BASE_PROPS = [
+  'email',
+  'firstname',
+  'lastname',
+  'phone',
+  'jobtitle',
+  'company',
+  'city',
+  'hs_linkedinid',
+  'website'
+]
+const HUBSPOT_USEFUL_PROPS = [
+  'industry',
+  'numberofemployees',
+  'annualrevenue',
+  'country',
+  'state',
+  'lifecyclestage',
+  'hs_lead_status',
+  'linkedinbio',
+  'hs_linkedin_url',
+  'job_function',
+  'seniority'
+]
+
+async function hubspotPropertyNames(accessToken: string): Promise<string[]> {
+  const names = [...HUBSPOT_BASE_PROPS]
+  try {
+    const res = await fetch(HUBSPOT_PROPERTIES, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+    if (!res.ok) return names
+    const json = (await res.json()) as {
+      results?: Array<{ name?: string; hidden?: boolean; hubspotDefined?: boolean }>
+    }
+    for (const prop of json.results ?? []) {
+      const name = prop.name?.trim()
+      if (!name || prop.hidden) continue
+      if (prop.hubspotDefined === false || HUBSPOT_USEFUL_PROPS.includes(name)) names.push(name)
+    }
+  } catch {
+    /* keep base props */
+  }
+  return [...new Set(names)].slice(0, 80)
+}
+
+export async function fetchHubSpotContacts(
+  accessToken: string,
+  limit: number,
+  demo: boolean
+): Promise<ContextProspect[]> {
+  const capped = Math.min(Math.max(limit, 1), 100)
+  if (demo || accessToken === 'demo-hubspot-token') {
+    return demoHubSpotContacts(capped)
+  }
+
+  const props = await hubspotPropertyNames(accessToken)
+  const url = `${HUBSPOT_CONTACTS}?limit=${capped}&properties=${encodeURIComponent(props.join(','))}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
+  if (!res.ok) throw new Error(`HubSpot contacts failed: ${await res.text()}`)
+  const json = (await res.json()) as {
+    results?: Array<{ id: string; properties?: Record<string, string | null> }>
+  }
+  return (json.results ?? []).map((row, i) => contactFromHubSpot(row, i))
+}
 
 export function hubspotAuthUrl(
   store: DataStore,
@@ -63,38 +133,6 @@ export async function exchangeHubSpotCode(
   }
 }
 
-export async function fetchHubSpotContacts(
-  accessToken: string,
-  limit: number,
-  demo: boolean
-): Promise<ContextProspect[]> {
-  const capped = Math.min(Math.max(limit, 1), 100)
-  if (demo || accessToken === 'demo-hubspot-token') {
-    return demoHubSpotContacts(capped)
-  }
-
-  const props = [
-    'email',
-    'firstname',
-    'lastname',
-    'phone',
-    'jobtitle',
-    'company',
-    'city',
-    'hs_linkedinid',
-    'website'
-  ].join(',')
-  const url = `${HUBSPOT_CONTACTS}?limit=${capped}&properties=${encodeURIComponent(props)}`
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  })
-  if (!res.ok) throw new Error(`HubSpot contacts failed: ${await res.text()}`)
-  const json = (await res.json()) as {
-    results?: Array<{ id: string; properties?: Record<string, string | null> }>
-  }
-  return (json.results ?? []).map((row, i) => contactFromHubSpot(row, i))
-}
-
 function contactFromHubSpot(
   row: { id: string; properties?: Record<string, string | null> },
   index: number
@@ -104,10 +142,27 @@ function contactFromHubSpot(
   const last = (p.lastname ?? '').trim()
   const name = `${first} ${last}`.trim() || p.email || `HubSpot contact ${index + 1}`
   const company = (p.company ?? '').trim() || 'Unknown company'
+  const linkedinRaw = (p.hs_linkedin_url ?? p.hs_linkedinid ?? '').trim()
   const linkedin =
-    p.hs_linkedinid && !p.hs_linkedinid.startsWith('http')
-      ? `https://www.linkedin.com/in/${p.hs_linkedinid}`
-      : p.hs_linkedinid || undefined
+    linkedinRaw && !linkedinRaw.startsWith('http')
+      ? `https://www.linkedin.com/in/${linkedinRaw}`
+      : linkedinRaw || undefined
+  const industry = (p.industry ?? '').trim()
+  const size = (p.numberofemployees ?? '').trim()
+  const attrs = extraAttrs(p as Record<string, unknown>, [
+    'email',
+    'firstname',
+    'lastname',
+    'phone',
+    'jobtitle',
+    'company',
+    'city',
+    'hs_linkedinid',
+    'hs_linkedin_url',
+    'website'
+  ])
+  if ((p.lifecyclestage ?? '').trim()) attrs.lifecyclestage = p.lifecyclestage
+  if ((p.annualrevenue ?? '').trim()) attrs.annualrevenue = p.annualrevenue
   return {
     externalId: row.id,
     name,
@@ -118,7 +173,10 @@ function contactFromHubSpot(
     city: (p.city ?? '').trim() || '',
     accountName: company,
     linkedinUrl: linkedin,
-    companyDomain: (p.website ?? '').replace(/^https?:\/\//, '').split('/')[0] || undefined
+    companyDomain: (p.website ?? '').replace(/^https?:\/\//, '').split('/')[0] || undefined,
+    companyIndustry: industry || undefined,
+    companySize: size || undefined,
+    attrs
   }
 }
 
@@ -181,6 +239,7 @@ export function writeDemoContactsToProject(
     const contacts = prospectsToContacts(orgId, project.id, prospects, 'seed')
     db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
     db.contacts.push(...contacts)
+    setProjectCatalog(db, project.id)
     project.answers = {
       ...project.answers,
       data_source: 'book',
@@ -233,6 +292,7 @@ export function writeHubSpotContactsToProjects(
       const contacts = prospectsToContacts(orgId, project.id, prospects, 'hubspot')
       db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
       db.contacts.push(...contacts)
+      setProjectCatalog(db, project.id)
       project.answers = {
         ...project.answers,
         data_source: 'hubspot',

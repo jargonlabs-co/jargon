@@ -112,12 +112,12 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
         'crm.objects.contacts.read crm.objects.companies.read oauth'
     },
     twilio: {
-      accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
-      authToken: process.env.TWILIO_AUTH_TOKEN ?? '',
-      apiKeySid: process.env.TWILIO_API_KEY_SID ?? '',
-      apiKeySecret: process.env.TWILIO_API_KEY_SECRET ?? '',
-      twimlAppSid: process.env.TWILIO_TWIML_APP_SID ?? '',
-      fromNumber: process.env.TWILIO_FROM_NUMBER ?? ''
+      accountSid: (process.env.TWILIO_ACCOUNT_SID ?? '').trim(),
+      authToken: (process.env.TWILIO_AUTH_TOKEN ?? '').trim(),
+      apiKeySid: (process.env.TWILIO_API_KEY_SID ?? '').trim(),
+      apiKeySecret: (process.env.TWILIO_API_KEY_SECRET ?? '').trim(),
+      twimlAppSid: (process.env.TWILIO_TWIML_APP_SID ?? '').trim(),
+      fromNumber: (process.env.TWILIO_FROM_NUMBER ?? '').trim()
     },
     heyreach: {
       apiKey: (process.env.HEYREACH_API_KEY ?? '').trim()

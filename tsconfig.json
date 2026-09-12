@@ -22,6 +22,7 @@
     "src/renderer/src/components/workspace/**/*",
     "src/renderer/src/lib/**/*",
     "src/renderer/src/env.d.ts",
-    "src/server/**/*"
+    "src/server/**/*",
+    "src/shared/**/*"
   ]
 }

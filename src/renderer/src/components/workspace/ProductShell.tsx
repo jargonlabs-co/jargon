@@ -106,6 +106,7 @@ function iconFor(id: string): string {
     help: '?',
     inbox: '✉',
     dial: '☎',
+    linkedin: 'in',
     connections: '⬡',
     agents: '⌁'
   }

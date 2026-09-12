@@ -2,7 +2,8 @@ import type { ServerConfig } from './config'
 import { getConnection, readSecrets } from './connections'
 import { seedProject } from './seed'
 import type { DataStore } from './store'
-import type { ProjectKind } from './types'
+import type { DeploySpecInput, ProjectKind } from './types'
+import { compileWorkspaceSpec } from '../shared/workspaceSpec'
 import {
   fetchHubSpotContacts,
   writeDemoContactsToProject,
@@ -29,20 +30,29 @@ export async function createProjectRecord(
     kind: ProjectKind
     answers?: Record<string, string>
     contacts?: DeployContactInput[]
+    spec?: DeploySpecInput
   }
 ): Promise<string> {
-  const { orgId, prompt, kind } = input
+  const { orgId, prompt } = input
   const provided = input.contacts?.length ? input.contacts : undefined
+  const listSegment = provided
+    ? input.answers?.segment && input.answers.segment !== 'HubSpot contacts'
+      ? input.answers.segment
+      : providedSegment(provided)
+    : undefined
+  const spec = compileWorkspaceSpec(prompt, {
+    ...input.spec,
+    kind: input.spec?.kind ?? input.kind,
+    goal: input.spec?.goal ?? input.answers?.goal,
+    segment: listSegment || input.spec?.segment || input.answers?.segment
+  })
   const finalAnswers = {
     ...(input.answers ?? {}),
     ...(provided
       ? {
           data_source: 'provided',
           prospect_count: String(provided.length),
-          segment:
-            input.answers?.segment && input.answers.segment !== 'HubSpot contacts'
-              ? input.answers.segment
-              : providedSegment(provided)
+          segment: listSegment ?? spec.segment
         }
       : {})
   }
@@ -52,8 +62,9 @@ export async function createProjectRecord(
     const project = seedProject(db, {
       orgId,
       prompt,
-      kind,
+      kind: spec.kind,
       answers: finalAnswers,
+      spec,
       contacts: provided ? toManualContacts(orgId, '', provided) : undefined
     })
     projectId = project.id

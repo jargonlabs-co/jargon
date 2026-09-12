@@ -9,6 +9,7 @@ import type {
 export type { PlanId } from './billing/catalog'
 
 export type ProjectKind = 'dialer' | 'sequencer' | 'cadence' | 'list' | 'today' | 'generic'
+export type PrimarySurface = 'queue' | 'dial' | 'inbox' | 'linkedin' | 'sequence'
 export type CampaignState = 'ACTIVE' | 'PAUSED' | 'DRAFT'
 export type ContactStatus =
   | 'queued'
@@ -21,6 +22,42 @@ export type ContactStatus =
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
 export type Channel = 'email' | 'call' | 'linkedin'
+export type FieldOrigin = 'identity' | 'attrs'
+export type FieldType = 'string' | 'number' | 'list'
+
+export interface FieldDef {
+  key: string
+  label: string
+  type: FieldType
+  origin: FieldOrigin
+}
+
+export interface WorkspaceSpecStep {
+  day: number
+  channel: Channel
+  label: string
+  subject?: string
+  body?: string
+}
+
+export interface WorkspaceSpec {
+  goal: string
+  segment: string
+  primarySurface: PrimarySurface
+  channels: Channel[]
+  steps: WorkspaceSpecStep[]
+  kind: ProjectKind
+}
+
+export type DeploySpecInput = {
+  goal?: string
+  segment?: string
+  primarySurface?: PrimarySurface
+  channels?: Channel[]
+  steps?: WorkspaceSpecStep[]
+  kind?: ProjectKind
+}
+
 export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres' | 'railway'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
@@ -143,6 +180,10 @@ export interface Project {
   team: string
   description: string
   answers: Record<string, string>
+  /** Compiled motion: channels, primary surface, and sequence steps. */
+  spec?: WorkspaceSpec
+  /** Discovered variables for this workspace's source (identity + attrs). */
+  fieldCatalog?: FieldDef[]
   createdAt: number
   updatedAt: number
 }
@@ -209,6 +250,8 @@ export interface Contact {
   companyRevenue?: string
   /** Short talk-track snippets for dialer / queue (e.g. tenure, funding). */
   context?: string[]
+  /** Source-specific fields that are not part of the core identity. */
+  attrs?: Record<string, unknown>
   enrichedAt?: number
   createdAt: number
   updatedAt: number
@@ -242,6 +285,9 @@ export interface Message {
   createdAt: number
   updatedAt: number
   sentAt?: number
+  /** When status is queued, send at this unix ms. */
+  sendAt?: number
+  sandbox?: boolean
   error?: string
 }
 

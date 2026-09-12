@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import type { ProjectBundle } from '../../../api/client'
 import { api } from '../../../api/client'
+import { hasChannel, specOf } from '../../../lib/workspaceSpec'
 
 interface Props {
   bundle: ProjectBundle
   onRefresh: () => Promise<ProjectBundle>
   onCall: (contactId: string) => void
   onEmail: (contactId: string) => void
+  onLinkedIn?: (contactId: string) => void
   onConnectData?: () => void
 }
 
-export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onConnectData }: Props) {
+export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, onConnectData }: Props) {
+  const spec = specOf(bundle.project)
   const [selectedId, setSelectedId] = useState(
     bundle.contacts.find((c) => c.status === 'active')?.id ?? bundle.contacts[0]?.id ?? null
   )
@@ -110,15 +113,27 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onConnectData
           </div>
           <div className="detail-body">
             <div className="detail-actions">
-              <button className="prod-btn primary compact" onClick={() => onCall(selected.id)}>
-                Call
-              </button>
-              <button
-                className="prod-btn ghost compact"
-                onClick={() => selected && onEmail(selected.id)}
-              >
-                Email
-              </button>
+              {hasChannel(spec, 'call') ? (
+                <button className="prod-btn primary compact" onClick={() => onCall(selected.id)}>
+                  Call
+                </button>
+              ) : null}
+              {hasChannel(spec, 'email') ? (
+                <button
+                  className="prod-btn ghost compact"
+                  onClick={() => selected && onEmail(selected.id)}
+                >
+                  Email
+                </button>
+              ) : null}
+              {hasChannel(spec, 'linkedin') ? (
+                <button
+                  className="prod-btn ghost compact"
+                  onClick={() => selected && (onLinkedIn ? onLinkedIn(selected.id) : onEmail(selected.id))}
+                >
+                  LinkedIn
+                </button>
+              ) : null}
             </div>
             <div className="detail-block">
               <div className="detail-kv">

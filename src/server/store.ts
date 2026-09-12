@@ -91,6 +91,9 @@ function migrateDb(raw: Partial<Database>): Database {
       if (!(a as { orgId?: string }).orgId) (a as { orgId: string }).orgId = defaultOrgId
     }
   }
+  for (const c of db.contacts) {
+    if (!c.attrs) c.attrs = {}
+  }
   return db
 }
 

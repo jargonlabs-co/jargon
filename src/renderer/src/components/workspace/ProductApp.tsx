@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ProjectBundle } from '../../api/client'
+import type { Channel, ProjectBundle } from '../../api/client'
 import { api } from '../../api/client'
 import type { DialerVoice } from '../../lib/dialerVoice'
-import { ProductShell, type NavItem } from './ProductShell'
+import { ProductShell } from './ProductShell'
 import { DashboardPage } from './pages/DashboardPage'
 import { CampaignsPage } from './pages/CampaignsPage'
 import { SequencesPage } from './pages/SequencesPage'
@@ -13,6 +13,13 @@ import { AnalyticsPage } from './pages/AnalyticsPage'
 import { TodayQueuePage } from './pages/TodayQueuePage'
 import { ConnectionsPage } from './pages/ConnectionsPage'
 import { ContextPage } from './pages/ContextPage'
+import {
+  continuePage,
+  defaultPage,
+  navForSpec,
+  specOf,
+  workspaceKindLabel
+} from '../../lib/workspaceSpec'
 
 interface Props {
   projectId: string
@@ -26,6 +33,7 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('dashboard')
   const [focusContactId, setFocusContactId] = useState<string | null>(null)
+  const [focusChannel, setFocusChannel] = useState<Channel | null>(null)
 
   async function refresh() {
     const next = await api.getProject(projectId)
@@ -44,7 +52,7 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
         if (cancelled) return
         setBundle(next)
         onBundleChange?.(next)
-        setPage(defaultPage(next.project.kind))
+        setPage(defaultPage(specOf(next.project)))
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
@@ -57,7 +65,8 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
     }
   }, [projectId])
 
-  const navItems = useMemo(() => navForKind(bundle?.project.kind ?? 'generic'), [bundle?.project.kind])
+  const spec = useMemo(() => (bundle ? specOf(bundle.project) : null), [bundle])
+  const navItems = useMemo(() => (spec ? navForSpec(spec) : []), [spec])
 
   if (loading) {
     return (
@@ -82,7 +91,7 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
   return (
     <ProductShell
       productName={bundle.project.name}
-      productKind={kindLabel(bundle.project.kind)}
+      productKind={spec ? workspaceKindLabel(spec) : 'Outbound workspace'}
       navItems={navItems}
       activeNav={page}
       onNavChange={setPage}
@@ -91,9 +100,7 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
       {page === 'context' ? (
         <ContextPage
           bundle={bundle}
-          onContinue={() =>
-            setPage(bundle.project.kind === 'today' ? 'sequences' : bundle.project.kind === 'dialer' ? 'dial' : 'dashboard')
-          }
+          onContinue={() => setPage(spec ? continuePage(spec) : 'dashboard')}
         />
       ) : null}
       {page === 'today' ? (
@@ -102,12 +109,21 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
           onConnectData={() => setPage('connections')}
           onCall={async (id) => {
             setFocusContactId(id)
+            setFocusChannel('call')
             await api.patchContact(id, { status: 'active' })
             await refresh()
             setPage('dial')
           }}
           onEmail={async (id) => {
             setFocusContactId(id)
+            setFocusChannel('email')
+            await api.patchContact(id, { status: 'active' })
+            await refresh()
+            setPage('inbox')
+          }}
+          onLinkedIn={async (id) => {
+            setFocusContactId(id)
+            setFocusChannel('linkedin')
             await api.patchContact(id, { status: 'active' })
             await refresh()
             setPage('inbox')
@@ -123,7 +139,7 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
         <SequencesPage
           bundle={bundle}
           onOpenInbox={() => setPage('inbox')}
-          onStartSequence={() => setPage('today')}
+          onStartSequence={() => setPage(spec ? continuePage(spec) : 'today')}
         />
       ) : null}
       {page === 'contacts' ? (
@@ -133,12 +149,19 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
           onConnectData={() => setPage('connections')}
           onCall={async (id) => {
             setFocusContactId(id)
+            setFocusChannel('call')
             await api.patchContact(id, { status: 'active' })
             await refresh()
             setPage('dial')
           }}
           onEmail={async (id) => {
             setFocusContactId(id)
+            setFocusChannel('email')
+            setPage('inbox')
+          }}
+          onLinkedIn={async (id) => {
+            setFocusContactId(id)
+            setFocusChannel('linkedin')
             setPage('inbox')
           }}
         />
@@ -152,7 +175,12 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
         />
       ) : null}
       {page === 'inbox' ? (
-        <InboxPage bundle={bundle} onRefresh={refresh} initialContactId={focusContactId} />
+        <InboxPage
+          bundle={bundle}
+          onRefresh={refresh}
+          initialContactId={focusContactId}
+          initialChannel={focusChannel}
+        />
       ) : null}
       {page === 'analytics' ? <AnalyticsPage bundle={bundle} /> : null}
       {page === 'connections' ? <ConnectionsPage /> : null}
@@ -171,79 +199,4 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
       ) : null}
     </ProductShell>
   )
-}
-
-function defaultPage(kind: ProjectBundle['project']['kind']): string {
-  if (kind === 'today' || kind === 'dialer') return 'context'
-  if (kind === 'sequencer') return 'sequences'
-  return 'dashboard'
-}
-
-function kindLabel(kind: ProjectBundle['project']['kind']): string {
-  switch (kind) {
-    case 'dialer':
-      return 'Outbound dialer'
-    case 'sequencer':
-      return 'Email sequencer'
-    case 'cadence':
-      return 'Multi-channel cadence'
-    case 'list':
-      return 'Lead list builder'
-    case 'today':
-      return 'Outbound sequencer'
-    default:
-      return 'Sales workspace'
-  }
-}
-
-function navForKind(kind: ProjectBundle['project']['kind']): NavItem[] {
-  const sharedTail = [
-    { id: 'connections', label: 'Connections', section: 'system' as const },
-    { id: 'settings', label: 'Settings', section: 'system' as const },
-    { id: 'help', label: 'Help', section: 'system' as const }
-  ]
-  if (kind === 'today') {
-    return [
-      { id: 'context', label: 'Context' },
-      { id: 'sequences', label: 'Sequence' },
-      { id: 'today', label: 'Daily tasks' },
-      { id: 'inbox', label: 'Inbox' },
-      { id: 'dial', label: 'Dial console' },
-      { id: 'contacts', label: 'Contacts' },
-      { id: 'analytics', label: 'Analytics' },
-      ...sharedTail
-    ]
-  }
-  if (kind === 'dialer') {
-    return [
-      { id: 'context', label: 'Context' },
-      { id: 'dashboard', label: 'Dashboard' },
-      { id: 'campaigns', label: 'Campaigns' },
-      { id: 'dial', label: 'Dial console' },
-      { id: 'contacts', label: 'Contacts' },
-      { id: 'inbox', label: 'Inbox' },
-      { id: 'analytics', label: 'Analytics' },
-      ...sharedTail
-    ]
-  }
-  if (kind === 'sequencer') {
-    return [
-      { id: 'dashboard', label: 'Dashboard' },
-      { id: 'sequences', label: 'Sequences' },
-      { id: 'inbox', label: 'Inbox' },
-      { id: 'contacts', label: 'Contacts' },
-      { id: 'analytics', label: 'Analytics' },
-      ...sharedTail
-    ]
-  }
-  return [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'campaigns', label: 'Campaigns' },
-    { id: 'sequences', label: 'Sequences' },
-    { id: 'dial', label: 'Dial console' },
-    { id: 'inbox', label: 'Inbox' },
-    { id: 'contacts', label: 'Contacts' },
-    { id: 'analytics', label: 'Analytics' },
-    ...sharedTail
-  ]
 }

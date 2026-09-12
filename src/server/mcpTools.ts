@@ -10,25 +10,32 @@ import {
   addPublicNote,
   applyDisposition,
   completePublicCall,
+  deliverPublicMessage,
   deployPublicTool,
   emptyQueue,
   findOrgCall,
   findOrgContact,
+  findOrgMessage,
   findOrgProject,
+  getPublicSequence,
   isContactStatus,
   listPublicContacts,
+  listPublicMessages,
   listPublicProjects,
   listPublicProspects,
   nextQueueContact,
+  patchPublicMessage,
   sendPublicMessage,
   startPublicCall,
   toPublicContact,
   toPublicProject,
-  toPublicQueueNext
+  toPublicQueueNext,
+  updatePublicSequence
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
+import { inspectTwilioVoice } from './providers/twilio'
 
 const ContactStatus = z.enum([
   'queued',
@@ -79,13 +86,13 @@ export function registerJargonTools(
         environment: actor.environment,
         outbound: {
           email: sandbox ? 'sandbox' : config.google.refreshToken ? 'live' : 'demo',
-          voice: sandbox ? 'sandbox' : config.twilio.accountSid ? 'live' : 'demo',
+          voice: sandbox ? 'sandbox' : inspectTwilioVoice(config).ok ? 'live' : 'demo',
           linkedin: sandbox ? 'sandbox' : config.heyreach.apiKey ? 'live' : 'demo'
         },
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'To build a dialer from any researched list, call deploy_tool and put the people in prompt as a JSON array (name, company, title, email, phone, linkedinUrl). Prefer import_list if that tool is visible.'
+          'Import a list with import_list (extra fields are kept as attrs). get_sequence shows the catalog of variables. Pass spec.steps using {{first_name}} / {{company}} / {{attrs.your_field}}. save_draft then send_draft, or send_message. schedule with status queued + sendAt.'
       })
     }
   )
@@ -211,38 +218,68 @@ export function registerJargonTools(
     }
   )
 
-  const ContactInput = z.object({
-    name: z.string().min(1).describe('Full name'),
-    company: z.string().optional(),
-    title: z.string().optional(),
-    email: z.string().optional(),
-    phone: z.string().optional(),
-    city: z.string().optional(),
-    linkedinUrl: z.string().optional(),
-    linkedin: z.string().optional().describe('Alias for linkedinUrl'),
-    notes: z.string().optional(),
-    context: z.array(z.string()).optional()
+  const ContactInput = z
+    .object({
+      name: z.string().min(1).describe('Full name'),
+      company: z.string().optional(),
+      title: z.string().optional(),
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      city: z.string().optional(),
+      linkedinUrl: z.string().optional(),
+      linkedin: z.string().optional().describe('Alias for linkedinUrl'),
+      notes: z.string().optional(),
+      context: z.array(z.string()).optional(),
+      attrs: z.record(z.string(), z.unknown()).optional()
+    })
+    .passthrough()
+
+  const SpecStep = z.object({
+    day: z.number().int().min(0).max(30).optional(),
+    channel: z.enum(['email', 'call', 'linkedin']),
+    label: z.string().optional(),
+    subject: z.string().optional(),
+    body: z.string().optional()
   })
+  const SpecInput = z
+    .object({
+      goal: z.string().optional().describe('What success looks like'),
+      segment: z.string().optional(),
+      primarySurface: z
+        .enum(['queue', 'dial', 'inbox', 'linkedin', 'sequence'])
+        .optional()
+        .describe('Which screen the rep opens first'),
+      channels: z
+        .array(z.enum(['email', 'call', 'linkedin']))
+        .min(1)
+        .max(3)
+        .optional()
+        .describe('Channels to run, in order. Overrides prompt inference.'),
+      steps: z.array(SpecStep).min(1).max(8).optional()
+    })
+    .optional()
+    .describe('Optional motion spec. If omitted, Jargon compiles it from prompt.')
 
   server.registerTool(
     'import_list',
     {
-      title: 'Import list into a dialer',
+      title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people from anywhere. Extra contact fields (funding_round, hiring, etc.) are stored as attrs and become sequence variables. Describe the motion in prompt or pass spec.steps with {{field}} templates. contacts is required.',
       inputSchema: z.object({
         prompt: z
           .string()
           .min(1)
-          .describe('What to build, e.g. Dialer for these 10 RevOps leaders'),
+          .describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
         contacts: z
           .array(ContactInput)
           .min(1)
           .max(100)
-          .describe('The exact people to put in the queue')
+          .describe('The exact people to put in the queue'),
+        spec: SpecInput
       })
     },
-    async ({ prompt, contacts }) => {
+    async ({ prompt, contacts, spec }) => {
       const parsed = parseRequiredContacts(contacts)
       if (!parsed.ok) return fail(parsed.error)
       const result = await deployPublicTool(
@@ -250,7 +287,8 @@ export function registerJargonTools(
         config,
         actor.orgId,
         prompt,
-        parsed.contacts
+        parsed.contacts,
+        spec
       )
       if (!result.ok) return fail(result.body.error)
       return ok(result.body)
@@ -260,20 +298,21 @@ export function registerJargonTools(
   server.registerTool(
     'deploy_tool',
     {
-      title: 'Deploy workspace from CRM',
+      title: 'Deploy outbound workspace',
       description:
-        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace from a prompt. Pass spec to control channels (email, call, linkedin) and which screen opens first. To ingest a researched list, pass contacts[] or put people in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
-        prompt: z.string().min(1).describe('What to deploy from the connected CRM/warehouse'),
+        prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
         contacts: z
           .array(ContactInput)
           .min(1)
           .max(100)
           .optional()
-          .describe('Optional override list. Prefer import_list when you already have people.')
+          .describe('Optional override list. Prefer import_list when you already have people.'),
+        spec: SpecInput
       })
     },
-    async ({ prompt, contacts }) => {
+    async ({ prompt, contacts, spec }) => {
       const parsed = parseDeployContacts(contacts)
       if (!parsed.ok) return fail(parsed.error)
       const result = await deployPublicTool(
@@ -281,7 +320,8 @@ export function registerJargonTools(
         config,
         actor.orgId,
         prompt,
-        parsed.contacts
+        parsed.contacts,
+        spec
       )
       if (!result.ok) return fail(result.body.error)
       return ok(result.body)
@@ -338,7 +378,8 @@ export function registerJargonTools(
     async ({ projectId }) => {
       if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
       const next = nextQueueContact(store.db, projectId)
-      return ok(next ? toPublicQueueNext(next) : emptyQueue())
+      const project = findOrgProject(store, actor.orgId, projectId)
+      return ok(next ? toPublicQueueNext(next, project?.fieldCatalog) : emptyQueue())
     }
   )
 
@@ -352,12 +393,22 @@ export function registerJargonTools(
         body: z.string(),
         channel: z.enum(['email', 'linkedin']).optional(),
         status: z.enum(['draft', 'queued', 'sent']).optional(),
-        subject: z.string().optional()
+        subject: z.string().optional(),
+        sendAt: z.union([z.number(), z.string()]).optional().describe('Required if status is queued. Unix ms or ISO date.')
       })
     },
     async ({ contactId, ...input }) => {
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
+      const sendAt =
+        typeof input.sendAt === 'number'
+          ? input.sendAt
+          : typeof input.sendAt === 'string'
+            ? Date.parse(input.sendAt)
+            : undefined
+      if (input.status === 'queued' && !Number.isFinite(sendAt)) {
+        return fail('sendAt is required when status is queued (unix ms or ISO date)')
+      }
       const willSend = (input.status ?? 'sent') === 'sent'
       const billableReason = input.channel === 'linkedin' ? 'linkedin' : 'email'
       let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
@@ -379,7 +430,14 @@ export function registerJargonTools(
           )
         }
       }
-      const result = await sendPublicMessage(store, config, contact, { ...input, sandbox })
+      const result = await sendPublicMessage(store, config, contact, {
+        subject: input.subject,
+        body: input.body,
+        channel: input.channel,
+        status: input.status,
+        sandbox,
+        sendAt: Number.isFinite(sendAt) ? sendAt : undefined
+      })
       if (!result.ok) {
         if (charge?.ok && charge.creditsUsed > 0) {
           await refundCredits(billing, actor.orgId, charge.creditsUsed, 'refund')
@@ -480,6 +538,158 @@ export function registerJargonTools(
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
       return ok({ contact: addPublicNote(store, contact.id, note) })
+    }
+  )
+
+  server.registerTool(
+    'get_sequence',
+    {
+      title: 'Get sequence',
+      description:
+        'Sequence steps plus the field catalog for this workspace. Use catalog keys in {{mustache}} templates. Show this to the user in Claude.',
+      inputSchema: z.object({ projectId: z.string() }),
+      annotations: { readOnlyHint: true }
+    },
+    async ({ projectId }) => {
+      const sequence = getPublicSequence(store, actor.orgId, projectId)
+      if (!sequence) return fail('Project not found')
+      return ok(sequence)
+    }
+  )
+
+  server.registerTool(
+    'update_sequence',
+    {
+      title: 'Update sequence',
+      description:
+        'Replace sequence steps without redeploying. Templates may use catalog keys such as {{first_name}} and {{funding_round}}.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        goal: z.string().optional(),
+        steps: z.array(SpecStep).min(1).max(8)
+      })
+    },
+    async ({ projectId, goal, steps }) => {
+      const result = updatePublicSequence(store, actor.orgId, projectId, { goal, steps })
+      if (!result.ok) return fail(result.error)
+      return ok(result.sequence)
+    }
+  )
+
+  server.registerTool(
+    'save_draft',
+    {
+      title: 'Save draft',
+      description:
+        'Save proposed copy for a contact. Templates are interpolated from attrs. User can edit via update_draft then send_draft.',
+      inputSchema: z.object({
+        contactId: z.string(),
+        body: z.string(),
+        subject: z.string().optional(),
+        channel: z.enum(['email', 'linkedin']).optional()
+      })
+    },
+    async ({ contactId, ...input }) => {
+      const contact = findOrgContact(store, actor.orgId, contactId)
+      if (!contact) return fail('Contact not found')
+      const result = await sendPublicMessage(store, config, contact, {
+        ...input,
+        status: 'draft',
+        sandbox
+      })
+      if (!result.ok) return fail(result.body.error)
+      return ok(result.body)
+    }
+  )
+
+  server.registerTool(
+    'list_drafts',
+    {
+      title: 'List drafts',
+      description: 'List draft or queued messages in a workspace.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        contactId: z.string().optional(),
+        status: z.enum(['draft', 'queued', 'sent', 'failed']).optional()
+      }),
+      annotations: { readOnlyHint: true }
+    },
+    async ({ projectId, contactId, status }) => {
+      if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
+      return ok(
+        listPublicMessages(store, {
+          orgId: actor.orgId,
+          projectId,
+          contactId,
+          status: status ?? 'draft'
+        })
+      )
+    }
+  )
+
+  server.registerTool(
+    'update_draft',
+    {
+      title: 'Update draft',
+      description: 'Edit draft/queued copy or reschedule sendAt.',
+      inputSchema: z.object({
+        messageId: z.string(),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+        sendAt: z.union([z.number(), z.string()]).optional()
+      })
+    },
+    async ({ messageId, subject, body, sendAt }) => {
+      const parsedSendAt =
+        typeof sendAt === 'number' ? sendAt : typeof sendAt === 'string' ? Date.parse(sendAt) : undefined
+      const result = patchPublicMessage(store, actor.orgId, messageId, {
+        subject,
+        body,
+        sendAt: Number.isFinite(parsedSendAt) ? parsedSendAt : undefined
+      })
+      if (!result.ok) return fail(result.error)
+      return ok({ message: result.message })
+    }
+  )
+
+  server.registerTool(
+    'send_draft',
+    {
+      title: 'Send draft',
+      description: 'Send a saved draft now. Spends credits on live email.',
+      inputSchema: z.object({ messageId: z.string() })
+    },
+    async ({ messageId }) => {
+      const message = findOrgMessage(store, actor.orgId, messageId)
+      if (!message) return fail('Message not found')
+      const charge = await chargeIfLive(billing, {
+        orgId: actor.orgId,
+        sandbox,
+        reason: message.channel === 'linkedin' ? 'linkedin' : 'email',
+        projectId: message.projectId
+      })
+      if (!charge.ok) {
+        return fail(
+          JSON.stringify({
+            error: charge.error,
+            code: charge.code,
+            billingUrl: charge.billingUrl,
+            remaining: charge.remaining
+          })
+        )
+      }
+      const result = await deliverPublicMessage(store, config, actor.orgId, messageId, sandbox)
+      if (!result.ok) {
+        if (charge.creditsUsed > 0) {
+          await refundCredits(billing, actor.orgId, charge.creditsUsed, 'refund')
+        }
+        return fail(result.body.error)
+      }
+      return ok({
+        ...result.body,
+        creditsUsed: charge.creditsUsed,
+        creditsRemaining: charge.remaining
+      })
     }
   )
 }

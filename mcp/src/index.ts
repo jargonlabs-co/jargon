@@ -162,33 +162,54 @@ function createServer(): McpServer {
     }
   )
 
-  const ContactInput = z.object({
-    name: z.string().min(1).describe('Full name'),
-    company: z.string().optional(),
-    title: z.string().optional(),
-    email: z.string().optional(),
-    phone: z.string().optional(),
-    city: z.string().optional(),
-    linkedinUrl: z.string().optional(),
-    linkedin: z.string().optional(),
-    notes: z.string().optional(),
-    context: z.array(z.string()).optional()
+  const SpecStep = z.object({
+    day: z.number().int().min(0).max(30).optional(),
+    channel: z.enum(['email', 'call', 'linkedin']),
+    label: z.string().optional(),
+    subject: z.string().optional(),
+    body: z.string().optional()
   })
+  const SpecInput = z
+    .object({
+      goal: z.string().optional(),
+      segment: z.string().optional(),
+      primarySurface: z.enum(['queue', 'dial', 'inbox', 'linkedin', 'sequence']).optional(),
+      channels: z.array(z.enum(['email', 'call', 'linkedin'])).min(1).max(3).optional(),
+      steps: z.array(SpecStep).min(1).max(8).optional()
+    })
+    .optional()
+
+  const ContactInput = z
+    .object({
+      name: z.string().min(1).describe('Full name'),
+      company: z.string().optional(),
+      title: z.string().optional(),
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      city: z.string().optional(),
+      linkedinUrl: z.string().optional(),
+      linkedin: z.string().optional(),
+      notes: z.string().optional(),
+      context: z.array(z.string()).optional(),
+      attrs: z.record(z.string(), z.unknown()).optional()
+    })
+    .passthrough()
 
   server.registerTool(
     'import_list',
     {
-      title: 'Import list into a dialer',
+      title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound dialer from that exact list. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound tool from that exact list — LinkedIn, email, phone, or a mix. Describe the motion in prompt. Optionally pass spec.channels / spec.primarySurface. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
-        prompt: z.string().min(1).describe('What to build, e.g. Dialer for these 10 RevOps leaders'),
-        contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue')
+        prompt: z.string().min(1).describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
+        contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue'),
+        spec: SpecInput
       })
     },
-    async ({ prompt, contacts }) => {
+    async ({ prompt, contacts, spec }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts } }))
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts, spec } }))
       } catch (err) {
         return toolError(err)
       }
@@ -198,22 +219,23 @@ function createServer(): McpServer {
   server.registerTool(
     'deploy_tool',
     {
-      title: 'Deploy workspace from CRM',
+      title: 'Deploy outbound workspace',
       description:
-        'Create an outbound workspace. To ingest a researched list, pass contacts[] or put a JSON array of people (name, company, title, email, phone, linkedinUrl) in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace from a prompt. Pass spec to control channels (email, call, linkedin) and which screen opens first. To ingest a researched list, pass contacts[] or put people in prompt. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
-        prompt: z.string().min(1).describe('What to deploy from the connected CRM/warehouse'),
+        prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
         contacts: z
           .array(ContactInput)
           .min(1)
           .max(100)
           .optional()
-          .describe('Optional override list. Prefer import_list when you already have people.')
+          .describe('Optional override list. Prefer import_list when you already have people.'),
+        spec: SpecInput
       })
     },
-    async ({ prompt, contacts }) => {
+    async ({ prompt, contacts, spec }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts } }))
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts, spec } }))
       } catch (err) {
         return toolError(err)
       }
@@ -292,7 +314,8 @@ function createServer(): McpServer {
         body: z.string(),
         channel: z.enum(['email', 'linkedin']).optional(),
         status: z.enum(['draft', 'queued', 'sent']).optional(),
-        subject: z.string().optional()
+        subject: z.string().optional(),
+        sendAt: z.union([z.number(), z.string()]).optional()
       })
     },
     async ({ contactId, ...body }) => {
@@ -379,6 +402,136 @@ function createServer(): McpServer {
     async ({ contactId, note }) => {
       try {
         return toolResult(await jargonFetch('POST', `/contacts/${contactId}/notes`, { body: { note } }))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'get_sequence',
+    {
+      title: 'Get sequence',
+      description:
+        'Sequence steps plus field catalog. Show this in Claude. Templates use {{first_name}} and catalog keys.',
+      inputSchema: z.object({ projectId: z.string() }),
+      annotations: { readOnlyHint: true }
+    },
+    async ({ projectId }) => {
+      try {
+        return toolResult(await jargonFetch('GET', `/projects/${projectId}/sequence`))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'update_sequence',
+    {
+      title: 'Update sequence',
+      description: 'Replace sequence steps without redeploying.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        goal: z.string().optional(),
+        steps: z.array(SpecStep).min(1).max(8)
+      })
+    },
+    async ({ projectId, goal, steps }) => {
+      try {
+        return toolResult(
+          await jargonFetch('PATCH', `/projects/${projectId}/sequence`, { body: { goal, steps } })
+        )
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'save_draft',
+    {
+      title: 'Save draft',
+      description: 'Save proposed copy for a contact. Interpolates catalog fields.',
+      inputSchema: z.object({
+        contactId: z.string(),
+        body: z.string(),
+        subject: z.string().optional(),
+        channel: z.enum(['email', 'linkedin']).optional()
+      })
+    },
+    async ({ contactId, ...body }) => {
+      try {
+        return toolResult(
+          await jargonFetch('POST', `/contacts/${contactId}/messages`, {
+            body: { ...body, status: 'draft' },
+            idempotency: true
+          })
+        )
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'list_drafts',
+    {
+      title: 'List drafts',
+      description: 'List draft or queued messages in a workspace.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        contactId: z.string().optional(),
+        status: z.enum(['draft', 'queued', 'sent', 'failed']).optional()
+      }),
+      annotations: { readOnlyHint: true }
+    },
+    async ({ projectId, contactId, status }) => {
+      try {
+        return toolResult(
+          await jargonFetch('GET', `/projects/${projectId}/messages`, {
+            query: { contactId, status: status ?? 'draft' }
+          })
+        )
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'update_draft',
+    {
+      title: 'Update draft',
+      description: 'Edit draft copy or reschedule sendAt.',
+      inputSchema: z.object({
+        messageId: z.string(),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+        sendAt: z.union([z.number(), z.string()]).optional()
+      })
+    },
+    async ({ messageId, ...body }) => {
+      try {
+        return toolResult(await jargonFetch('PATCH', `/messages/${messageId}`, { body }))
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'send_draft',
+    {
+      title: 'Send draft',
+      description: 'Send a saved draft now.',
+      inputSchema: z.object({ messageId: z.string() })
+    },
+    async ({ messageId }) => {
+      try {
+        return toolResult(
+          await jargonFetch('POST', `/messages/${messageId}/send`, { idempotency: true })
+        )
       } catch (err) {
         return toolError(err)
       }

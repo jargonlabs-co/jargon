@@ -132,7 +132,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a workspace from a prompt. Pass contacts to use that exact queue; otherwise hydrates from the connected CRM/warehouse. */
+        /** Create a workspace from a prompt. Pass contacts to use that exact queue; otherwise hydrates from the connected CRM/warehouse. Optional spec chooses channels (email, call, LinkedIn) and the primary screen. */
         post: operations["deployTool"];
         delete?: never;
         options?: never;
@@ -186,6 +186,75 @@ export interface paths {
         get: operations["queueNext"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/sequence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sequence steps and field catalog for this workspace */
+        get: operations["getSequence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Replace sequence steps without redeploying. Templates may use catalog keys. */
+        patch: operations["updateSequence"];
+        trace?: never;
+    };
+    "/projects/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List drafts, queued, or sent messages in a workspace */
+        get: operations["listMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit a draft or reschedule a queued send */
+        patch: operations["updateMessage"];
+        trace?: never;
+    };
+    "/messages/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a saved draft now */
+        post: operations["sendDraft"];
         delete?: never;
         options?: never;
         head?: never;
@@ -298,6 +367,34 @@ export interface components {
         ContactStatus: "queued" | "active" | "completed" | "replied" | "no_answer" | "interested" | "not_interested";
         /** @enum {string} */
         ProjectKind: "dialer" | "sequencer" | "cadence" | "list" | "today" | "generic";
+        /** @enum {string} */
+        PrimarySurface: "queue" | "dial" | "inbox" | "linkedin" | "sequence";
+        /** @enum {string} */
+        Channel: "email" | "call" | "linkedin";
+        WorkspaceSpecStep: {
+            day: number;
+            channel: components["schemas"]["Channel"];
+            label: string;
+            subject?: string;
+            body?: string;
+        };
+        WorkspaceSpec: {
+            goal: string;
+            segment: string;
+            primarySurface: components["schemas"]["PrimarySurface"];
+            channels: components["schemas"]["Channel"][];
+            steps: components["schemas"]["WorkspaceSpecStep"][];
+            kind: components["schemas"]["ProjectKind"];
+        };
+        /** @description Optional motion override. If omitted, Jargon compiles channels and screens from the prompt. */
+        DeploySpec: {
+            goal?: string;
+            segment?: string;
+            primarySurface?: components["schemas"]["PrimarySurface"];
+            channels?: components["schemas"]["Channel"][];
+            steps?: components["schemas"]["WorkspaceSpecStep"][];
+            kind?: components["schemas"]["ProjectKind"];
+        };
         User: {
             id: string;
             email: string;
@@ -425,6 +522,8 @@ export interface components {
             prompt: string;
             segment?: string;
             description?: string;
+            spec?: components["schemas"]["WorkspaceSpec"];
+            fieldCatalog?: components["schemas"]["FieldDef"][];
             contactCount: number;
             /** @description Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with www.jargonlabs.co. */
             dashboardPath: string;
@@ -433,6 +532,7 @@ export interface components {
             createdAt: number;
             updatedAt: number;
         };
+        /** @description Extra keys are stored as attrs and become sequence variables. */
         DeployContact: {
             name: string;
             company?: string;
@@ -445,11 +545,17 @@ export interface components {
             notes?: string;
             context?: string[];
             companyDomain?: string;
+            attrs?: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
         };
         DeployRequest: {
             prompt: string;
             /** @description Exact people for the queue. When set, HubSpot/Railway are not used. */
             contacts?: components["schemas"]["DeployContact"][];
+            spec?: components["schemas"]["DeploySpec"];
         };
         DeployResult: {
             projectId: string;
@@ -478,6 +584,9 @@ export interface components {
             linkedinUrl?: string;
             accountName?: string;
             context?: string[];
+            attrs?: {
+                [key: string]: unknown;
+            };
             createdAt?: number;
             updatedAt?: number;
         };
@@ -500,6 +609,11 @@ export interface components {
         QueueNext: {
             contact: components["schemas"]["Contact"] | null;
             step: components["schemas"]["Step"] | null;
+            preview?: {
+                subject?: string;
+                body?: string;
+            } | null;
+            fieldCatalog?: components["schemas"]["FieldDef"][];
             remaining: number;
         };
         SendMessageRequest: {
@@ -515,6 +629,40 @@ export interface components {
             status: "draft" | "queued" | "sent";
             subject?: string;
             body: string;
+            /** @description Required when status is queued. Unix ms or ISO-8601 datetime. */
+            sendAt?: number | string;
+        };
+        PatchMessageRequest: {
+            subject?: string;
+            body?: string;
+            /** @enum {string} */
+            status?: "draft" | "queued";
+            sendAt?: number | string;
+        };
+        MessageList: {
+            messages: components["schemas"]["Message"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        FieldDef: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "string" | "number" | "list";
+            /** @enum {string} */
+            origin: "identity" | "attrs";
+        };
+        SequenceView: {
+            projectId: string;
+            goal?: string;
+            spec?: components["schemas"]["WorkspaceSpec"];
+            fieldCatalog: components["schemas"]["FieldDef"][];
+            steps: components["schemas"]["Step"][];
+        };
+        UpdateSequenceRequest: {
+            goal?: string;
+            steps: components["schemas"]["WorkspaceSpecStep"][];
         };
         Message: {
             id: string;
@@ -530,6 +678,7 @@ export interface components {
             mode?: "demo" | "gmail" | "heyreach";
             createdAt?: number;
             sentAt?: number;
+            sendAt?: number;
         };
         Call: {
             id: string;
@@ -909,6 +1058,143 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getSequence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SequenceView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSequence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSequenceRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SequenceView"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listMessages: {
+        parameters: {
+            query?: {
+                status?: "draft" | "queued" | "sent" | "failed";
+                contactId?: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        message: components["schemas"]["Message"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    sendDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        message: components["schemas"]["Message"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["Error"];
         };
     };
     sendMessage: {

@@ -1,38 +1,41 @@
 import { useMemo, useState } from 'react'
-import type { Contact, ProjectBundle } from '../../../api/client'
+import type { Channel, Contact, ProjectBundle } from '../../../api/client'
+import {
+  channelLabel,
+  hasChannel,
+  motionComplete,
+  nextChannel,
+  specOf
+} from '../../../lib/workspaceSpec'
 
 interface Props {
   bundle: ProjectBundle
   onCall: (contactId: string) => void
   onEmail: (contactId: string) => void
+  onLinkedIn?: (contactId: string) => void
   onOpenSequence?: () => void
   onConnectData?: () => void
 }
 
-function channelDone(c: Contact, channel: 'call' | 'email'): boolean {
-  return (c.channelsDone ?? []).includes(channel)
-}
-
-function progressLabel(c: Contact): string {
-  const call = channelDone(c, 'call')
-  const email = channelDone(c, 'email')
-  if (call && email) return 'Done'
-  if (call) return 'Called · email left'
-  if (email) return 'Emailed · call left'
-  if (c.status === 'active') return 'Up next'
+function progressLabel(c: Contact, spec: ReturnType<typeof specOf>): string {
+  if (motionComplete(c, spec)) return 'Done'
+  const next = nextChannel(c, spec)
+  if (c.status === 'active') return next ? `Up next · ${channelLabel(next)}` : 'Up next'
+  const done = c.channelsDone ?? []
+  if (done.length) return `${done.map(channelLabel).join(', ')} done`
   return 'Queued'
 }
 
-function nextAction(c: Contact, steps: ProjectBundle['steps']): 'email' | 'call' {
-  const step = steps[c.stepIndex ?? 0]
-  if (step?.channel === 'call' && !channelDone(c, 'call')) return 'call'
-  if (step?.channel === 'email' && !channelDone(c, 'email')) return 'email'
-  if (!channelDone(c, 'email')) return 'email'
-  return 'call'
-}
-
-export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConnectData }: Props) {
+export function TodayQueuePage({
+  bundle,
+  onCall,
+  onEmail,
+  onLinkedIn,
+  onOpenSequence,
+  onConnectData
+}: Props) {
   const [starting, setStarting] = useState(false)
+  const spec = specOf(bundle.project)
 
   const sequence = bundle.sequences[0]
   const steps = useMemo(
@@ -54,22 +57,24 @@ export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConn
   )
 
   const remainingContacts = useMemo(
-    () => contacts.filter((c) => !(channelDone(c, 'call') && channelDone(c, 'email'))),
-    [contacts]
+    () => contacts.filter((c) => !motionComplete(c, spec)),
+    [contacts, spec]
   )
   const remaining = remainingContacts.length
-  const called = contacts.filter((c) => channelDone(c, 'call')).length
-  const emailed = contacts.filter((c) => channelDone(c, 'email')).length
   const nextContact = remainingContacts[0] ?? null
   const started = remaining < contacts.length
+
+  function runAction(contactId: string, channel: Channel | null) {
+    if (channel === 'call') onCall(contactId)
+    else if (channel === 'linkedin' && onLinkedIn) onLinkedIn(contactId)
+    else onEmail(contactId)
+  }
 
   async function startTodaysTasks() {
     if (!nextContact || starting) return
     setStarting(true)
     try {
-      const action = nextAction(nextContact, steps)
-      if (action === 'email') onEmail(nextContact.id)
-      else onCall(nextContact.id)
+      runAction(nextContact.id, nextChannel(nextContact, spec))
     } finally {
       setStarting(false)
     }
@@ -80,12 +85,18 @@ export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConn
       <header className="today-hero">
         <div>
           <p className="eyebrow">Daily tasks</p>
-          <h2>{contacts.length === 0 ? 'Connect HubSpot to fill this queue' : started ? 'Continue today’s outreach' : 'Start today’s outreach'}</h2>
+          <h2>
+            {contacts.length === 0
+              ? 'Connect HubSpot to fill this queue'
+              : started
+                ? 'Continue today’s outreach'
+                : 'Start today’s outreach'}
+          </h2>
           <p className="lede">
             {contacts.length === 0 ? (
               <>
-                This tool doesn’t supply leads. Load contacts from your HubSpot portal, then email,
-                call, and LinkedIn run through Jargon.
+                This tool doesn’t supply leads. Load contacts from your HubSpot portal, then run{' '}
+                {spec.channels.map(channelLabel).join(', ')} through Jargon.
               </>
             ) : (
               <>
@@ -140,14 +151,26 @@ export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConn
             <strong>{remaining}</strong>
             <span>remaining</span>
           </div>
-          <div>
-            <strong>{called}</strong>
-            <span>called</span>
-          </div>
-          <div>
-            <strong>{emailed}</strong>
-            <span>emailed</span>
-          </div>
+          {hasChannel(spec, 'call') ? (
+            <div>
+              <strong>{contacts.filter((c) => (c.channelsDone ?? []).includes('call')).length}</strong>
+              <span>called</span>
+            </div>
+          ) : null}
+          {hasChannel(spec, 'email') ? (
+            <div>
+              <strong>{contacts.filter((c) => (c.channelsDone ?? []).includes('email')).length}</strong>
+              <span>emailed</span>
+            </div>
+          ) : null}
+          {hasChannel(spec, 'linkedin') ? (
+            <div>
+              <strong>
+                {contacts.filter((c) => (c.channelsDone ?? []).includes('linkedin')).length}
+              </strong>
+              <span>LinkedIn</span>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -182,23 +205,36 @@ export function TodayQueuePage({ bundle, onCall, onEmail, onOpenSequence, onConn
                   </div>
                 </td>
                 <td>
-                  <span className={`pill status-${c.status}`}>{progressLabel(c)}</span>
+                  <span className={`pill status-${c.status}`}>{progressLabel(c, spec)}</span>
                 </td>
                 <td className="today-actions">
-                  <button
-                    type="button"
-                    disabled={channelDone(c, 'email')}
-                    onClick={() => onEmail(c.id)}
-                  >
-                    {channelDone(c, 'email') ? 'Emailed' : 'Email'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={channelDone(c, 'call')}
-                    onClick={() => onCall(c.id)}
-                  >
-                    {channelDone(c, 'call') ? 'Called' : 'Call'}
-                  </button>
+                  {hasChannel(spec, 'email') ? (
+                    <button
+                      type="button"
+                      disabled={(c.channelsDone ?? []).includes('email')}
+                      onClick={() => onEmail(c.id)}
+                    >
+                      {(c.channelsDone ?? []).includes('email') ? 'Emailed' : 'Email'}
+                    </button>
+                  ) : null}
+                  {hasChannel(spec, 'call') ? (
+                    <button
+                      type="button"
+                      disabled={(c.channelsDone ?? []).includes('call')}
+                      onClick={() => onCall(c.id)}
+                    >
+                      {(c.channelsDone ?? []).includes('call') ? 'Called' : 'Call'}
+                    </button>
+                  ) : null}
+                  {hasChannel(spec, 'linkedin') ? (
+                    <button
+                      type="button"
+                      disabled={(c.channelsDone ?? []).includes('linkedin')}
+                      onClick={() => (onLinkedIn ? onLinkedIn(c.id) : onEmail(c.id))}
+                    >
+                      {(c.channelsDone ?? []).includes('linkedin') ? 'Sent LI' : 'LinkedIn'}
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

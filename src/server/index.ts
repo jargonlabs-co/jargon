@@ -12,7 +12,7 @@ import {
   nextQueueContact,
   shouldAdvanceStep
 } from './queries'
-import type { CallPhase, ContactStatus, MessageStatus, ProjectKind } from './types'
+import type { CallPhase, ContactStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
 import {
   authPayload,
@@ -38,6 +38,7 @@ import { sendPlatformGmail } from './providers/gmail'
 import {
   createTwilioVoiceToken,
   hangupTwilioPstn,
+  inspectTwilioVoice,
   toE164,
   voiceTwiml
 } from './providers/twilio'
@@ -72,15 +73,18 @@ import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
+import { parseDeploySpec } from '../shared/workspaceSpec'
 import { createV1Router } from './v1'
 import { mountMcp } from './mcpHttp'
 import { claudeConnectorStatus } from './mcpOauth'
 import { parseDeployContacts } from './deployContacts'
-import { dashboardFor } from './publicApi'
+import { dashboardFor, sendPublicMessage } from './publicApi'
 import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
+import { startOutboundScheduler } from './scheduler'
 
 export async function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const billing = await createBillingService(store, config)
+  startOutboundScheduler(store, config, billing)
   const app = express()
   app.use(cors({ origin: true, credentials: true }))
   app.use(
@@ -121,13 +125,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       providers: {
         hubspot: config.hubspot.clientId ? 'live' : 'demo',
         gmail: config.google.refreshToken ? 'live' : 'demo',
-        twilio:
-          config.twilio.accountSid &&
-          config.twilio.apiKeySid &&
-          config.twilio.apiKeySecret &&
-          config.twilio.twimlAppSid
-            ? 'live'
-            : 'demo',
+        twilio: inspectTwilioVoice(config).ok ? 'live' : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
         railway: config.railway.clientId ? 'live' : 'demo',
         auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured',
@@ -274,7 +272,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       demoMode: config.demoMode,
       outbound: {
         email: config.google.refreshToken ? 'live' : 'demo',
-        voice: config.twilio.accountSid ? 'live' : 'demo',
+        voice: inspectTwilioVoice(config).ok ? 'live' : 'demo',
         linkedin: config.heyreach.apiKey ? 'live' : 'demo'
       },
       ...meBillingFields(credits),
@@ -722,9 +720,12 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   })
 
   app.get('/voice/token', auth, (req, res) => {
-    const identity = `user_${req.auth!.user.id}`
-    const token = createTwilioVoiceToken(config, identity)
-    res.json(token)
+    const identity = `user_${req.auth!.user.id}`.replace(/[^A-Za-z0-9_-]/g, '_')
+    try {
+      res.json(createTwilioVoiceToken(config, identity))
+    } catch (err) {
+      res.status(503).json({ error: err instanceof Error ? err.message : 'Twilio voice is not ready' })
+    }
   })
 
   app.post('/voice/twiml', (req, res) => {
@@ -816,7 +817,15 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: parsed.error })
       return
     }
-    const inferred = inferDeployParams(prompt.trim())
+    const parsedSpec = parseDeploySpec((req.body as { spec?: unknown }).spec)
+    if (!parsedSpec.ok) {
+      res.status(400).json({ error: parsedSpec.error })
+      return
+    }
+    const inferred = inferDeployParams(prompt.trim(), {
+      ...parsedSpec.spec,
+      kind: kind ?? parsedSpec.spec?.kind
+    })
     const orgId = req.auth!.org.id
     try {
       const projectId = await createProjectRecord(store, config, {
@@ -824,6 +833,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         prompt: prompt.trim(),
         kind: kind ?? inferred.kind,
         answers: { ...inferred.answers, ...(answers ?? {}) },
+        spec: inferred.spec,
         contacts: parsed.contacts
       })
       const bundle = bundleProject(store.db, projectId)
@@ -1093,6 +1103,11 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: 'Contact has no valid phone number' })
       return
     }
+    const voice = inspectTwilioVoice(config)
+    if (!voice.ok) {
+      res.status(503).json({ error: voice.error })
+      return
+    }
     const charge = await chargeIfLive(billing, {
       orgId: req.auth!.org.id,
       sandbox: req.auth!.environment === 'sandbox',
@@ -1113,8 +1128,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.setHeader('X-Credits-Remaining', String(charge.remaining))
     const now = Date.now()
     const callId = uid('call')
-    const twilioReady = Boolean(config.twilio.accountSid && config.twilio.apiKeySid)
-    const mode = twilioReady ? 'twilio' : 'demo'
+    const mode = 'twilio'
     store.update((db) => {
       db.contacts.forEach((c) => {
         if (c.projectId !== contact.projectId) return
@@ -1133,7 +1147,6 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         contactId: contact.id,
         phase: 'dialing',
         mode,
-        providerCallSid: mode === 'twilio' ? undefined : undefined,
         startedAt: now
       })
       db.activities.unshift({
@@ -1148,27 +1161,6 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       const project = db.projects.find((p) => p.id === contact.projectId)
       if (project) project.updatedAt = now
     })
-
-    // Demo softphone: simulate connect. Live Twilio: client SDK updates via status webhook.
-    if (mode === 'demo') {
-      setTimeout(() => {
-        store.update((db) => {
-          const call = db.calls.find((c) => c.id === callId)
-          if (!call || call.phase !== 'dialing') return
-          call.phase = 'connected'
-          call.connectedAt = Date.now()
-          db.activities.unshift({
-            id: uid('act'),
-            orgId: call.orgId,
-            projectId: call.projectId,
-            contactId: call.contactId,
-            kind: 'call',
-            summary: `Connected with ${contact.name}`,
-            createdAt: Date.now()
-          })
-        })
-      }, 1100)
-    }
 
     res.status(201).json({
       ...store.db.calls.find((c) => c.id === callId),
@@ -1288,12 +1280,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       channel?: 'email' | 'linkedin'
     }
     const messageChannel = channel ?? 'email'
-    const now = Date.now()
-    const messageId = uid('msg')
-    let finalStatus: MessageStatus = status ?? 'draft'
-    let mode: 'demo' | 'gmail' | 'heyreach' = 'demo'
-    let providerMessageId: string | undefined
-    let error: string | undefined
+    const finalStatus = status ?? 'draft'
     let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
 
     if (finalStatus === 'sent') {
@@ -1317,108 +1304,26 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.setHeader('X-Credits-Remaining', String(charge.remaining))
     }
 
-    if (finalStatus === 'sent' && messageChannel === 'email') {
-      try {
-        const result = await sendPlatformGmail(config, {
-          to: contact.email,
-          subject: subject ?? '(no subject)',
-          body: body ?? ''
-        })
-        mode = result.mode
-        providerMessageId = result.id
-      } catch (err) {
-        finalStatus = 'failed'
-        error = err instanceof Error ? err.message : 'Send failed'
-      }
-    }
-
-    if (finalStatus === 'sent' && messageChannel === 'linkedin') {
-      const apiKey = config.heyreach.apiKey.trim() || 'demo'
-      const demo = !config.heyreach.apiKey.trim() || apiKey === 'demo'
-      try {
-        const result = await sendHeyReachLinkedInMessage({
-          apiKey,
-          linkedinUrl: contact.linkedinUrl ?? '',
-          message: body ?? '',
-          demo
-        })
-        mode = result.mode
-        providerMessageId = result.id
-      } catch (err) {
-        finalStatus = 'failed'
-        error = err instanceof Error ? err.message : 'LinkedIn send failed'
-      }
-    }
-
-    store.update((db) => {
-      db.messages.unshift({
-        id: messageId,
-        orgId: contact.orgId,
-        projectId: contact.projectId,
-        contactId: contact.id,
-        subject: subject ?? (messageChannel === 'linkedin' ? 'LinkedIn message' : '(no subject)'),
-        body: body ?? '',
-        status: finalStatus,
-        channel: messageChannel,
-        mode,
-        providerMessageId,
-        error,
-        createdAt: now,
-        updatedAt: now,
-        sentAt: finalStatus === 'sent' ? now : undefined
-      })
-      const c = db.contacts.find((x) => x.id === contact.id)
-      if (c && finalStatus === 'sent') {
-        c.status = c.status === 'queued' ? 'active' : c.status
-        c.stepIndex = c.stepIndex + 1
-        c.updatedAt = now
-        const done = new Set(c.channelsDone ?? [])
-        done.add(messageChannel === 'linkedin' ? 'linkedin' : 'email')
-        c.channelsDone = [...done]
-      }
-      db.activities.unshift({
-        id: uid('act'),
-        orgId: contact.orgId,
-        projectId: contact.projectId,
-        contactId: contact.id,
-        kind:
-          finalStatus === 'sent'
-            ? messageChannel === 'linkedin'
-              ? 'linkedin'
-              : 'email'
-            : messageChannel === 'linkedin'
-              ? 'linkedin'
-              : finalStatus === 'failed'
-                ? 'email'
-                : 'draft',
-        summary:
-          finalStatus === 'sent'
-            ? messageChannel === 'linkedin'
-              ? `Sent LinkedIn message to ${contact.name}`
-              : `Sent email to ${contact.name}`
-            : finalStatus === 'failed'
-              ? `Failed to ${messageChannel === 'linkedin' ? 'message' : 'email'} ${contact.name}: ${error}`
-              : `Saved ${messageChannel} draft for ${contact.name}`,
-        createdAt: now
-      })
-      const project = db.projects.find((p) => p.id === contact.projectId)
-      if (project) project.updatedAt = now
+    const result = await sendPublicMessage(store, config, contact, {
+      subject,
+      body,
+      status: finalStatus,
+      channel: messageChannel,
+      sandbox: req.auth!.environment === 'sandbox'
     })
-
-    if (finalStatus === 'failed') {
-      if (charge?.ok && charge.creditsUsed > 0) {
-        await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
-      }
+    if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
+      await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+    }
+    if (!result.ok) {
       res.status(502).json({
-        error: error ?? 'Send failed',
-        message: store.db.messages.find((m) => m.id === messageId),
+        error: result.body.error,
+        message: result.body.message,
         bundle: bundleProject(store.db, contact.projectId)
       })
       return
     }
-
     res.status(201).json({
-      message: store.db.messages.find((m) => m.id === messageId),
+      message: result.body.message,
       bundle: bundleProject(store.db, contact.projectId),
       creditsUsed: charge?.creditsUsed ?? 0,
       creditsRemaining: charge?.remaining

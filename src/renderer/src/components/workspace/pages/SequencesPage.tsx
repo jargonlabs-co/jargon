@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ProjectBundle } from '../../../api/client'
 import { ConnectedContextSection } from '../ConnectedContextSection'
+import { motionComplete, specOf, channelLabel } from '../../../lib/workspaceSpec'
 
 interface Props {
   bundle: ProjectBundle
@@ -15,11 +16,9 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
     .sort((a, b) => a.order - b.order)
   const [selectedStepId, setSelectedStepId] = useState(steps[0]?.id ?? null)
   const selected = steps.find((s) => s.id === selectedStepId) ?? steps[0]
-  const isToday = bundle.project.kind === 'today'
-  const remaining = bundle.contacts.filter((c) => {
-    const done = c.channelsDone ?? []
-    return !(done.includes('email') && done.includes('call'))
-  }).length
+  const spec = specOf(bundle.project)
+  const isQueue = spec.primarySurface === 'queue' || spec.kind === 'today' || spec.primarySurface === 'linkedin'
+  const remaining = bundle.contacts.filter((c) => !motionComplete(c, spec)).length
   const started = remaining < bundle.contacts.length
 
   return (
@@ -29,10 +28,10 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
           <div>
             <div className="prod-eyebrow">Sequences</div>
             <h2>{sequence?.name ?? 'Sequences'}</h2>
-            {isToday ? (
+            {isQueue ? (
               <p className="muted" style={{ marginTop: 8, maxWidth: 520 }}>
-                {bundle.contacts.length} prospects enrolled. Start the sequence to open today’s
-                email and call tasks.
+                {bundle.contacts.length} prospects enrolled. Start the sequence to open today’s{' '}
+                {spec.channels.map((ch) => channelLabel(ch).toLowerCase()).join(' and ')} tasks.
               </p>
             ) : null}
           </div>
@@ -49,7 +48,7 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
           </div>
         </div>
 
-        {isToday ? <ConnectedContextSection /> : null}
+        {isQueue ? <ConnectedContextSection /> : null}
 
         <div className="seq-summary">
           <div className="seq-summary-card">
@@ -126,6 +125,11 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
                   prospect.
                 </p>
               ) : null}
+              {selected.channel === 'linkedin' ? (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Send this LinkedIn step from the composer.
+                </p>
+              ) : null}
               {selected.subject ? (
                 <div className="detail-kv">
                   <span>Subject</span>
@@ -137,7 +141,7 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
                 <button className="prod-btn primary" onClick={onStartSequence}>
                   {started ? 'Continue daily tasks' : 'Start sequence'}
                 </button>
-              ) : selected.channel === 'email' ? (
+              ) : selected.channel === 'email' || selected.channel === 'linkedin' ? (
                 <button className="prod-btn primary" onClick={onOpenInbox}>
                   Compose from this step
                 </button>

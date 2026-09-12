@@ -53,6 +53,6 @@ export JARGON_API_URL=https://jargon-api-production.up.railway.app
 export JARGON_API_KEY=jarg_...
 ```
 
-After analysis, ingest the working list with `import_list` (MCP) or `POST /v1/tools/deploy` with `{ "prompt": "…", "contacts": [ { "name", "company", "title", "email", "phone", "linkedinUrl" } ] }`. That list becomes the queue. Omit `contacts` only to hydrate from HubSpot/Railway. Append later with `POST /v1/projects/{id}/contacts`.
+After analysis, ingest the working list with `import_list` (MCP) or `POST /v1/tools/deploy` with `{ "prompt": "…", "contacts": [ { "name", "company", "title", "email", "phone", "linkedinUrl" } ], "spec": { "channels": ["linkedin"] } }`. The prompt (and optional spec) chooses the motion — LinkedIn, email, phone, or a mix. That list becomes the queue. Omit `contacts` only to hydrate from HubSpot/Railway. Append later with `POST /v1/projects/{id}/contacts`.
 
 Open `https://jargonlabs.co` + `dashboardPath` as the same account that owns the key.

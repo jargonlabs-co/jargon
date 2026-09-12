@@ -14,7 +14,7 @@ import {
   type PublicStep
 } from './publicApi'
 
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace-v2.html'
 
 export type EmailWorkspaceSource = {
   provider: string

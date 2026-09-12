@@ -8,10 +8,10 @@
     :root {
       color-scheme: light dark;
       --bg: var(--color-background-primary, #fff);
-      --bg2: var(--color-background-secondary, #f6f6f4);
+      --bg2: var(--color-background-secondary, #f4f4f2);
       --fg: var(--color-text-primary, #161513);
       --muted: var(--color-text-secondary, #6b6966);
-      --line: var(--color-border-tertiary, #e6e4df);
+      --line: var(--color-border-tertiary, #e4e2dc);
       --accent: var(--color-text-accent, #161513);
       --danger: #b42318;
       --ok: #17663a;
@@ -20,7 +20,7 @@
     }
     :root.dark {
       --bg: var(--color-background-primary, #1c1b19);
-      --bg2: var(--color-background-secondary, #262522);
+      --bg2: var(--color-background-secondary, #242320);
       --fg: var(--color-text-primary, #f4f2ee);
       --muted: var(--color-text-secondary, #a8a59e);
       --line: var(--color-border-tertiary, #3a3834);
@@ -46,7 +46,6 @@
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
     .btn.primary:hover { opacity: 0.92; }
-    .btn.danger { border-color: var(--danger); color: var(--danger); }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
     .tab {
       border: 0; background: transparent; padding: 8px 10px; color: var(--muted);
@@ -59,23 +58,12 @@
     }
     .banner.err { color: var(--danger); }
     .banner.ok { color: var(--ok); }
-    .step {
-      border: 1px solid var(--line); border-radius: 10px; padding: 10px;
-      margin-bottom: 10px; background: var(--bg);
-    }
-    .step-h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
-    .step-h strong { color: var(--fg); font-size: 13px; }
     label { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 4px; }
     input[type="text"], input[type="datetime-local"], textarea {
       width: 100%; border: 1px solid var(--line); border-radius: 8px;
       background: var(--bg); padding: 8px 10px;
     }
-    textarea { min-height: 88px; resize: vertical; }
-    .vars { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-    .var {
-      font-size: 11px; color: var(--muted); border: 1px solid var(--line);
-      border-radius: 999px; padding: 2px 8px;
-    }
+    textarea { min-height: 110px; resize: vertical; }
     .people { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .person {
       display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
@@ -91,6 +79,76 @@
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
     .row input[type="datetime-local"] { width: auto; min-width: 180px; }
     .empty { color: var(--muted); padding: 20px 4px; }
+
+    .seg {
+      display: flex; gap: 4px; background: var(--bg2); border-radius: 8px; padding: 3px;
+      width: fit-content; margin-bottom: 12px;
+    }
+    .seg button {
+      border: 0; background: transparent; border-radius: 6px; padding: 5px 10px;
+      color: var(--muted); font-weight: 550;
+    }
+    .seg button.on { background: var(--bg); color: var(--fg); }
+
+    .canvas {
+      background: var(--bg2);
+      border-radius: 12px;
+      padding: 28px 16px 36px;
+    }
+    .flow {
+      display: flex; flex-direction: column; align-items: center;
+      width: min(300px, 100%); margin: 0 auto;
+    }
+    .wire {
+      width: 1.5px; height: 18px; background: color-mix(in srgb, var(--muted) 28%, transparent);
+    }
+    .joint {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--bg); border: 1.5px solid color-mix(in srgb, var(--muted) 35%, transparent);
+    }
+    .node {
+      width: 100%; background: var(--bg); border: 1px solid var(--line);
+      border-radius: 12px; padding: 12px 14px 11px; text-align: left;
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 6%, transparent);
+    }
+    button.node { cursor: pointer; }
+    button.node:hover { border-color: color-mix(in srgb, var(--muted) 55%, var(--line)); }
+    button.node.on { border-color: var(--fg); }
+    .node-top { display: flex; gap: 8px; align-items: flex-start; }
+    .node-copy { min-width: 0; flex: 1; }
+    .ico {
+      width: 18px; height: 18px; display: grid; place-items: center;
+      flex-shrink: 0; margin-top: 1px; color: var(--fg);
+    }
+    .ico svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+    .ico.bolt svg { fill: currentColor; stroke: none; }
+    .kicker { font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+    .title { font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .preview {
+      color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.4;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .foot {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 12px; padding-top: 2px;
+    }
+    .live {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
+      background: color-mix(in srgb, var(--ok) 8%, var(--bg));
+      border-radius: 999px; padding: 3px 8px 3px 6px;
+      font-size: 11px; font-weight: 650; color: var(--ok);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+    .mail-mini { width: 14px; height: 14px; color: var(--muted); }
+    .mail-mini svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+    .editor {
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; background: var(--bg);
+    }
+    .editor-h { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+    .editor-h strong { font-size: 13px; }
+    .step-pills { display: flex; gap: 4px; flex-wrap: wrap; width: 100%; }
   </style>
 </head>
 <body>
@@ -98,6 +156,12 @@
   <script type="module">
 /*__EXT_APPS_BUNDLE__*/
 const { App, applyDocumentTheme } = globalThis.ExtApps;
+
+const ICO = {
+  bolt: '<svg viewBox="0 0 16 16"><polygon points="9,1 3.5,9 7.5,9 6.5,15 13,7 8.8,7"/></svg>',
+  clock: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.2 1.4"/></svg>',
+  mail: '<svg viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.4"/><path d="m2.6 4.4 5.4 4 5.4-4"/></svg>',
+};
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -150,16 +214,34 @@ function statusLabel(ws, contact) {
   return contact.status || 'Queued';
 }
 
+function oneLine(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
 (async () => {
-  const app = new App({ name: 'jargon-email', version: '1.0.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-email', version: '1.1.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let ws = null;
   let tab = 'sequence';
+  let seqPane = 'flow';
+  let selectedStep = 0;
   let selectedId = null;
   let notice = '';
   let noticeTone = '';
   let busy = false;
   let pendingSend = false;
+  let draftSteps = [];
+
+  function emailSteps() {
+    const emails = draftSteps.filter((s) => s.channel === 'email');
+    return emails.length ? emails : draftSteps;
+  }
+
+  function syncDrafts() {
+    draftSteps = (ws?.steps || []).map((s) => ({ ...s }));
+    const n = emailSteps().length;
+    if (selectedStep >= n) selectedStep = Math.max(0, n - 1);
+  }
 
   function themeFromHost() {
     const ctx = app.getHostContext?.() || {};
@@ -187,6 +269,7 @@ function statusLabel(ws, contact) {
     const next = parseToolResult(result);
     if (next?.error) { setNotice(next.error, 'err'); return; }
     ws = next;
+    syncDrafts();
     render();
   }
 
@@ -195,22 +278,37 @@ function statusLabel(ws, contact) {
     await app.openLink({ url: ws.dashboardUrl });
   }
 
+  function flushEditor() {
+    const steps = emailSteps();
+    const step = steps[selectedStep];
+    if (!step || seqPane !== 'email') return;
+    const dayEl = document.getElementById('edit-day');
+    const labelEl = document.getElementById('edit-label');
+    const subjectEl = document.getElementById('edit-subject');
+    const bodyEl = document.getElementById('edit-body');
+    if (dayEl) step.day = Number(dayEl.value || step.day || 0);
+    if (labelEl) step.label = labelEl.value;
+    if (subjectEl) step.subject = subjectEl.value;
+    if (bodyEl) step.body = bodyEl.value;
+  }
+
   async function saveSequence() {
+    flushEditor();
     const originals = ws.steps || [];
-    const emailOnly = originals.some((s) => s.channel === 'email');
-    let formI = 0;
+    const hasEmail = originals.some((s) => s.channel === 'email');
+    const edited = emailSteps();
+    let i = 0;
     const steps = originals.map((step) => {
-      const useForm = !emailOnly || step.channel === 'email';
-      if (!useForm) {
+      if (hasEmail && step.channel !== 'email') {
         return { day: step.day, channel: step.channel, label: step.label, subject: step.subject, body: step.body };
       }
-      const i = formI++;
+      const next = edited[i++] || step;
       return {
-        day: Number(document.getElementById(`day-${i}`)?.value || step.day || 0),
-        channel: step.channel,
-        label: document.getElementById(`label-${i}`)?.value || step.label,
-        subject: document.getElementById(`subject-${i}`)?.value || '',
-        body: document.getElementById(`body-${i}`)?.value || '',
+        day: Number(next.day || 0),
+        channel: next.channel,
+        label: next.label,
+        subject: next.subject || '',
+        body: next.body || '',
       };
     });
     busy = true; render();
@@ -222,7 +320,7 @@ function statusLabel(ws, contact) {
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
     await reload();
-    setNotice('Sequence saved. Templates apply to the next draft or send.', 'ok');
+    setNotice('Sequence saved.', 'ok');
     app.updateModelContext?.({
       content: [{ type: 'text', text: `Updated email sequence for ${ws.name} (${steps.length} steps).` }],
     });
@@ -230,7 +328,7 @@ function statusLabel(ws, contact) {
 
   function currentDraftFields(contact) {
     const msg = latestMessage(ws, contact.id);
-    const step = (ws.steps || []).find((s) => s.channel === 'email') || ws.steps?.[0];
+    const step = emailSteps()[0];
     return {
       subject: document.getElementById('draft-subject')?.value
         ?? msg?.subject
@@ -323,27 +421,110 @@ function statusLabel(ws, contact) {
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
   }
 
-  function renderSequence() {
-    const vars = (ws.catalog || []).map((f) => `<span class="var">{{${esc(f.key)}}}</span>`).join('');
-    const emailSteps = (ws.steps || []).filter((s) => s.channel === 'email');
-    const steps = emailSteps.length ? emailSteps : (ws.steps || []);
+  function connector() {
+    return `<div class="wire"></div><div class="joint"></div><div class="wire"></div>`;
+  }
+
+  function triggerCard() {
+    const who = ws.contactCount === 1 ? '1 contact enters' : `${ws.contactCount} contacts enter`;
     return `
-      <p class="sub">${esc(ws.goal || 'Email sequence')}</p>
-      <div class="vars">${vars || '<span class="var">{{first_name}}</span><span class="var">{{company}}</span>'}</div>
-      ${steps.map((step, i) => `
-        <div class="step">
-          <div class="step-h"><strong>Day</strong>
-            <input id="day-${i}" type="text" value="${esc(step.day)}" style="width:64px;display:inline-block" />
-            · ${esc(step.channel)}
+      <div class="node">
+        <div class="node-top">
+          <span class="ico bolt">${ICO.bolt}</span>
+          <div class="node-copy">
+            <div class="kicker">Trigger</div>
+            <div class="preview">${esc(who)}${ws.goal ? ` · ${esc(ws.goal)}` : ''}</div>
           </div>
-          <label>Label</label>
-          <input id="label-${i}" type="text" value="${esc(step.label || '')}" />
-          <label>Subject</label>
-          <input id="subject-${i}" type="text" value="${esc(step.subject || '')}" />
-          <label>Body</label>
-          <textarea id="body-${i}">${esc(step.body || '')}</textarea>
         </div>
-      `).join('') || '<p class="empty">No email steps yet. Ask Claude to add them, or open the workspace.</p>'}
+      </div>
+    `;
+  }
+
+  function waitCard(i, days) {
+    const n = Math.max(0, days);
+    const label = n === 1 ? 'Wait 1 day' : `Wait ${n} days`;
+    return `
+      <button class="node wait" type="button" data-step="${i}">
+        <div class="node-top">
+          <span class="ico">${ICO.clock}</span>
+          <div class="node-copy">
+            <div class="kicker">${esc(label)}</div>
+          </div>
+        </div>
+      </button>
+    `;
+  }
+
+  function emailCard(step, i, live) {
+    const title = step.label || `Email ${i + 1}`;
+    const preview = oneLine(step.subject || step.body) || 'No copy yet';
+    return `
+      <button class="node ${selectedStep === i && seqPane === 'email' ? 'on' : ''}" type="button" data-step="${i}">
+        <div class="node-top">
+          <span class="ico">${ICO.mail}</span>
+          <div class="node-copy">
+            <div class="title">${esc(title)}</div>
+            <div class="preview">${esc(preview)}</div>
+          </div>
+        </div>
+        <div class="foot">
+          <span class="mail-mini">${ICO.mail}</span>
+          ${live ? `<span class="live"><span class="dot"></span>Live</span>` : `<span class="pill">Draft</span>`}
+        </div>
+      </button>
+    `;
+  }
+
+  function renderFlow() {
+    const steps = emailSteps();
+    const live = Boolean(ws.emailLive) && !ws.sandbox;
+    let html = `<div class="canvas"><div class="flow">${triggerCard()}`;
+    steps.forEach((step, i) => {
+      const prev = i === 0 ? 0 : Number(steps[i - 1].day || 0);
+      const wait = Number(step.day || 0) - prev;
+      html += connector();
+      if (wait > 0) {
+        html += waitCard(i, wait);
+        html += connector();
+      }
+      html += emailCard(step, i, live);
+    });
+    if (!steps.length) html += `${connector()}<p class="empty">No email steps yet.</p>`;
+    html += `</div></div>`;
+    return html;
+  }
+
+  function renderEmailEditor() {
+    const steps = emailSteps();
+    const step = steps[selectedStep];
+    if (!step) return '<p class="empty">No email selected.</p>';
+    return `
+      <div class="editor">
+        <div class="step-pills">
+          ${steps.map((s, i) => `<button class="btn ${i === selectedStep ? 'primary' : ''}" type="button" data-step="${i}">${esc(s.label || `Email ${i + 1}`)}</button>`).join('')}
+        </div>
+        <div class="editor-h">
+          <strong>Email ${selectedStep + 1}${steps.length > 1 ? ` of ${steps.length}` : ''}</strong>
+        </div>
+        <label>Send on day</label>
+        <input id="edit-day" type="text" value="${esc(step.day)}" />
+        <label>Label</label>
+        <input id="edit-label" type="text" value="${esc(step.label || '')}" />
+        <label>Subject</label>
+        <input id="edit-subject" type="text" value="${esc(step.subject || '')}" />
+        <label>Body</label>
+        <textarea id="edit-body">${esc(step.body || '')}</textarea>
+      </div>
+    `;
+  }
+
+  function renderSequence() {
+    return `
+      <div class="seg">
+        <button type="button" class="${seqPane === 'flow' ? 'on' : ''}" data-pane="flow">Flow</button>
+        <button type="button" class="${seqPane === 'email' ? 'on' : ''}" data-pane="email">Emails</button>
+      </div>
+      ${seqPane === 'flow' ? renderFlow() : renderEmailEditor()}
       <div class="row">
         <button class="btn primary" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
         <button class="btn" id="write">Ask Claude to write drafts</button>
@@ -359,7 +540,7 @@ function statusLabel(ws, contact) {
       pendingSend = false;
     }
     const msg = selected ? latestMessage(ws, selected.id) : null;
-    const step = (ws.steps || []).find((s) => s.channel === 'email');
+    const step = emailSteps()[0];
     const subject = msg?.subject || selected?.preview?.subject || interpolate(step?.subject || '', selected || {});
     const body = msg?.body || selected?.preview?.body || interpolate(step?.body || '', selected || {});
     return `
@@ -401,6 +582,7 @@ function statusLabel(ws, contact) {
       return;
     }
     if (ws.view === 'overflow') { renderOverflow(); return; }
+    if (!draftSteps.length && ws.steps?.length) syncDrafts();
     const sources = (ws.sources || [])
       .filter((s) => s.status === 'connected')
       .map((s) => s.accountLabel || s.provider)
@@ -427,9 +609,34 @@ function statusLabel(ws, contact) {
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
     root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
     root.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => {
+      flushEditor();
       tab = el.getAttribute('data-tab');
       render();
     }));
+    root.querySelectorAll('[data-pane]').forEach((el) => el.addEventListener('click', () => {
+      flushEditor();
+      seqPane = el.getAttribute('data-pane');
+      render();
+    }));
+    root.querySelectorAll('[data-step]').forEach((el) => el.addEventListener('click', () => {
+      flushEditor();
+      selectedStep = Number(el.getAttribute('data-step'));
+      seqPane = 'email';
+      render();
+    }));
+    const editing = emailSteps()[selectedStep];
+    if (editing && seqPane === 'email') {
+      const bind = (id, key, parse) => {
+        document.getElementById(id)?.addEventListener('input', (e) => {
+          const value = e.target.value;
+          editing[key] = parse ? parse(value) : value;
+        });
+      };
+      bind('edit-day', 'day', (v) => Number(v || 0));
+      bind('edit-label', 'label');
+      bind('edit-subject', 'subject');
+      bind('edit-body', 'body');
+    }
     root.querySelector('#save-seq')?.addEventListener('click', saveSequence);
     root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
     root.querySelectorAll('.person').forEach((el) => el.addEventListener('click', () => {
@@ -448,7 +655,9 @@ function statusLabel(ws, contact) {
     const parsed = parseToolResult(result);
     if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
     ws = parsed;
-    tab = parsed.view === 'overflow' ? 'sequence' : tab;
+    seqPane = 'flow';
+    selectedStep = 0;
+    syncDrafts();
     notice = '';
     render();
   };

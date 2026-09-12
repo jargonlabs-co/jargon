@@ -14,7 +14,14 @@ import {
   type PublicStep
 } from './publicApi'
 
+/** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
 export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace-v2.html'
+
+/** Serve the current HTML under every URI Claude may still have cached from tools/list. */
+export const EMAIL_WORKSPACE_URIS = [
+  'ui://jargon/email-workspace.html',
+  EMAIL_WORKSPACE_URI
+] as const
 
 export type EmailWorkspaceSource = {
   provider: string

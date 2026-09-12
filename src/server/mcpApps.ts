@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
-import { EMAIL_WORKSPACE_URI, SAMPLE_EMAIL_WORKSPACE } from './emailWorkspace'
+import { EMAIL_WORKSPACE_URI, EMAIL_WORKSPACE_URIS, SAMPLE_EMAIL_WORKSPACE } from './emailWorkspace'
 
 const require = createRequire(import.meta.url)
 const here = dirname(fileURLToPath(import.meta.url))
@@ -38,24 +38,26 @@ export const EMAIL_WORKSPACE_TOOL_META = {
 }
 
 export function registerEmailWorkspaceApp(server: McpServer): void {
-  registerAppResource(
-    server,
-    'Jargon email workspace',
-    EMAIL_WORKSPACE_URI,
-    {
-      description: 'Edit the email sequence, preview copy, and send or schedule Gmail from Claude.',
-      mimeType: RESOURCE_MIME_TYPE
-    },
-    async () => ({
-      contents: [
-        {
-          uri: EMAIL_WORKSPACE_URI,
-          mimeType: RESOURCE_MIME_TYPE,
-          text: emailWorkspaceHtml()
-        }
-      ]
-    })
-  )
+  for (const uri of EMAIL_WORKSPACE_URIS) {
+    registerAppResource(
+      server,
+      `Jargon email workspace (${uri})`,
+      uri,
+      {
+        description: 'Edit the email sequence, preview copy, and send or schedule Gmail from Claude.',
+        mimeType: RESOURCE_MIME_TYPE
+      },
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: emailWorkspaceHtml()
+          }
+        ]
+      })
+    )
+  }
 }
 
 export function emailWorkspacePreviewHtml(payloadJson?: string): string {

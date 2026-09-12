@@ -68,7 +68,10 @@ function workspaceOk(
 ) {
   const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox })
   if (!ws) return fail('Project not found')
-  return ok(ws)
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(ws) }],
+    _meta: EMAIL_WORKSPACE_TOOL_META
+  }
 }
 
 export function registerJargonTools(

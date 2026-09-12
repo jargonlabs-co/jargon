@@ -18,6 +18,8 @@ import {
 } from './mcpOauth'
 import { registerJargonTools } from './mcpTools'
 import type { BillingService } from './billing/types'
+import { JARGON_MCP_INSTRUCTIONS } from './emailWorkspace'
+import { emailWorkspacePreviewHtml, registerEmailWorkspaceApp } from './mcpApps'
 
 const actorStore = new AsyncLocalStorage<McpActor>()
 
@@ -30,12 +32,21 @@ export function mountMcp(
   const handler = createMcpHandler(() => {
     const actor = actorStore.getStore()
     if (!actor) throw new Error('MCP actor missing')
-    const server = new McpServer({ name: 'jargon', version: '1.1.0' })
+    const server = new McpServer(
+      { name: 'jargon', version: '1.1.0' },
+      { instructions: JARGON_MCP_INSTRUCTIONS }
+    )
     registerJargonTools(server, store, config, actor, billing)
+    registerEmailWorkspaceApp(server)
     return server
   })
   const node = toNodeHandler(handler)
   const auth = requireAuth(store, config)
+
+  app.get('/mcp/apps/email-workspace', (req, res) => {
+    const payload = typeof req.query.payload === 'string' ? req.query.payload : undefined
+    res.type('html').send(emailWorkspacePreviewHtml(payload))
+  })
 
   const sendMeta = (_req: Request, res: Response) => {
     res.json(protectedResourceMetadata(config))

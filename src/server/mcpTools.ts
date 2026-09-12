@@ -17,7 +17,6 @@ import {
   findOrgContact,
   findOrgMessage,
   findOrgProject,
-  getPublicSequence,
   isContactStatus,
   listPublicContacts,
   listPublicMessages,
@@ -36,6 +35,8 @@ import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
+import { getEmailWorkspace } from './emailWorkspace'
+import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 
 const ContactStatus = z.enum([
   'queued',
@@ -56,6 +57,18 @@ function fail(err: unknown) {
     content: [{ type: 'text' as const, text: err instanceof Error ? err.message : String(err) }],
     isError: true
   }
+}
+
+function workspaceOk(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  projectId: string,
+  sandbox: boolean
+) {
+  const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox })
+  if (!ws) return fail('Project not found')
+  return ok(ws)
 }
 
 export function registerJargonTools(
@@ -92,7 +105,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list (extra fields are kept as attrs). get_sequence shows the catalog of variables. Pass spec.steps using {{first_name}} / {{company}} / {{attrs.your_field}}. save_draft then send_draft, or send_message. schedule with status queued + sendAt.'
+          'Import a list with import_list or deploy_tool (CRM hydrate). That opens the Email workspace UI in Claude. Write spec.steps with {{field}} templates, or save_draft. User edits and sends in the UI. Reopen with show_email_workspace. dashboardUrl is overflow only.'
       })
     }
   )
@@ -265,7 +278,8 @@ export function registerJargonTools(
     {
       title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from anywhere. Extra contact fields (funding_round, hiring, etc.) are stored as attrs and become sequence variables. Describe the motion in prompt or pass spec.steps with {{field}} templates. contacts is required.',
+        'Ingest people from chat, another connector, or a pasted table and open the Email workspace UI in Claude. Extra fields become sequence variables. Pass spec.steps with {{field}} templates for email copy. contacts is required.',
+      _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z
           .string()
@@ -291,7 +305,7 @@ export function registerJargonTools(
         spec
       )
       if (!result.ok) return fail(result.body.error)
-      return ok(result.body)
+      return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox)
     }
   )
 
@@ -300,7 +314,8 @@ export function registerJargonTools(
     {
       title: 'Deploy outbound workspace',
       description:
-        'Create an outbound workspace from a prompt. Pass spec to control channels (email, call, linkedin) and which screen opens first. To ingest a researched list, pass contacts[] or put people in prompt. That exact list becomes the queue. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace from a prompt and open the Email workspace UI when the motion includes email. Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. Pass spec.steps with {{field}} templates. dashboardUrl is overflow (inbox, dialer) — never prefix dashboardPath with www.jargonlabs.co.',
+      _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
         contacts: z
@@ -324,7 +339,7 @@ export function registerJargonTools(
         spec
       )
       if (!result.ok) return fail(result.body.error)
-      return ok(result.body)
+      return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox)
     }
   )
 
@@ -546,15 +561,37 @@ export function registerJargonTools(
     {
       title: 'Get sequence',
       description:
-        'Sequence steps plus the field catalog for this workspace. Use catalog keys in {{mustache}} templates. Show this to the user in Claude.',
+        'Open the Email workspace UI with sequence steps, field catalog, and contacts. Prefer this or show_email_workspace over dumping JSON into chat.',
       inputSchema: z.object({ projectId: z.string() }),
-      annotations: { readOnlyHint: true }
+      annotations: { readOnlyHint: true },
+      _meta: EMAIL_WORKSPACE_TOOL_META
     },
-    async ({ projectId }) => {
-      const sequence = getPublicSequence(store, actor.orgId, projectId)
-      if (!sequence) return fail('Project not found')
-      return ok(sequence)
-    }
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+  )
+
+  server.registerTool(
+    'show_email_workspace',
+    {
+      title: 'Show email workspace',
+      description:
+        'Open the interactive Email workspace in Claude: edit sequence templates, preview people, save drafts, send or schedule Gmail. Call after import_list, deploy_tool, or writing drafts.',
+      inputSchema: z.object({ projectId: z.string() }),
+      annotations: { readOnlyHint: true },
+      _meta: EMAIL_WORKSPACE_TOOL_META
+    },
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+  )
+
+  server.registerTool(
+    'load_email_workspace',
+    {
+      title: 'Load email workspace',
+      description: 'Reload email workspace data for the in-chat UI. Not for the model.',
+      inputSchema: z.object({ projectId: z.string() }),
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { visibility: ['app'] } }
+    },
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
   )
 
   server.registerTool(

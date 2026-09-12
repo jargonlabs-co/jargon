@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jargon email</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: var(--color-background-primary, #fff);
+      --bg2: var(--color-background-secondary, #f6f6f4);
+      --fg: var(--color-text-primary, #161513);
+      --muted: var(--color-text-secondary, #6b6966);
+      --line: var(--color-border-tertiary, #e6e4df);
+      --accent: var(--color-text-accent, #161513);
+      --danger: #b42318;
+      --ok: #17663a;
+      --pad: 14px;
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    :root.dark {
+      --bg: var(--color-background-primary, #1c1b19);
+      --bg2: var(--color-background-secondary, #262522);
+      --fg: var(--color-text-primary, #f4f2ee);
+      --muted: var(--color-text-secondary, #a8a59e);
+      --line: var(--color-border-tertiary, #3a3834);
+      --accent: var(--color-text-accent, #f4f2ee);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .wrap { padding: var(--pad); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
+    header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn {
+      border: 1px solid var(--line); background: var(--bg); border-radius: 8px;
+      padding: 6px 10px; font-weight: 550;
+    }
+    .btn:hover { background: var(--bg2); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+    .btn.primary:hover { opacity: 0.92; }
+    .btn.danger { border-color: var(--danger); color: var(--danger); }
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+    .tab {
+      border: 0; background: transparent; padding: 8px 10px; color: var(--muted);
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tab.on { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+    .banner {
+      background: var(--bg2); border: 1px solid var(--line); border-radius: 8px;
+      padding: 8px 10px; margin-bottom: 12px; color: var(--muted); font-size: 12px;
+    }
+    .banner.err { color: var(--danger); }
+    .banner.ok { color: var(--ok); }
+    .step {
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+      margin-bottom: 10px; background: var(--bg);
+    }
+    .step-h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+    .step-h strong { color: var(--fg); font-size: 13px; }
+    label { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 4px; }
+    input[type="text"], input[type="datetime-local"], textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bg); padding: 8px 10px;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    .vars { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+    .var {
+      font-size: 11px; color: var(--muted); border: 1px solid var(--line);
+      border-radius: 999px; padding: 2px 8px;
+    }
+    .people { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .person {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+      padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left;
+      background: var(--bg); width: 100%; border-left: 0; border-right: 0; border-top: 0;
+    }
+    .person:last-child { border-bottom: 0; }
+    .person:hover, .person.on { background: var(--bg2); }
+    .meta { color: var(--muted); font-size: 12px; }
+    .pill { font-size: 11px; color: var(--muted); }
+    .composer { margin-top: 12px; }
+    .to { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .row input[type="datetime-local"] { width: auto; min-width: 180px; }
+    .empty { color: var(--muted); padding: 20px 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="root"><p class="empty">Loading email workspace…</p></div>
+  <script type="module">
+/*__EXT_APPS_BUNDLE__*/
+const { App, applyDocumentTheme } = globalThis.ExtApps;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function interpolate(template, contact) {
+  if (!template) return '';
+  const first = (contact.name || '').split(/\s+/)[0] || contact.name || '';
+  const last = (contact.name || '').split(/\s+/).slice(1).join(' ');
+  const vars = {
+    name: contact.name || '',
+    first_name: first,
+    last_name: last,
+    email: contact.email || '',
+    title: contact.title || '',
+    company: contact.company || '',
+    city: contact.city || '',
+  };
+  for (const [k, v] of Object.entries(contact.attrs || {})) {
+    const text = Array.isArray(v) ? v.join(' · ') : String(v ?? '');
+    vars[k] = text;
+    vars[`attrs.${k}`] = text;
+  }
+  return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, raw) => vars[raw.trim()] ?? '');
+}
+
+function parseToolResult(result) {
+  if (!result) return null;
+  if (result.isError) {
+    const t = result.content?.[0]?.text;
+    return { error: t || 'Request failed' };
+  }
+  const text = result.content?.find((c) => c.type === 'text')?.text;
+  if (!text) return result.structuredContent || result;
+  try { return JSON.parse(text); } catch { return { error: text }; }
+}
+
+function latestMessage(ws, contactId) {
+  return (ws.messages || []).find((m) => m.contactId === contactId && m.channel === 'email') || null;
+}
+
+function statusLabel(ws, contact) {
+  const msg = latestMessage(ws, contact.id);
+  if (msg?.status === 'sent') return 'Sent';
+  if (msg?.status === 'queued') return 'Scheduled';
+  if (msg?.status === 'draft') return 'Draft';
+  if (!contact.email) return 'No email';
+  return contact.status || 'Queued';
+}
+
+(async () => {
+  const app = new App({ name: 'jargon-email', version: '1.0.0' }, {}, { autoResize: true });
+  const root = document.getElementById('root');
+  let ws = null;
+  let tab = 'sequence';
+  let selectedId = null;
+  let notice = '';
+  let noticeTone = '';
+  let busy = false;
+  let pendingSend = false;
+
+  function themeFromHost() {
+    const ctx = app.getHostContext?.() || {};
+    const theme = ctx.theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    applyDocumentTheme?.(theme);
+    const insets = ctx.safeAreaInsets;
+    if (insets) {
+      document.documentElement.style.setProperty('--pad', `${Math.max(14, insets.top || 0)}px`);
+    }
+  }
+
+  function setNotice(text, tone) {
+    notice = text || '';
+    noticeTone = tone || '';
+    render();
+  }
+
+  async function reload() {
+    if (!ws?.projectId) return;
+    const result = await app.callServerTool({
+      name: 'load_email_workspace',
+      arguments: { projectId: ws.projectId },
+    });
+    const next = parseToolResult(result);
+    if (next?.error) { setNotice(next.error, 'err'); return; }
+    ws = next;
+    render();
+  }
+
+  async function openWorkspace() {
+    if (!ws?.dashboardUrl) return;
+    await app.openLink({ url: ws.dashboardUrl });
+  }
+
+  async function saveSequence() {
+    const originals = ws.steps || [];
+    const emailOnly = originals.some((s) => s.channel === 'email');
+    let formI = 0;
+    const steps = originals.map((step) => {
+      const useForm = !emailOnly || step.channel === 'email';
+      if (!useForm) {
+        return { day: step.day, channel: step.channel, label: step.label, subject: step.subject, body: step.body };
+      }
+      const i = formI++;
+      return {
+        day: Number(document.getElementById(`day-${i}`)?.value || step.day || 0),
+        channel: step.channel,
+        label: document.getElementById(`label-${i}`)?.value || step.label,
+        subject: document.getElementById(`subject-${i}`)?.value || '',
+        body: document.getElementById(`body-${i}`)?.value || '',
+      };
+    });
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'update_sequence',
+      arguments: { projectId: ws.projectId, goal: ws.goal, steps },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    await reload();
+    setNotice('Sequence saved. Templates apply to the next draft or send.', 'ok');
+    app.updateModelContext?.({
+      content: [{ type: 'text', text: `Updated email sequence for ${ws.name} (${steps.length} steps).` }],
+    });
+  }
+
+  function currentDraftFields(contact) {
+    const msg = latestMessage(ws, contact.id);
+    const step = (ws.steps || []).find((s) => s.channel === 'email') || ws.steps?.[0];
+    return {
+      subject: document.getElementById('draft-subject')?.value
+        ?? msg?.subject
+        ?? interpolate(step?.subject || '', contact),
+      body: document.getElementById('draft-body')?.value
+        ?? msg?.body
+        ?? interpolate(step?.body || '', contact),
+    };
+  }
+
+  async function saveDraft(contact) {
+    const { subject, body } = currentDraftFields(contact);
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'save_draft',
+      arguments: { contactId: contact.id, subject, body, channel: 'email' },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    await reload();
+    setNotice(`Draft saved for ${contact.name}.`, 'ok');
+  }
+
+  async function sendNow(contact) {
+    if (!contact.email) { setNotice('This person has no email address.', 'err'); return; }
+    if (!pendingSend) {
+      pendingSend = true;
+      setNotice(`Send to ${contact.email}? This uses Gmail credits.`, '');
+      return;
+    }
+    pendingSend = false;
+    const { subject, body } = currentDraftFields(contact);
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'send_message',
+      arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    await reload();
+    setNotice(`Sent to ${contact.name}.`, 'ok');
+    app.updateModelContext?.({
+      content: [{ type: 'text', text: `Sent email to ${contact.name} <${contact.email}>.` }],
+    });
+  }
+
+  async function schedule(contact) {
+    if (!contact.email) { setNotice('This person has no email address.', 'err'); return; }
+    const when = document.getElementById('send-at')?.value;
+    if (!when) { setNotice('Pick a send time.', 'err'); return; }
+    const sendAt = new Date(when).toISOString();
+    const { subject, body } = currentDraftFields(contact);
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'send_message',
+      arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'queued', sendAt },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    await reload();
+    setNotice(`Scheduled for ${contact.name}.`, 'ok');
+  }
+
+  async function askClaudeToWrite() {
+    await app.sendMessage({
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `Write personalized email drafts for each contact in project ${ws.projectId} using the sequence templates and their fields. Call save_draft for each person who has an email, then call show_email_workspace.`,
+      }],
+    });
+  }
+
+  function renderOverflow() {
+    root.innerHTML = `
+      <header>
+        <div>
+          <h1>${esc(ws.name)}</h1>
+          <div class="sub">${esc((ws.channels || []).join(' · ') || 'Workspace')} · ${ws.contactCount} contacts</div>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="open">Open workspace</button>
+        </div>
+      </header>
+      <div class="banner">This motion is not email. Continue in Jargon for the queue, inbox, or dialer.</div>
+    `;
+    root.querySelector('#open')?.addEventListener('click', openWorkspace);
+  }
+
+  function renderSequence() {
+    const vars = (ws.catalog || []).map((f) => `<span class="var">{{${esc(f.key)}}}</span>`).join('');
+    const emailSteps = (ws.steps || []).filter((s) => s.channel === 'email');
+    const steps = emailSteps.length ? emailSteps : (ws.steps || []);
+    return `
+      <p class="sub">${esc(ws.goal || 'Email sequence')}</p>
+      <div class="vars">${vars || '<span class="var">{{first_name}}</span><span class="var">{{company}}</span>'}</div>
+      ${steps.map((step, i) => `
+        <div class="step">
+          <div class="step-h"><strong>Day</strong>
+            <input id="day-${i}" type="text" value="${esc(step.day)}" style="width:64px;display:inline-block" />
+            · ${esc(step.channel)}
+          </div>
+          <label>Label</label>
+          <input id="label-${i}" type="text" value="${esc(step.label || '')}" />
+          <label>Subject</label>
+          <input id="subject-${i}" type="text" value="${esc(step.subject || '')}" />
+          <label>Body</label>
+          <textarea id="body-${i}">${esc(step.body || '')}</textarea>
+        </div>
+      `).join('') || '<p class="empty">No email steps yet. Ask Claude to add them, or open the workspace.</p>'}
+      <div class="row">
+        <button class="btn primary" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
+        <button class="btn" id="write">Ask Claude to write drafts</button>
+      </div>
+    `;
+  }
+
+  function renderPeople() {
+    const people = ws.contacts || [];
+    const selected = people.find((c) => c.id === selectedId) || people[0];
+    if (selected && selectedId !== selected.id) {
+      selectedId = selected.id;
+      pendingSend = false;
+    }
+    const msg = selected ? latestMessage(ws, selected.id) : null;
+    const step = (ws.steps || []).find((s) => s.channel === 'email');
+    const subject = msg?.subject || selected?.preview?.subject || interpolate(step?.subject || '', selected || {});
+    const body = msg?.body || selected?.preview?.body || interpolate(step?.body || '', selected || {});
+    return `
+      ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
+        ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
+        <div class="people">
+          ${people.map((c) => `
+            <button class="person ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
+              <div>
+                <div>${esc(c.name)}</div>
+                <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
+              </div>
+              <div class="pill">${esc(statusLabel(ws, c))}</div>
+            </button>
+          `).join('')}
+        </div>
+      `}
+      ${selected ? `
+        <div class="composer">
+          <div class="to">${esc(selected.name)} · ${esc(selected.email || 'missing email')}</div>
+          <label>Subject</label>
+          <input id="draft-subject" type="text" value="${esc(subject)}" />
+          <label>Body</label>
+          <textarea id="draft-body">${esc(body)}</textarea>
+          <div class="row">
+            <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
+            <button class="btn primary" id="send" ${busy || !selected.email ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
+            <input id="send-at" type="datetime-local" />
+            <button class="btn" id="schedule" ${busy || !selected.email ? 'disabled' : ''}>Schedule</button>
+          </div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function render() {
+    if (!ws) {
+      root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
+      return;
+    }
+    if (ws.view === 'overflow') { renderOverflow(); return; }
+    const sources = (ws.sources || [])
+      .filter((s) => s.status === 'connected')
+      .map((s) => s.accountLabel || s.provider)
+      .join(', ');
+    const mail = ws.sandbox ? 'sandbox' : ws.emailLive ? 'Gmail live' : 'Gmail not configured';
+    root.innerHTML = `
+      <header>
+        <div>
+          <h1>${esc(ws.name)}</h1>
+          <div class="sub">${ws.contactCount} contacts · ${esc(mail)}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}</div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="full">Full screen</button>
+          <button class="btn" id="open">Open workspace</button>
+        </div>
+      </header>
+      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+      <div class="tabs">
+        <button class="tab ${tab === 'sequence' ? 'on' : ''}" data-tab="sequence">Sequence</button>
+        <button class="tab ${tab === 'people' ? 'on' : ''}" data-tab="people">People</button>
+      </div>
+      <div id="panel">${tab === 'people' ? renderPeople() : renderSequence()}</div>
+    `;
+    root.querySelector('#open')?.addEventListener('click', openWorkspace);
+    root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
+    root.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => {
+      tab = el.getAttribute('data-tab');
+      render();
+    }));
+    root.querySelector('#save-seq')?.addEventListener('click', saveSequence);
+    root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
+    root.querySelectorAll('.person').forEach((el) => el.addEventListener('click', () => {
+      selectedId = el.getAttribute('data-id');
+      pendingSend = false;
+      notice = '';
+      render();
+    }));
+    const selected = (ws.contacts || []).find((c) => c.id === selectedId);
+    root.querySelector('#save-draft')?.addEventListener('click', () => selected && saveDraft(selected));
+    root.querySelector('#send')?.addEventListener('click', () => selected && sendNow(selected));
+    root.querySelector('#schedule')?.addEventListener('click', () => selected && schedule(selected));
+  }
+
+  app.ontoolresult = (result) => {
+    const parsed = parseToolResult(result);
+    if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
+    ws = parsed;
+    tab = parsed.view === 'overflow' ? 'sequence' : tab;
+    notice = '';
+    render();
+  };
+  app.onhostcontextchanged = themeFromHost;
+  await app.connect();
+  themeFromHost();
+  render();
+})();
+  </script>
+</body>
+</html>

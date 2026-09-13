@@ -157,6 +157,8 @@
     .chip.queued { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
     .chip.sent { color: var(--ok); }
     .chip.cancelled, .chip.failed { color: var(--danger); }
+    .when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .filters { margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -261,13 +263,15 @@ function cadenceLabel(ws, contact, steps) {
 }
 
 (async () => {
-  const app = new App({ name: 'jargon-email', version: '1.2.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-email', version: '1.3.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let ws = null;
   let tab = 'sequence';
   let seqPane = 'flow';
   let selectedStep = 0;
   let selectedId = null;
+  let selectedMessageId = null;
+  let inboxFilter = 'all';
   let notice = '';
   let noticeTone = '';
   let busy = false;
@@ -275,6 +279,19 @@ function cadenceLabel(ws, contact, steps) {
   let pendingStart = false;
   let peopleStep = 0;
   let draftSteps = [];
+
+  function surface() {
+    if (!ws) return 'sequence';
+    if (ws.surface) return ws.surface;
+    return ws.view === 'overflow' ? 'overflow' : 'sequence';
+  }
+
+  function applySurface() {
+    const s = surface();
+    if (s === 'one_off') tab = 'people';
+    else if (s === 'inbox') tab = 'inbox';
+    else if (s === 'sequence') tab = 'sequence';
+  }
 
   function emailSteps() {
     const emails = draftSteps.filter((s) => s.channel === 'email');
@@ -371,9 +388,18 @@ function cadenceLabel(ws, contact, steps) {
     });
   }
 
+  function selectedEmailMessage(contact) {
+    if (selectedMessageId) {
+      return (ws.messages || []).find((m) => m.id === selectedMessageId) || null;
+    }
+    if (!contact) return null;
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    return messageFor(ws, contact.id, step) || latestMessage(ws, contact.id);
+  }
+
   function currentDraftFields(contact) {
     const step = emailSteps()[peopleStep] || emailSteps()[0];
-    const msg = messageFor(ws, contact.id, step) || latestMessage(ws, contact.id);
+    const msg = selectedEmailMessage(contact);
     return {
       subject: document.getElementById('draft-subject')?.value
         ?? msg?.subject
@@ -386,8 +412,7 @@ function cadenceLabel(ws, contact, steps) {
 
   async function saveDraft(contact) {
     const { subject, body } = currentDraftFields(contact);
-    const step = emailSteps()[peopleStep] || emailSteps()[0];
-    const existing = messageFor(ws, contact.id, step);
+    const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
       ? await app.callServerTool({
@@ -414,8 +439,7 @@ function cadenceLabel(ws, contact, steps) {
     }
     pendingSend = false;
     const { subject, body } = currentDraftFields(contact);
-    const step = emailSteps()[peopleStep] || emailSteps()[0];
-    const existing = messageFor(ws, contact.id, step);
+    const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing && existing.status !== 'sent'
       ? await app.callServerTool({ name: 'send_draft', arguments: { messageId: existing.id } })
@@ -439,8 +463,7 @@ function cadenceLabel(ws, contact, steps) {
     if (!when) { setNotice('Pick a send time.', 'err'); return; }
     const sendAt = new Date(when).toISOString();
     const { subject, body } = currentDraftFields(contact);
-    const step = emailSteps()[peopleStep] || emailSteps()[0];
-    const existing = messageFor(ws, contact.id, step);
+    const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
       ? await app.callServerTool({
@@ -486,7 +509,11 @@ function cadenceLabel(ws, contact, steps) {
       role: 'user',
       content: [{
         type: 'text',
-        text: `Write personalized email drafts for each contact in project ${ws.projectId} using the sequence templates and their fields. Call save_draft for each person who has an email, then call show_email_workspace.`,
+        text: surface() === 'inbox'
+          ? `Write or refresh email drafts for project ${ws.projectId} from the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace.`
+          : surface() === 'one_off'
+            ? `Write a personalized one-off email for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace. Do not start a sequence.`
+            : `Write personalized email drafts for each contact in project ${ws.projectId} using the sequence templates and their fields. Call save_draft for each person who has an email, then call show_email_workspace.`,
       }],
     });
   }
@@ -502,7 +529,7 @@ function cadenceLabel(ws, contact, steps) {
           <button class="btn primary" id="open">Open workspace</button>
         </div>
       </header>
-      <div class="banner">This motion is not email. Continue in Jargon for the queue, inbox, or dialer.</div>
+      <div class="banner">This motion is not email. Continue in Jargon for the queue or dialer.</div>
     `;
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
   }
@@ -619,22 +646,76 @@ function cadenceLabel(ws, contact, steps) {
     `;
   }
 
-  function renderPeople() {
-    const people = ws.contacts || [];
-    const selected = people.find((c) => c.id === selectedId) || people[0];
-    if (selected && selectedId !== selected.id) {
-      selectedId = selected.id;
-      pendingSend = false;
-    }
+  function contactById(id) {
+    return (ws.contacts || []).find((c) => c.id === id) || null;
+  }
+
+  function inboxMessages() {
+    let msgs = (ws.messages || []).filter((m) => m.channel === 'email');
+    msgs = [...msgs].sort((a, b) => (b.sentAt || b.sendAt || b.createdAt || 0) - (a.sentAt || a.sendAt || a.createdAt || 0));
+    if (inboxFilter !== 'all') msgs = msgs.filter((m) => m.status === inboxFilter);
+    return msgs;
+  }
+
+  function formatWhen(msg) {
+    const ms = msg.sentAt || msg.sendAt || msg.createdAt;
+    if (!ms) return '';
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  function renderComposer(selected, opts) {
+    const hideSteps = Boolean(opts?.hideSteps);
+    const showWrite = Boolean(opts?.showWrite);
     const steps = emailSteps();
     if (peopleStep >= steps.length) peopleStep = Math.max(0, steps.length - 1);
     const step = steps[peopleStep] || steps[0];
-    const msg = selected ? messageFor(ws, selected.id, step) || latestMessage(ws, selected.id) : null;
+    const msg = selected ? selectedEmailMessage(selected) : null;
     const subject = msg?.subject || (selected && step ? interpolate(step.subject || '', selected) : '');
     const body = msg?.body || (selected && step ? interpolate(step.body || '', selected) : '');
+    const showSteps = !hideSteps && steps.length > 1;
+    return `
+      <div class="composer">
+        <div class="to">${esc(selected.name)} · ${esc(selected.email || 'missing email')}</div>
+        ${showSteps ? `
+          <div class="step-pills" style="margin: 8px 0;">
+            ${steps.map((s, i) => {
+              const m = messageFor(ws, selected.id, s);
+              const st = m?.status || 'template';
+              return `<button class="btn ${i === peopleStep ? 'primary' : ''}" type="button" data-people-step="${i}">${esc(s.label || `Email ${i + 1}`)} <span class="chip ${esc(st)}">${esc(st)}</span></button>`;
+            }).join('')}
+          </div>
+        ` : ''}
+        <label>Subject</label>
+        <input id="draft-subject" type="text" value="${esc(subject)}" />
+        <label>Body</label>
+        <textarea id="draft-body">${esc(body)}</textarea>
+        <div class="row">
+          <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
+          <button class="btn primary" id="send" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
+          <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
+          <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
+          ${showWrite ? `<button class="btn" id="write">Ask Claude to write</button>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPeople() {
+    const people = ws.contacts || [];
+    const oneOff = surface() === 'one_off';
+    const selected = people.find((c) => c.id === selectedId) || people[0];
+    if (selected && selectedId !== selected.id) {
+      selectedId = selected.id;
+      selectedMessageId = null;
+      pendingSend = false;
+    }
+    const steps = emailSteps();
     return `
       ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
         ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
+        ${oneOff ? `<p class="sub" style="margin: 0 0 10px;">One-off emails — edit and send each person. No cadence.</p>` : ''}
         <div class="people">
           ${people.map((c) => `
             <button class="person ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
@@ -642,36 +723,91 @@ function cadenceLabel(ws, contact, steps) {
                 <div>${esc(c.name)}</div>
                 <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
               </div>
-              <div class="pill">${esc(cadenceLabel(ws, c, steps))}</div>
+              <div class="pill">${esc(oneOff ? statusLabel(ws, c) : cadenceLabel(ws, c, steps))}</div>
             </button>
           `).join('')}
         </div>
       `}
-      ${selected ? `
-        <div class="composer">
-          <div class="to">${esc(selected.name)} · ${esc(selected.email || 'missing email')}</div>
-          ${steps.length ? `
-            <div class="step-pills" style="margin: 8px 0;">
-              ${steps.map((s, i) => {
-                const m = messageFor(ws, selected.id, s);
-                const st = m?.status || 'template';
-                return `<button class="btn ${i === peopleStep ? 'primary' : ''}" type="button" data-people-step="${i}">${esc(s.label || `Email ${i + 1}`)} <span class="chip ${esc(st)}">${esc(st)}</span></button>`;
-              }).join('')}
-            </div>
-          ` : ''}
-          <label>Subject</label>
-          <input id="draft-subject" type="text" value="${esc(subject)}" />
-          <label>Body</label>
-          <textarea id="draft-body">${esc(body)}</textarea>
-          <div class="row">
-            <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
-            <button class="btn primary" id="send" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
-            <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
-            <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
-          </div>
-        </div>
-      ` : ''}
+      ${selected ? renderComposer(selected, { hideSteps: oneOff, showWrite: oneOff }) : ''}
     `;
+  }
+
+  function renderInbox() {
+    const msgs = inboxMessages();
+    const selectedMsg = msgs.find((m) => m.id === selectedMessageId) || msgs[0] || null;
+    if (selectedMsg) {
+      selectedMessageId = selectedMsg.id;
+      selectedId = selectedMsg.contactId;
+    }
+    const selected = selectedMsg ? contactById(selectedMsg.contactId) : (ws.contacts || []).find((c) => c.id === selectedId) || (ws.contacts || [])[0];
+    const counts = {
+      all: (ws.messages || []).filter((m) => m.channel === 'email').length,
+      draft: ws.stats?.drafts || 0,
+      queued: ws.stats?.queued || 0,
+      sent: ws.stats?.sent || 0,
+    };
+    return `
+      <div class="seg filters">
+        ${['all', 'draft', 'queued', 'sent'].map((f) => `
+          <button type="button" class="${inboxFilter === f ? 'on' : ''}" data-filter="${f}">${f === 'all' ? `All (${counts.all})` : `${f[0].toUpperCase()}${f.slice(1)} (${counts[f]})`}</button>
+        `).join('')}
+      </div>
+      ${!msgs.length ? `<p class="empty">${counts.all ? 'Nothing in this filter.' : 'No emails yet. Open People to compose, or ask Claude to write drafts.'}</p>` : `
+        <div class="people">
+          ${msgs.map((m) => {
+            const c = contactById(m.contactId);
+            return `
+              <button class="person ${m.id === selectedMessageId ? 'on' : ''}" data-msg="${esc(m.id)}" data-id="${esc(m.contactId)}">
+                <div>
+                  <div>${esc(c?.name || 'Unknown')} · ${esc(m.subject || '(no subject)')}</div>
+                  <div class="meta">${esc(oneLine(m.body) || '—')}</div>
+                </div>
+                <div>
+                  <div class="chip ${esc(m.status)}">${esc(m.status)}</div>
+                  <div class="when">${esc(formatWhen(m))}</div>
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      `}
+      ${selected ? renderComposer(selected, { hideSteps: true, showWrite: !msgs.length }) : ''}
+    `;
+  }
+
+  function renderTabs() {
+    const s = surface();
+    if (s === 'one_off') return '';
+    if (s === 'inbox') {
+      return `
+        <div class="tabs">
+          <button class="tab ${tab === 'inbox' ? 'on' : ''}" data-tab="inbox">Inbox</button>
+          <button class="tab ${tab === 'people' ? 'on' : ''}" data-tab="people">People</button>
+        </div>
+      `;
+    }
+    return `
+      <div class="tabs">
+        <button class="tab ${tab === 'sequence' ? 'on' : ''}" data-tab="sequence">Sequence</button>
+        <button class="tab ${tab === 'people' ? 'on' : ''}" data-tab="people">People</button>
+      </div>
+    `;
+  }
+
+  function renderPanel() {
+    const s = surface();
+    if (s === 'one_off') return renderPeople();
+    if (tab === 'inbox' || (s === 'inbox' && tab !== 'people')) return renderInbox();
+    if (tab === 'people') return renderPeople();
+    return renderSequence();
+  }
+
+  function surfaceLabel() {
+    const s = surface();
+    if (s === 'inbox') return 'Inbox';
+    if (s === 'one_off') return 'One-off emails';
+    if (s === 'sequence') return 'Sequence';
+    return '';
   }
 
   function render() {
@@ -679,18 +815,19 @@ function cadenceLabel(ws, contact, steps) {
       root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
       return;
     }
-    if (ws.view === 'overflow') { renderOverflow(); return; }
+    if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
     const sources = (ws.sources || [])
       .filter((s) => s.status === 'connected')
       .map((s) => s.accountLabel || s.provider)
       .join(', ');
     const mail = ws.sandbox ? 'sandbox' : ws.emailLive ? 'Gmail live' : 'Gmail not configured';
+    const kind = surfaceLabel();
     root.innerHTML = `
       <header>
         <div>
           <h1>${esc(ws.name)}</h1>
-          <div class="sub">${ws.contactCount} contacts · ${esc(mail)}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}</div>
+          <div class="sub">${kind ? `${esc(kind)} · ` : ''}${ws.contactCount} contacts · ${esc(mail)}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}</div>
         </div>
         <div class="actions">
           <button class="btn" id="full">Full screen</button>
@@ -698,17 +835,19 @@ function cadenceLabel(ws, contact, steps) {
         </div>
       </header>
       ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
-      <div class="tabs">
-        <button class="tab ${tab === 'sequence' ? 'on' : ''}" data-tab="sequence">Sequence</button>
-        <button class="tab ${tab === 'people' ? 'on' : ''}" data-tab="people">People</button>
-      </div>
-      <div id="panel">${tab === 'people' ? renderPeople() : renderSequence()}</div>
+      ${renderTabs()}
+      <div id="panel">${renderPanel()}</div>
     `;
+    bindWorkspace();
+  }
+
+  function bindWorkspace() {
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
     root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
     root.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
       tab = el.getAttribute('data-tab');
+      if (tab !== 'inbox') selectedMessageId = null;
       render();
     }));
     root.querySelectorAll('[data-pane]').forEach((el) => el.addEventListener('click', () => {
@@ -720,6 +859,11 @@ function cadenceLabel(ws, contact, steps) {
       flushEditor();
       selectedStep = Number(el.getAttribute('data-step'));
       seqPane = 'email';
+      render();
+    }));
+    root.querySelectorAll('[data-filter]').forEach((el) => el.addEventListener('click', () => {
+      inboxFilter = el.getAttribute('data-filter');
+      selectedMessageId = null;
       render();
     }));
     const editing = emailSteps()[selectedStep];
@@ -740,11 +884,13 @@ function cadenceLabel(ws, contact, steps) {
     root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
     root.querySelectorAll('[data-people-step]').forEach((el) => el.addEventListener('click', () => {
       peopleStep = Number(el.getAttribute('data-people-step'));
+      selectedMessageId = null;
       pendingSend = false;
       render();
     }));
     root.querySelectorAll('.person').forEach((el) => el.addEventListener('click', () => {
       selectedId = el.getAttribute('data-id');
+      selectedMessageId = el.getAttribute('data-msg');
       pendingSend = false;
       notice = '';
       render();
@@ -759,8 +905,10 @@ function cadenceLabel(ws, contact, steps) {
     const parsed = parseToolResult(result);
     if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
     ws = parsed;
+    applySurface();
     seqPane = 'flow';
     selectedStep = 0;
+    selectedMessageId = null;
     syncDrafts();
     notice = '';
     render();

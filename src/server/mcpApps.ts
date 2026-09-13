@@ -44,7 +44,7 @@ export function registerEmailWorkspaceApp(server: McpServer): void {
       `Jargon email workspace (${uri})`,
       uri,
       {
-        description: 'Edit the email sequence, preview copy, and send or schedule Gmail from Claude.',
+        description: 'Outbound email in Claude: sequence, inbox, or one-off sends.',
         mimeType: RESOURCE_MIME_TYPE
       },
       async () => ({

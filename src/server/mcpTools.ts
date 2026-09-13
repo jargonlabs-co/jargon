@@ -110,7 +110,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list or deploy_tool. That opens the Email workspace UI. Write spec.steps with {{field}} templates. Call start_sequence (or the user clicks Start sequence) to queue every email for every contact by step day. Reopen with show_email_workspace. dashboardUrl is overflow only.'
+          'Import a list with import_list or deploy_tool. Describe the UI in prompt: sequence, one-off emails, or inbox. That opens the matching outbound UI. For a cadence, write spec.steps with {{field}} templates and call start_sequence. For one-offs, save_draft / send_draft. Reopen with show_email_workspace. dashboardUrl is overflow only.'
       })
     }
   )
@@ -283,7 +283,7 @@ export function registerJargonTools(
     {
       title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from chat, another connector, or a pasted table and open the Email workspace UI in Claude. Extra fields become sequence variables. Pass spec.steps with {{field}} templates for email copy. contacts is required.',
+        'Ingest people from chat, another connector, or a pasted table and open the outbound UI in Claude (sequence, one-off emails, or inbox — from the prompt). Extra fields become template variables. For a cadence, pass spec.steps with {{field}} templates. contacts is required.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z
@@ -319,7 +319,7 @@ export function registerJargonTools(
     {
       title: 'Deploy outbound workspace',
       description:
-        'Create an outbound workspace from a prompt and open the Email workspace UI when the motion includes email. Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. Pass spec.steps with {{field}} templates. dashboardUrl is overflow (inbox, dialer) — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace from a prompt and open the matching UI in Claude when the motion includes email (sequence, one-off emails, or inbox). Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. dashboardUrl is overflow (dialer, queue) — never prefix dashboardPath with www.jargonlabs.co.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
@@ -566,7 +566,7 @@ export function registerJargonTools(
     {
       title: 'Get sequence',
       description:
-        'Open the Email workspace UI with sequence steps, field catalog, and contacts. Prefer this or show_email_workspace over dumping JSON into chat.',
+        'Open the outbound UI (sequence, inbox, or one-off emails) with steps, catalog, contacts, and messages. Prefer this or show_email_workspace over dumping JSON into chat.',
       inputSchema: z.object({ projectId: z.string() }),
       annotations: { readOnlyHint: true },
       _meta: EMAIL_WORKSPACE_TOOL_META
@@ -579,7 +579,7 @@ export function registerJargonTools(
     {
       title: 'Show email workspace',
       description:
-        'Open the interactive Email workspace in Claude: edit sequence templates, preview people, save drafts, send or schedule Gmail. Call after import_list, deploy_tool, or writing drafts.',
+        'Reopen the outbound UI in Claude (sequence, one-off emails, or inbox). Call after import_list, deploy_tool, or writing drafts.',
       inputSchema: z.object({ projectId: z.string() }),
       annotations: { readOnlyHint: true },
       _meta: EMAIL_WORKSPACE_TOOL_META
@@ -623,7 +623,7 @@ export function registerJargonTools(
     {
       title: 'Start email sequence',
       description:
-        'Enroll contacts into the shared sequence: interpolate each email, queue it, and schedule sendAt from step day (day 0 sends on the next scheduler tick). Idempotent per contact+step. Replies cancel later queued emails.',
+        'Enroll contacts into the shared cadence: interpolate each email, queue it, and schedule sendAt from step day (day 0 sends on the next scheduler tick). For sequences only — not one-off sends. Idempotent per contact+step. Replies cancel later queued emails.',
       inputSchema: z.object({
         projectId: z.string(),
         startAt: z

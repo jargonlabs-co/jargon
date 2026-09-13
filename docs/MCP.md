@@ -40,9 +40,9 @@ claude mcp add --transport http --scope user \
 
 `get_me` · `get_credits` · `get_usage` · `create_billing_link` · `import_list` · `deploy_tool` · `add_contacts` · `list_prospects` · `get_prospect` · `list_projects` · `get_project` · `list_contacts` · `queue_next` · `get_sequence` · `show_email_workspace` · `update_sequence` · `start_sequence` · `save_draft` · `list_drafts` · `update_draft` · `send_draft` · `send_message` · `start_call` · `complete_call` · `disposition` · `add_note`
 
-`import_list` / `deploy_tool` / `show_email_workspace` / `start_sequence` open the **Email workspace UI** in Claude. Extra contact fields stay as `attrs`. `start_sequence` queues every email for every contact using step `day`. `dashboardUrl` (`https://jargonlabs.co/tools/…`) is overflow — inbox volume, dialer, billing. Schedule with `send_message` `status: queued` + `sendAt`.
+`import_list` / `deploy_tool` / `show_email_workspace` / `start_sequence` open the **outbound UI in Claude**. The prompt picks the chrome: **sequence** (cadence / over N days), **one-off emails**, or **inbox**. Extra contact fields stay as `attrs`. `start_sequence` queues every email for every contact using step `day` — use it for cadences, not one-offs. `dashboardUrl` (`https://jargonlabs.co/tools/…`) is overflow — dialer, queue, billing. Schedule with `send_message` `status: queued` + `sendAt`.
 
-`import_list` is how Claude turns any researched list into an outbound workspace (LinkedIn, email, phone, or a mix) when that tool is visible. Describe the motion in `prompt`; optionally pass `spec.channels` and `spec.primarySurface`. If Claude only has `deploy_tool`, put the people in `prompt` as JSON or a markdown table — Jargon extracts that list and uses it as the queue.
+`import_list` is how Claude turns any researched list into an outbound workspace (LinkedIn, email, phone, or a mix) when that tool is visible. Describe the motion **and the interface** in `prompt`; optionally pass `spec.channels` and `spec.primarySurface`. If Claude only has `deploy_tool`, put the people in `prompt` as JSON or a markdown table — Jargon extracts that list and uses it as the queue.
 
 `deploy_tool` without `contacts` hydrates the connected CRM/warehouse. `add_contacts` appends people to an existing workspace.
 

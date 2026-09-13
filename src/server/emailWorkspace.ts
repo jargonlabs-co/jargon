@@ -13,14 +13,16 @@ import {
   type PublicMessage,
   type PublicStep
 } from './publicApi'
+import { inferMcpSurface, type McpSurface } from '../shared/workspaceSpec'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=enroll1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=surfaces1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html',
   'ui://jargon/email-workspace-v2.html',
+  'ui://jargon/email-workspace.html?v=enroll1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -32,6 +34,7 @@ export type EmailWorkspaceSource = {
 
 export type EmailWorkspace = {
   view: 'email_workspace' | 'overflow'
+  surface: McpSurface
   projectId: string
   name: string
   goal: string
@@ -114,8 +117,15 @@ export function getEmailWorkspace(
       }
     })
   const email = isEmailMotion(project, steps)
+  const surface = inferMcpSurface({
+    prompt: project.prompt || '',
+    primarySurface: project.spec?.primarySurface,
+    channels: projectChannels(project).length ? projectChannels(project) : steps.map((s) => s.channel),
+    steps
+  })
   return {
-    view: email ? 'email_workspace' : 'overflow',
+    view: email && surface !== 'overflow' ? 'email_workspace' : 'overflow',
+    surface: email ? surface : 'overflow',
     projectId: project.id,
     name: project.name,
     goal: sequence.goal || project.spec?.goal || project.answers.goal || '',
@@ -142,6 +152,7 @@ export function getEmailWorkspace(
 
 export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   view: 'email_workspace',
+  surface: 'sequence',
   projectId: 'proj_preview',
   name: 'GTM Engineers · US',
   goal: 'Book a 20-minute intro',
@@ -245,13 +256,17 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   stats: { drafts: 0, queued: 0, sent: 0, missingEmail: 1 }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound email for this account (platform Gmail). Claude researches and writes copy; Jargon stores people, sequences, drafts, and sends.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound email for this account (platform Gmail). Claude researches people and companies, then Jargon stores contacts, drafts, and sends. The in-chat UI is chosen from the user's request — not always a sequencer.
 
-Email path:
-1. Ingest people with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. Those tools open the Email workspace UI in Claude. Do not dump the sequence JSON — the UI is the sequence.
-3. Put step copy in spec.steps using {{first_name}}, {{company}}, and catalog keys ({{funding_round}} or {{attrs.field}}).
-4. Call start_sequence (or the user clicks Start sequence) to enroll everyone: each email is interpolated and queued with sendAt from the step day. Day 0 sends immediately. Later days send automatically. Replies cancel remaining queued emails.
-5. Re-open the UI with show_email_workspace. Share dashboardUrl (https://jargonlabs.co/tools/…) only for overflow: large inbox, dialer, billing, CRM connect.
+Describe the interface in prompt (and spec.primarySurface when it helps):
+- Sequence / cadence / over N days → sequence flow. Put templates in spec.steps with {{first_name}}, {{company}}, and catalog keys. Call start_sequence (or the user clicks Start sequence) to enroll everyone by step day. Day 0 sends immediately. Later days send automatically. Replies cancel remaining queued emails.
+- One-off / a handful of emails / just send these → one composer per person. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
+- Inbox / mailbox / replies / what's been sent → message list for the workspace.
+- Dialer, LinkedIn queue, today queue → overflow; share dashboardUrl (https://jargonlabs.co/tools/…).
+
+Path:
+1. Ingest with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
+2. Those tools open the matching outbound UI in Claude. Do not dump JSON — the UI is the workspace.
+3. Re-open with show_email_workspace. dashboardUrl is overflow only (dialer, billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

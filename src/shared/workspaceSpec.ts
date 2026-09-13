@@ -16,6 +16,9 @@ export type {
   WorkspaceSpecStep
 }
 
+/** In-Claude MCP App chrome. Web still uses PrimarySurface. */
+export type McpSurface = 'sequence' | 'inbox' | 'one_off' | 'overflow'
+
 const CHANNELS: Channel[] = ['email', 'call', 'linkedin']
 const SURFACES: PrimarySurface[] = ['queue', 'dial', 'inbox', 'linkedin', 'sequence']
 const KINDS: ProjectKind[] = ['dialer', 'sequencer', 'cadence', 'list', 'today', 'generic']
@@ -63,6 +66,46 @@ export function workspaceKindLabel(spec: WorkspaceSpec): string {
   if (spec.channels.includes('linkedin') || spec.channels.length > 1) return 'Multi-channel cadence'
   if (spec.kind === 'sequencer') return 'Email sequencer'
   return 'Outbound workspace'
+}
+
+const MCP_INBOX_RE = /\binbox\b|\bmailbox\b|\bthreads?\b|\brepl(?:y|ies)\b/
+const MCP_SEQUENCE_RE =
+  /\bsequenc|\bcadence\b|\bdrip\b|\bfollow[ -]?ups?\b|\bover \d+ days\b|\bday \d+\b/
+const MCP_ONE_OFF_RE =
+  /\bone[ -]?offs?\b|\bhandful\b|\ba few emails\b|\bindividual emails?\b|\bjust (?:send|email|draft)/
+
+export function inferMcpSurface(input: {
+  prompt: string
+  primarySurface?: PrimarySurface
+  channels?: Channel[]
+  steps?: Array<{ channel: string; day?: number }>
+}): McpSurface {
+  const t = input.prompt.toLowerCase()
+  const channels = input.channels ?? []
+  const steps = input.steps ?? []
+  const emailSteps = steps.filter((step) => step.channel === 'email')
+  const emailMotion = channels.includes('email') || emailSteps.length > 0
+  if (!emailMotion) return 'overflow'
+
+  if (MCP_ONE_OFF_RE.test(t) && !MCP_SEQUENCE_RE.test(t)) return 'one_off'
+  if (MCP_SEQUENCE_RE.test(t) || input.primarySurface === 'sequence') return 'sequence'
+  if (MCP_INBOX_RE.test(t) || input.primarySurface === 'inbox') {
+    // Email-only compile defaults to inbox even when the user never asked for one.
+    const compiledDefaultInbox =
+      input.primarySurface === 'inbox' &&
+      !MCP_INBOX_RE.test(t) &&
+      (channels.length === 0 || (channels.length === 1 && channels[0] === 'email'))
+    if (!compiledDefaultInbox) return 'inbox'
+  }
+  if (
+    (input.primarySurface === 'dial' ||
+      input.primarySurface === 'linkedin' ||
+      input.primarySurface === 'queue') &&
+    channels.length > 1
+  ) {
+    return 'overflow'
+  }
+  return 'one_off'
 }
 
 export function specFromProject(project: {
@@ -216,6 +259,8 @@ function inferChannels(t: string, kind?: ProjectKind): Channel[] {
 function inferPrimarySurface(t: string, channels: Channel[]): PrimarySurface {
   if (/\bdialer|power[ -]?dial/.test(t) && channels.includes('call')) return 'dial'
   if (/\btoday|daily (tasks?|queue)|work the (list|queue)/.test(t)) return 'queue'
+  if (MCP_INBOX_RE.test(t) && channels.includes('email')) return 'inbox'
+  if (MCP_ONE_OFF_RE.test(t) && channels.includes('email')) return 'inbox'
   if (/\bsequenc|\bcadence/.test(t) && !/\btoday|daily/.test(t)) return 'sequence'
   if (channels.length === 1) {
     if (channels[0] === 'call') return 'dial'

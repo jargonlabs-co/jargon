@@ -393,6 +393,39 @@
         }
       }
     },
+    "/projects/{id}/sequence/start": {
+      "post": {
+        "operationId": "startSequence",
+        "tags": ["Workspaces"],
+        "summary": "Enroll contacts into the sequence and queue emails by step day",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "startAt": {
+                    "description": "When day 0 should send. Unix ms or ISO date. Defaults to now.",
+                    "oneOf": [{ "type": "integer" }, { "type": "string" }]
+                  },
+                  "contactIds": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Enrolled" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/projects/{id}/messages": {
       "get": {
         "operationId": "listMessages",
@@ -403,7 +436,7 @@
           {
             "name": "status",
             "in": "query",
-            "schema": { "type": "string", "enum": ["draft", "queued", "sent", "failed"] }
+            "schema": { "type": "string", "enum": ["draft", "queued", "sent", "failed", "cancelled"] }
           },
           {
             "name": "contactId",
@@ -1324,13 +1357,14 @@
           "contactId": { "type": "string" },
           "projectId": { "type": "string" },
           "channel": { "type": "string", "enum": ["email", "linkedin"] },
-          "status": { "type": "string", "enum": ["draft", "queued", "sent", "failed"] },
+          "status": { "type": "string", "enum": ["draft", "queued", "sent", "failed", "cancelled"] },
           "subject": { "type": "string" },
           "body": { "type": "string" },
           "mode": { "type": "string", "enum": ["demo", "gmail", "heyreach"] },
           "createdAt": { "type": "integer" },
           "sentAt": { "type": "integer" },
-          "sendAt": { "type": "integer" }
+          "sendAt": { "type": "integer" },
+          "stepId": { "type": "string" }
         }
       },
       "Call": {

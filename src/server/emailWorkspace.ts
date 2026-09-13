@@ -15,11 +15,12 @@ import {
 } from './publicApi'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace-v2.html'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=enroll1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html',
+  'ui://jargon/email-workspace-v2.html',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -85,7 +86,7 @@ export function getEmailWorkspace(
   const messages = listPublicMessages(store, {
     orgId,
     projectId,
-    limit: 80,
+    limit: 200,
     offset: 0
   }).messages
   const emailStep = steps.find((step) => step.channel === 'email')
@@ -249,8 +250,8 @@ export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound email for this acco
 Email path:
 1. Ingest people with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
 2. Those tools open the Email workspace UI in Claude. Do not dump the sequence JSON — the UI is the sequence.
-3. Put step copy in spec.steps using {{first_name}}, {{company}}, and catalog keys ({{funding_round}} or {{attrs.field}}). Or save_draft per contact after you write copy.
-4. The user edits and sends inside the UI. Re-open it with show_email_workspace.
-5. Share dashboardUrl (https://jargonlabs.co/tools/…) only for overflow: large inbox, dialer, billing, CRM connect.
+3. Put step copy in spec.steps using {{first_name}}, {{company}}, and catalog keys ({{funding_round}} or {{attrs.field}}).
+4. Call start_sequence (or the user clicks Start sequence) to enroll everyone: each email is interpolated and queued with sendAt from the step day. Day 0 sends immediately. Later days send automatically. Replies cancel remaining queued emails.
+5. Re-open the UI with show_email_workspace. Share dashboardUrl (https://jargonlabs.co/tools/…) only for overflow: large inbox, dialer, billing, CRM connect.
 
 Never prefix dashboardPath with www.jargonlabs.co.`

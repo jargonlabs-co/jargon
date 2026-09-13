@@ -13,6 +13,7 @@ import {
   deliverPublicMessage,
   deployPublicTool,
   emptyQueue,
+  enrollPublicSequence,
   findOrgCall,
   findOrgContact,
   findOrgMessage,
@@ -37,6 +38,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
+import { runOutboundSchedulerTick } from './scheduler'
 
 const ContactStatus = z.enum([
   'queued',
@@ -108,7 +110,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list or deploy_tool (CRM hydrate). That opens the Email workspace UI in Claude. Write spec.steps with {{field}} templates, or save_draft. User edits and sends in the UI. Reopen with show_email_workspace. dashboardUrl is overflow only.'
+          'Import a list with import_list or deploy_tool. That opens the Email workspace UI. Write spec.steps with {{field}} templates. Call start_sequence (or the user clicks Start sequence) to queue every email for every contact by step day. Reopen with show_email_workspace. dashboardUrl is overflow only.'
       })
     }
   )
@@ -617,6 +619,36 @@ export function registerJargonTools(
   )
 
   server.registerTool(
+    'start_sequence',
+    {
+      title: 'Start email sequence',
+      description:
+        'Enroll contacts into the shared sequence: interpolate each email, queue it, and schedule sendAt from step day (day 0 sends on the next scheduler tick). Idempotent per contact+step. Replies cancel later queued emails.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        startAt: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe('When day 0 should send. Unix ms or ISO date. Defaults to now.'),
+        contactIds: z.array(z.string()).optional().describe('Limit to these contacts. Defaults to everyone in the workspace.')
+      }),
+      _meta: EMAIL_WORKSPACE_TOOL_META
+    },
+    async ({ projectId, startAt, contactIds }) => {
+      const parsedStart =
+        typeof startAt === 'number' ? startAt : typeof startAt === 'string' ? Date.parse(startAt) : undefined
+      const result = await enrollPublicSequence(store, config, actor.orgId, projectId, {
+        startAt: Number.isFinite(parsedStart) ? parsedStart : undefined,
+        contactIds,
+        sandbox
+      })
+      if (!result.ok) return fail(result.error)
+      await runOutboundSchedulerTick(store, config, billing)
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox)
+    }
+  )
+
+  server.registerTool(
     'save_draft',
     {
       title: 'Save draft',
@@ -650,7 +682,7 @@ export function registerJargonTools(
       inputSchema: z.object({
         projectId: z.string(),
         contactId: z.string().optional(),
-        status: z.enum(['draft', 'queued', 'sent', 'failed']).optional()
+        status: z.enum(['draft', 'queued', 'sent', 'failed', 'cancelled']).optional()
       }),
       annotations: { readOnlyHint: true }
     },
@@ -676,15 +708,17 @@ export function registerJargonTools(
         messageId: z.string(),
         subject: z.string().optional(),
         body: z.string().optional(),
-        sendAt: z.union([z.number(), z.string()]).optional()
+        sendAt: z.union([z.number(), z.string()]).optional(),
+        status: z.enum(['draft', 'queued']).optional()
       })
     },
-    async ({ messageId, subject, body, sendAt }) => {
+    async ({ messageId, subject, body, sendAt, status }) => {
       const parsedSendAt =
         typeof sendAt === 'number' ? sendAt : typeof sendAt === 'string' ? Date.parse(sendAt) : undefined
       const result = patchPublicMessage(store, actor.orgId, messageId, {
         subject,
         body,
+        status,
         sendAt: Number.isFinite(parsedSendAt) ? parsedSendAt : undefined
       })
       if (!result.ok) return fail(result.error)

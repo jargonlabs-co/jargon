@@ -3,6 +3,7 @@ import type {
   CallSession,
   Contact,
   ContactStatus,
+  Database,
   FieldDef,
   Message,
   MessageStatus,
@@ -105,6 +106,7 @@ export type PublicMessage = {
   createdAt: number
   sentAt?: number
   sendAt?: number
+  stepId?: string
 }
 
 export type QueueNextPublic = {
@@ -205,7 +207,8 @@ export function toPublicMessage(message: Message): PublicMessage {
     mode: message.mode,
     createdAt: message.createdAt,
     sentAt: message.sentAt,
-    sendAt: message.sendAt
+    sendAt: message.sendAt,
+    stepId: message.stepId
   }
 }
 
@@ -400,6 +403,31 @@ export function addPublicContacts(
   }
 }
 
+export const SEQUENCE_STOP_STATUSES: ContactStatus[] = [
+  'replied',
+  'not_interested',
+  'completed',
+  'interested'
+]
+
+const DAY_MS = 86_400_000
+
+export function isSequenceStopStatus(status: ContactStatus): boolean {
+  return SEQUENCE_STOP_STATUSES.includes(status)
+}
+
+function cancelQueuedFollowups(db: Database, contactId: string, now: number, reason: string): number {
+  let n = 0
+  for (const message of db.messages) {
+    if (message.contactId !== contactId || message.status !== 'queued') continue
+    message.status = 'cancelled'
+    message.error = reason
+    message.updatedAt = now
+    n += 1
+  }
+  return n
+}
+
 export function applyDisposition(
   store: DataStore,
   contactId: string,
@@ -438,6 +466,9 @@ export function applyDisposition(
         next.status = 'active'
         next.updatedAt = now
       }
+    }
+    if (isSequenceStopStatus(input.status)) {
+      cancelQueuedFollowups(db, c.id, now, `Stopped: ${input.status.replace('_', ' ')}`)
     }
     const project = db.projects.find((p) => p.id === c.projectId)
     if (project) project.updatedAt = now
@@ -537,6 +568,9 @@ export function completePublicCall(
       if (disposition === 'interested' || disposition === 'completed' || disposition === 'replied') {
         contact.stepIndex = Math.min(contact.stepIndex + 1, 99)
       }
+      if (isSequenceStopStatus(disposition)) {
+        cancelQueuedFollowups(db, contact.id, now, `Stopped: ${disposition.replace('_', ' ')}`)
+      }
     }
     const campaign = db.campaigns.find(
       (camp) => camp.projectId === c.projectId && camp.state === 'ACTIVE'
@@ -585,6 +619,7 @@ export async function sendPublicMessage(
     channel?: 'email' | 'linkedin'
     sandbox?: boolean
     sendAt?: number
+    stepId?: string
   }
 ): Promise<
   | { ok: true; status: 201; body: { message: PublicMessage } }
@@ -668,7 +703,8 @@ export async function sendPublicMessage(
       createdAt: now,
       updatedAt: now,
       sentAt: finalStatus === 'sent' ? now : undefined,
-      sendAt
+      sendAt,
+      stepId: input.stepId
     })
     const c = db.contacts.find((x) => x.id === contact.id)
     if (c && finalStatus === 'sent') {
@@ -971,6 +1007,128 @@ export async function deliverPublicMessage(
     return { ok: false, status: 502, body: { error: error ?? 'Send failed', message: updated } }
   }
   return { ok: true, status: 200, body: { message: updated } }
+}
+
+export type EnrollSkip = { contactId: string; stepId?: string; reason: string }
+
+export async function enrollPublicSequence(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  projectId: string,
+  input?: {
+    startAt?: number
+    contactIds?: string[]
+    sandbox?: boolean
+  }
+): Promise<
+  | {
+      ok: true
+      projectId: string
+      startAt: number
+      contacts: number
+      steps: number
+      queued: number
+      skipped: EnrollSkip[]
+      messages: PublicMessage[]
+    }
+  | { ok: false; error: string }
+> {
+  const sequence = getPublicSequence(store, orgId, projectId)
+  if (!sequence) return { ok: false, error: 'Project not found' }
+  const steps = sequence.steps.filter(
+    (step): step is PublicStep & { channel: 'email' | 'linkedin' } =>
+      step != null && (step.channel === 'email' || step.channel === 'linkedin')
+  )
+  if (!steps.length) return { ok: false, error: 'Sequence has no email or LinkedIn steps' }
+  const all = store.db.contacts.filter((c) => c.projectId === projectId && c.orgId === orgId)
+  const wanted = input?.contactIds?.length
+    ? all.filter((c) => input.contactIds!.includes(c.id))
+    : all
+  if (!wanted.length) return { ok: false, error: 'No contacts to enroll' }
+  const startAt = Number.isFinite(input?.startAt) ? Number(input!.startAt) : Date.now()
+  const skipped: EnrollSkip[] = []
+  const created: PublicMessage[] = []
+
+  for (const contact of wanted) {
+    if (isSequenceStopStatus(contact.status)) {
+      skipped.push({ contactId: contact.id, reason: `Contact is ${contact.status.replace('_', ' ')}` })
+      continue
+    }
+    for (const step of steps) {
+      if (step.channel === 'email' && !contact.email?.trim()) {
+        skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing email' })
+        continue
+      }
+      if (step.channel === 'linkedin' && !contact.linkedinUrl?.trim()) {
+        skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing LinkedIn URL' })
+        continue
+      }
+      const existing = store.db.messages.find(
+        (m) =>
+          m.contactId === contact.id &&
+          m.stepId === step.id &&
+          m.status !== 'cancelled' &&
+          m.status !== 'failed'
+      )
+      if (existing) {
+        skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Already enrolled' })
+        continue
+      }
+      const result = await sendPublicMessage(store, config, contact, {
+        subject: step.subject,
+        body: step.body ?? '',
+        channel: step.channel,
+        status: 'queued',
+        sendAt: startAt + Number(step.day || 0) * DAY_MS,
+        stepId: step.id,
+        sandbox: input?.sandbox
+      })
+      if (!result.ok) {
+        skipped.push({
+          contactId: contact.id,
+          stepId: step.id,
+          reason: result.body.error
+        })
+        continue
+      }
+      created.push(result.body.message)
+    }
+  }
+
+  store.update((db) => {
+    const now = Date.now()
+    for (const contact of wanted) {
+      if (isSequenceStopStatus(contact.status)) continue
+      const row = db.contacts.find((c) => c.id === contact.id)
+      if (!row) continue
+      if (row.status === 'queued') {
+        row.status = 'active'
+        row.updatedAt = now
+      }
+    }
+    const project = db.projects.find((p) => p.id === projectId)
+    if (project) project.updatedAt = now
+    db.activities.unshift({
+      id: uid('act'),
+      orgId,
+      projectId,
+      kind: 'campaign',
+      summary: `Started sequence · queued ${created.length} messages for ${wanted.length} contacts`,
+      createdAt: now
+    })
+  })
+
+  return {
+    ok: true,
+    projectId,
+    startAt,
+    contacts: wanted.length,
+    steps: steps.length,
+    queued: created.length,
+    skipped,
+    messages: created
+  }
 }
 
 export async function dispatchDueMessages(

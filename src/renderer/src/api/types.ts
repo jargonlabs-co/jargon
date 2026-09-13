@@ -9,7 +9,7 @@ export type ContactStatus =
   | 'interested'
   | 'not_interested'
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
-export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed'
+export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
 export type Channel = 'email' | 'call' | 'linkedin'
 export type FieldOrigin = 'identity' | 'attrs'
 export type FieldType = 'string' | 'number' | 'list'
@@ -186,6 +186,7 @@ export interface Message {
   sentAt?: number
   sendAt?: number
   error?: string
+  stepId?: string
 }
 
 export interface Activity {

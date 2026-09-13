@@ -149,6 +149,14 @@
     .editor-h { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
     .editor-h strong { font-size: 13px; }
     .step-pills { display: flex; gap: 4px; flex-wrap: wrap; width: 100%; }
+    .cadence { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+    .chip {
+      font-size: 10px; font-weight: 650; border-radius: 999px;
+      padding: 2px 7px; border: 1px solid var(--line); color: var(--muted);
+    }
+    .chip.queued { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+    .chip.sent { color: var(--ok); }
+    .chip.cancelled, .chip.failed { color: var(--danger); }
   </style>
 </head>
 <body>
@@ -218,8 +226,42 @@ function oneLine(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
+function messageFor(ws, contactId, step) {
+  const msgs = (ws?.messages || []).filter((m) => m.contactId === contactId && m.channel === 'email');
+  if (step?.id) {
+    const hit = msgs.find((m) => m.stepId === step.id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function toLocalInput(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function cadenceLabel(ws, contact, steps) {
+  let queued = 0;
+  let sent = 0;
+  let any = false;
+  for (const step of steps) {
+    const msg = messageFor(ws, contact.id, step);
+    if (!msg) continue;
+    any = true;
+    if (msg.status === 'queued') queued += 1;
+    if (msg.status === 'sent') sent += 1;
+  }
+  if (queued) return `${queued} scheduled`;
+  if (sent && sent === steps.length) return 'Sent';
+  if (sent) return `${sent} sent`;
+  return statusLabel(ws, contact);
+}
+
 (async () => {
-  const app = new App({ name: 'jargon-email', version: '1.1.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-email', version: '1.2.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let ws = null;
   let tab = 'sequence';
@@ -230,6 +272,8 @@ function oneLine(text) {
   let noticeTone = '';
   let busy = false;
   let pendingSend = false;
+  let pendingStart = false;
+  let peopleStep = 0;
   let draftSteps = [];
 
   function emailSteps() {
@@ -241,6 +285,7 @@ function oneLine(text) {
     draftSteps = (ws?.steps || []).map((s) => ({ ...s }));
     const n = emailSteps().length;
     if (selectedStep >= n) selectedStep = Math.max(0, n - 1);
+    if (peopleStep >= n) peopleStep = Math.max(0, n - 1);
   }
 
   function themeFromHost() {
@@ -327,8 +372,8 @@ function oneLine(text) {
   }
 
   function currentDraftFields(contact) {
-    const msg = latestMessage(ws, contact.id);
-    const step = emailSteps()[0];
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const msg = messageFor(ws, contact.id, step) || latestMessage(ws, contact.id);
     return {
       subject: document.getElementById('draft-subject')?.value
         ?? msg?.subject
@@ -341,11 +386,18 @@ function oneLine(text) {
 
   async function saveDraft(contact) {
     const { subject, body } = currentDraftFields(contact);
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const existing = messageFor(ws, contact.id, step);
     busy = true; render();
-    const result = await app.callServerTool({
-      name: 'save_draft',
-      arguments: { contactId: contact.id, subject, body, channel: 'email' },
-    });
+    const result = existing
+      ? await app.callServerTool({
+          name: 'update_draft',
+          arguments: { messageId: existing.id, subject, body },
+        })
+      : await app.callServerTool({
+          name: 'save_draft',
+          arguments: { contactId: contact.id, subject, body, channel: 'email' },
+        });
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
@@ -362,11 +414,15 @@ function oneLine(text) {
     }
     pendingSend = false;
     const { subject, body } = currentDraftFields(contact);
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const existing = messageFor(ws, contact.id, step);
     busy = true; render();
-    const result = await app.callServerTool({
-      name: 'send_message',
-      arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
-    });
+    const result = existing && existing.status !== 'sent'
+      ? await app.callServerTool({ name: 'send_draft', arguments: { messageId: existing.id } })
+      : await app.callServerTool({
+          name: 'send_message',
+          arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
+        });
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
@@ -383,16 +439,46 @@ function oneLine(text) {
     if (!when) { setNotice('Pick a send time.', 'err'); return; }
     const sendAt = new Date(when).toISOString();
     const { subject, body } = currentDraftFields(contact);
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const existing = messageFor(ws, contact.id, step);
     busy = true; render();
-    const result = await app.callServerTool({
-      name: 'send_message',
-      arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'queued', sendAt },
-    });
+    const result = existing
+      ? await app.callServerTool({
+          name: 'update_draft',
+          arguments: { messageId: existing.id, subject, body, sendAt, status: 'queued' },
+        })
+      : await app.callServerTool({
+          name: 'send_message',
+          arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'queued', sendAt },
+        });
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
     await reload();
     setNotice(`Scheduled for ${contact.name}.`, 'ok');
+  }
+
+  async function startSequence() {
+    if (!pendingStart) {
+      pendingStart = true;
+      setNotice('Start this sequence for everyone? Day 0 sends now; later emails send on their wait days.', '');
+      return;
+    }
+    pendingStart = false;
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'start_sequence',
+      arguments: { projectId: ws.projectId },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    ws = parsed;
+    syncDrafts();
+    setNotice('Sequence started. Emails are queued by day and will send automatically.', 'ok');
+    app.updateModelContext?.({
+      content: [{ type: 'text', text: `Started the email sequence for ${ws.name} (${ws.contactCount} contacts).` }],
+    });
   }
 
   async function askClaudeToWrite() {
@@ -526,7 +612,8 @@ function oneLine(text) {
       </div>
       ${seqPane === 'flow' ? renderFlow() : renderEmailEditor()}
       <div class="row">
-        <button class="btn primary" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
+        <button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>
+        <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
         <button class="btn" id="write">Ask Claude to write drafts</button>
       </div>
     `;
@@ -539,10 +626,12 @@ function oneLine(text) {
       selectedId = selected.id;
       pendingSend = false;
     }
-    const msg = selected ? latestMessage(ws, selected.id) : null;
-    const step = emailSteps()[0];
-    const subject = msg?.subject || selected?.preview?.subject || interpolate(step?.subject || '', selected || {});
-    const body = msg?.body || selected?.preview?.body || interpolate(step?.body || '', selected || {});
+    const steps = emailSteps();
+    if (peopleStep >= steps.length) peopleStep = Math.max(0, steps.length - 1);
+    const step = steps[peopleStep] || steps[0];
+    const msg = selected ? messageFor(ws, selected.id, step) || latestMessage(ws, selected.id) : null;
+    const subject = msg?.subject || (selected && step ? interpolate(step.subject || '', selected) : '');
+    const body = msg?.body || (selected && step ? interpolate(step.body || '', selected) : '');
     return `
       ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
         ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
@@ -553,7 +642,7 @@ function oneLine(text) {
                 <div>${esc(c.name)}</div>
                 <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
               </div>
-              <div class="pill">${esc(statusLabel(ws, c))}</div>
+              <div class="pill">${esc(cadenceLabel(ws, c, steps))}</div>
             </button>
           `).join('')}
         </div>
@@ -561,15 +650,24 @@ function oneLine(text) {
       ${selected ? `
         <div class="composer">
           <div class="to">${esc(selected.name)} · ${esc(selected.email || 'missing email')}</div>
+          ${steps.length ? `
+            <div class="step-pills" style="margin: 8px 0;">
+              ${steps.map((s, i) => {
+                const m = messageFor(ws, selected.id, s);
+                const st = m?.status || 'template';
+                return `<button class="btn ${i === peopleStep ? 'primary' : ''}" type="button" data-people-step="${i}">${esc(s.label || `Email ${i + 1}`)} <span class="chip ${esc(st)}">${esc(st)}</span></button>`;
+              }).join('')}
+            </div>
+          ` : ''}
           <label>Subject</label>
           <input id="draft-subject" type="text" value="${esc(subject)}" />
           <label>Body</label>
           <textarea id="draft-body">${esc(body)}</textarea>
           <div class="row">
             <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
-            <button class="btn primary" id="send" ${busy || !selected.email ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
-            <input id="send-at" type="datetime-local" />
-            <button class="btn" id="schedule" ${busy || !selected.email ? 'disabled' : ''}>Schedule</button>
+            <button class="btn primary" id="send" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
+            <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
+            <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
           </div>
         </div>
       ` : ''}
@@ -638,7 +736,13 @@ function oneLine(text) {
       bind('edit-body', 'body');
     }
     root.querySelector('#save-seq')?.addEventListener('click', saveSequence);
+    root.querySelector('#start-seq')?.addEventListener('click', startSequence);
     root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
+    root.querySelectorAll('[data-people-step]').forEach((el) => el.addEventListener('click', () => {
+      peopleStep = Number(el.getAttribute('data-people-step'));
+      pendingSend = false;
+      render();
+    }));
     root.querySelectorAll('.person').forEach((el) => el.addEventListener('click', () => {
       selectedId = el.getAttribute('data-id');
       pendingSend = false;

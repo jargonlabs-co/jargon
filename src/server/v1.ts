@@ -33,12 +33,14 @@ import {
   startPublicCall,
   toPublicProject,
   toPublicQueueNext,
-  updatePublicSequence
+  updatePublicSequence,
+  enrollPublicSequence
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
+import { runOutboundSchedulerTick } from './scheduler'
 
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
@@ -491,6 +493,30 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
     res.json(result.sequence)
   })
 
+  router.post('/projects/:id/sequence/start', auth, async (req, res) => {
+    const projectId = paramId(req.params.id)
+    if (!findOrgProject(store, req.auth!.org.id, projectId)) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const startAt = parseSendAt(req.body?.startAt)
+    const contactIds = Array.isArray(req.body?.contactIds)
+      ? req.body.contactIds.filter((id: unknown) => typeof id === 'string')
+      : undefined
+    const sandbox = req.auth!.environment === 'sandbox'
+    const result = await enrollPublicSequence(store, config, req.auth!.org.id, projectId, {
+      startAt,
+      contactIds,
+      sandbox
+    })
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    const sent = await runOutboundSchedulerTick(store, config, billing)
+    res.status(201).json({ ...result, sentDue: sent })
+  })
+
   router.get('/projects/:id/messages', auth, (req, res) => {
     const project = findOrgProject(store, req.auth!.org.id, paramId(req.params.id))
     if (!project) {
@@ -498,7 +524,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     const statusRaw = typeof req.query.status === 'string' ? req.query.status : undefined
-    if (statusRaw && !['draft', 'queued', 'sent', 'failed'].includes(statusRaw)) {
+    if (statusRaw && !['draft', 'queued', 'sent', 'failed', 'cancelled'].includes(statusRaw)) {
       res.status(400).json({ error: 'invalid status' })
       return
     }
@@ -507,7 +533,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
         orgId: req.auth!.org.id,
         projectId: project.id,
         contactId: typeof req.query.contactId === 'string' ? req.query.contactId : undefined,
-        status: statusRaw as 'draft' | 'queued' | 'sent' | 'failed' | undefined,
+        status: statusRaw as 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled' | undefined,
         limit: req.query.limit ? Number(req.query.limit) : undefined,
         offset: req.query.offset ? Number(req.query.offset) : undefined
       })

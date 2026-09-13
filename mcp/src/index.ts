@@ -449,6 +449,31 @@ function createServer(): McpServer {
   )
 
   server.registerTool(
+    'start_sequence',
+    {
+      title: 'Start email sequence',
+      description:
+        'Enroll contacts into the shared sequence. Queues each email with sendAt from step day.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        startAt: z.union([z.number(), z.string()]).optional(),
+        contactIds: z.array(z.string()).optional()
+      })
+    },
+    async ({ projectId, startAt, contactIds }) => {
+      try {
+        return toolResult(
+          await jargonFetch('POST', `/projects/${projectId}/sequence/start`, {
+            body: { startAt, contactIds }
+          })
+        )
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
     'save_draft',
     {
       title: 'Save draft',

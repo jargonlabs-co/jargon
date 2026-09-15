@@ -323,6 +323,45 @@ button {
   animation: rise 1s var(--ease) 0.32s both;
 }
 
+.hero-available {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px auto 0;
+  padding: 7px 14px 7px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+  animation: rise 1s var(--ease) 0.4s both;
+}
+
+.hero-available-label {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.hero-available-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-available-item svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.hero-available-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #d9cfc0;
+}
+
 .hero-sub {
   margin: 18px auto 0;
   max-width: 36rem;
@@ -1476,6 +1515,13 @@ button {
 @media (max-width: 640px) {
   .hero {
     padding-top: 108px;
+  }
+
+  .hero-available {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+    row-gap: 8px;
   }
 
   .metric-row {

@@ -14,15 +14,42 @@ const ContactStatus = z.enum([
   'not_interested'
 ])
 
+// Claude renders the raw argument object on its approval card and truncates it
+// after a few lines, so whichever field a tool declares first is what the user
+// actually reads. `summary` is declared first on every tool that writes so the
+// card opens with a sentence instead of a wall of JSON. It never reaches the API.
+// Optional, not required: the in-chat workspace calls these same tools from
+// button clicks without one, and those calls never surface an approval card.
+const Summary = z
+  .string()
+  .min(1)
+  .max(160)
+  .optional()
+  .describe(
+    'Always provide this. One plain-language sentence telling the user what this call will do, shown on the approval card before it runs. Name the people, workspace, or channel involved. No ids, field names, tool names, or JSON. Example: "Add 12 RevOps leaders to a new outbound queue."'
+  )
+
+const HINTS = {
+  read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  write: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  overwrite: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  send: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+} as const
+
+// Spec precedence is `title` then `annotations.title`; set both so older clients
+// also show the plain-language name rather than the snake_case tool id.
+function display(title: string, hints: (typeof HINTS)[keyof typeof HINTS]) {
+  return { title, annotations: { title, ...hints } }
+}
+
 function createServer(): McpServer {
   const server = new McpServer({ name: 'jargon', version: '0.1.0' })
 
   server.registerTool(
     'get_me',
     {
-      title: 'Who am I',
-      description: 'Current Jargon user, org, plan, credit balance, and live/sandbox outbound flags.',
-      annotations: { readOnlyHint: true }
+      ...display('Check your Jargon account', HINTS.read),
+      description: 'Current Jargon user, org, plan, credit balance, and live/sandbox outbound flags.'
     },
     async () => {
       try {
@@ -36,10 +63,9 @@ function createServer(): McpServer {
   server.registerTool(
     'get_credits',
     {
-      title: 'Get credits',
+      ...display('Check your credit balance', HINTS.read),
       description:
-        'Remaining API credits, monthly grant, and refresh date. Free — does not consume credits.',
-      annotations: { readOnlyHint: true }
+        'Remaining API credits, monthly grant, and refresh date. Free — does not consume credits.'
     },
     async () => {
       try {
@@ -53,9 +79,8 @@ function createServer(): McpServer {
   server.registerTool(
     'get_usage',
     {
-      title: 'Get usage',
-      description: 'Credit and outbound usage for the current billing period.',
-      annotations: { readOnlyHint: true }
+      ...display('Check your usage this period', HINTS.read),
+      description: 'Credit and outbound usage for the current billing period.'
     },
     async () => {
       try {
@@ -69,16 +94,17 @@ function createServer(): McpServer {
   server.registerTool(
     'create_billing_link',
     {
-      title: 'Create billing link',
+      ...display('Open your billing page', HINTS.send),
       description:
         'Return a URL to upgrade, buy credits, or open the billing portal. Do not collect card details — send the user to this URL.',
       inputSchema: z.object({
+        summary: Summary,
         intent: z.enum(['upgrade', 'topup', 'portal']),
         plan: z.enum(['team', 'scale']).optional(),
         packId: z.enum(['credits_500', 'credits_2000', 'credits_10000']).optional()
       })
     },
-    async (body) => {
+    async ({ summary: _summary, ...body }) => {
       try {
         return toolResult(await jargonFetch('POST', '/account/billing-link', { body }))
       } catch (err) {
@@ -90,7 +116,7 @@ function createServer(): McpServer {
   server.registerTool(
     'list_prospects',
     {
-      title: 'List prospects',
+      ...display('Look up your prospects', HINTS.read),
       description:
         'List prospects already in this org (CRM/warehouse snapshots). Do not cache PII locally. Do not pass org_id.',
       inputSchema: z.object({
@@ -99,8 +125,7 @@ function createServer(): McpServer {
         q: z.string().optional().describe('Search name, company, title, email, city'),
         limit: z.number().int().min(1).max(200).optional(),
         offset: z.number().int().min(0).optional()
-      }),
-      annotations: { readOnlyHint: true }
+      })
     },
     async (args) => {
       try {
@@ -114,10 +139,9 @@ function createServer(): McpServer {
   server.registerTool(
     'get_prospect',
     {
-      title: 'Get prospect',
+      ...display('Look up one prospect', HINTS.read),
       description: 'Get one prospect by id.',
-      inputSchema: z.object({ id: z.string() }),
-      annotations: { readOnlyHint: true }
+      inputSchema: z.object({ id: z.string() })
     },
     async ({ id }) => {
       try {
@@ -131,9 +155,8 @@ function createServer(): McpServer {
   server.registerTool(
     'list_projects',
     {
-      title: 'List workspaces',
-      description: 'List Jargon workspaces for this API key. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.',
-      annotations: { readOnlyHint: true }
+      ...display('List your outbound workspaces', HINTS.read),
+      description: 'List Jargon workspaces for this API key. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.'
     },
     async () => {
       try {
@@ -147,11 +170,10 @@ function createServer(): McpServer {
   server.registerTool(
     'get_project',
     {
-      title: 'Get workspace',
+      ...display('Open one outbound workspace', HINTS.read),
       description:
         'Get one workspace. Share dashboardUrl with the user (https://jargonlabs.co/tools/…). Never prefix dashboardPath with www.jargonlabs.co — that host is the API.',
-      inputSchema: z.object({ id: z.string() }),
-      annotations: { readOnlyHint: true }
+      inputSchema: z.object({ id: z.string() })
     },
     async ({ id }) => {
       try {
@@ -198,10 +220,11 @@ function createServer(): McpServer {
   server.registerTool(
     'import_list',
     {
-      title: 'Import list into an outbound workspace',
+      ...display('Add these people to an outbound list', HINTS.write),
       description:
         'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound workspace from that exact list. Describe the interface in prompt (queue with email/phone/LinkedIn, sequence, one-off emails, inbox). Optionally pass spec.channels / spec.primarySurface. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
+        summary: Summary,
         prompt: z.string().min(1).describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
         contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue'),
         spec: SpecInput
@@ -219,10 +242,11 @@ function createServer(): McpServer {
   server.registerTool(
     'deploy_tool',
     {
-      title: 'Deploy outbound workspace',
+      ...display('Set up a new outbound workspace', HINTS.write),
       description:
         'Create an outbound workspace from a prompt. Pass spec to control channels (email, call, linkedin) and which screen opens first. To ingest a researched list, pass contacts[] or put people in prompt. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
+        summary: Summary,
         prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
         contacts: z
           .array(ContactInput)
@@ -245,9 +269,10 @@ function createServer(): McpServer {
   server.registerTool(
     'add_contacts',
     {
-      title: 'Add contacts to a workspace',
+      ...display('Add more people to an existing list', HINTS.write),
       description: 'Append people from any source to an existing workspace queue.',
       inputSchema: z.object({
+        summary: Summary,
         projectId: z.string(),
         contacts: z.array(ContactInput).min(1).max(100)
       })
@@ -266,7 +291,7 @@ function createServer(): McpServer {
   server.registerTool(
     'list_contacts',
     {
-      title: 'List workspace contacts',
+      ...display('List the people in a workspace', HINTS.read),
       description: 'List contacts in one workspace.',
       inputSchema: z.object({
         projectId: z.string(),
@@ -274,8 +299,7 @@ function createServer(): McpServer {
         q: z.string().optional(),
         limit: z.number().int().min(1).max(200).optional(),
         offset: z.number().int().min(0).optional()
-      }),
-      annotations: { readOnlyHint: true }
+      })
     },
     async ({ projectId, ...query }) => {
       try {
@@ -289,10 +313,9 @@ function createServer(): McpServer {
   server.registerTool(
     'queue_next',
     {
-      title: 'Next in queue',
+      ...display('Show the next person in the queue', HINTS.read),
       description: 'Next actionable contact plus current step template. Empty queue returns remaining: 0.',
-      inputSchema: z.object({ projectId: z.string() }),
-      annotations: { readOnlyHint: true }
+      inputSchema: z.object({ projectId: z.string() })
     },
     async ({ projectId }) => {
       try {
@@ -306,10 +329,11 @@ function createServer(): McpServer {
   server.registerTool(
     'send_message',
     {
-      title: 'Send email or LinkedIn',
+      ...display('Send an email or LinkedIn message', HINTS.send),
       description:
         'Send (default) or draft an email/LinkedIn message. Live keys send real email. Always sends Idempotency-Key.',
       inputSchema: z.object({
+        summary: Summary,
         contactId: z.string(),
         body: z.string(),
         channel: z.enum(['email', 'linkedin']).optional(),
@@ -318,7 +342,7 @@ function createServer(): McpServer {
         sendAt: z.union([z.number(), z.string()]).optional()
       })
     },
-    async ({ contactId, ...body }) => {
+    async ({ contactId, summary: _summary, ...body }) => {
       try {
         return toolResult(
           await jargonFetch('POST', `/contacts/${contactId}/messages`, { body, idempotency: true })
@@ -332,9 +356,9 @@ function createServer(): McpServer {
   server.registerTool(
     'start_call',
     {
-      title: 'Start call',
+      ...display('Start a call', HINTS.send),
       description: 'Start a dial session. Live keys can place real calls. Always sends Idempotency-Key.',
-      inputSchema: z.object({ contactId: z.string() })
+      inputSchema: z.object({ summary: Summary, contactId: z.string() })
     },
     async ({ contactId }) => {
       try {
@@ -350,9 +374,10 @@ function createServer(): McpServer {
   server.registerTool(
     'complete_call',
     {
-      title: 'Complete call',
+      ...display('Log how a call ended', HINTS.write),
       description: 'Complete an open call with a disposition.',
       inputSchema: z.object({
+        summary: Summary,
         callId: z.string(),
         disposition: ContactStatus
       })
@@ -371,16 +396,17 @@ function createServer(): McpServer {
   server.registerTool(
     'disposition',
     {
-      title: 'Log disposition',
+      ...display('Log an outcome on a contact', HINTS.write),
       description: 'Log an outcome on a contact without an open call.',
       inputSchema: z.object({
+        summary: Summary,
         contactId: z.string(),
         status: ContactStatus,
         note: z.string().optional(),
         advanceStep: z.boolean().optional()
       })
     },
-    async ({ contactId, ...body }) => {
+    async ({ contactId, summary: _summary, ...body }) => {
       try {
         return toolResult(await jargonFetch('POST', `/contacts/${contactId}/disposition`, { body }))
       } catch (err) {
@@ -392,9 +418,10 @@ function createServer(): McpServer {
   server.registerTool(
     'add_note',
     {
-      title: 'Add note',
+      ...display('Add a note to a contact', HINTS.write),
       description: 'Append a note to a contact.',
       inputSchema: z.object({
+        summary: Summary,
         contactId: z.string(),
         note: z.string().min(1)
       })
@@ -411,11 +438,10 @@ function createServer(): McpServer {
   server.registerTool(
     'get_sequence',
     {
-      title: 'Get sequence',
+      ...display('Open the outbound workspace', HINTS.read),
       description:
         'Sequence steps plus field catalog. Show this in Claude. Templates use {{first_name}} and catalog keys.',
-      inputSchema: z.object({ projectId: z.string() }),
-      annotations: { readOnlyHint: true }
+      inputSchema: z.object({ projectId: z.string() })
     },
     async ({ projectId }) => {
       try {
@@ -429,9 +455,10 @@ function createServer(): McpServer {
   server.registerTool(
     'update_sequence',
     {
-      title: 'Update sequence',
+      ...display('Rewrite the cadence steps', HINTS.overwrite),
       description: 'Replace sequence steps without redeploying.',
       inputSchema: z.object({
+        summary: Summary,
         projectId: z.string(),
         goal: z.string().optional(),
         steps: z.array(SpecStep).min(1).max(8)
@@ -451,10 +478,11 @@ function createServer(): McpServer {
   server.registerTool(
     'start_sequence',
     {
-      title: 'Start email sequence',
+      ...display('Start sending the cadence', HINTS.send),
       description:
         'Enroll contacts into the shared sequence. Queues each email with sendAt from step day.',
       inputSchema: z.object({
+        summary: Summary,
         projectId: z.string(),
         startAt: z.union([z.number(), z.string()]).optional(),
         contactIds: z.array(z.string()).optional()
@@ -476,16 +504,17 @@ function createServer(): McpServer {
   server.registerTool(
     'save_draft',
     {
-      title: 'Save draft',
+      ...display('Save a draft message', HINTS.write),
       description: 'Save proposed copy for a contact. Interpolates catalog fields.',
       inputSchema: z.object({
+        summary: Summary,
         contactId: z.string(),
         body: z.string(),
         subject: z.string().optional(),
         channel: z.enum(['email', 'linkedin']).optional()
       })
     },
-    async ({ contactId, ...body }) => {
+    async ({ contactId, summary: _summary, ...body }) => {
       try {
         return toolResult(
           await jargonFetch('POST', `/contacts/${contactId}/messages`, {
@@ -502,14 +531,13 @@ function createServer(): McpServer {
   server.registerTool(
     'list_drafts',
     {
-      title: 'List drafts',
+      ...display('List saved drafts', HINTS.read),
       description: 'List draft or queued messages in a workspace.',
       inputSchema: z.object({
         projectId: z.string(),
         contactId: z.string().optional(),
         status: z.enum(['draft', 'queued', 'sent', 'failed']).optional()
-      }),
-      annotations: { readOnlyHint: true }
+      })
     },
     async ({ projectId, contactId, status }) => {
       try {
@@ -527,16 +555,17 @@ function createServer(): McpServer {
   server.registerTool(
     'update_draft',
     {
-      title: 'Update draft',
+      ...display('Edit a saved draft', HINTS.write),
       description: 'Edit draft copy or reschedule sendAt.',
       inputSchema: z.object({
+        summary: Summary,
         messageId: z.string(),
         subject: z.string().optional(),
         body: z.string().optional(),
         sendAt: z.union([z.number(), z.string()]).optional()
       })
     },
-    async ({ messageId, ...body }) => {
+    async ({ messageId, summary: _summary, ...body }) => {
       try {
         return toolResult(await jargonFetch('PATCH', `/messages/${messageId}`, { body }))
       } catch (err) {
@@ -548,9 +577,9 @@ function createServer(): McpServer {
   server.registerTool(
     'send_draft',
     {
-      title: 'Send draft',
+      ...display('Send a saved draft now', HINTS.send),
       description: 'Send a saved draft now.',
-      inputSchema: z.object({ messageId: z.string() })
+      inputSchema: z.object({ summary: Summary, messageId: z.string() })
     },
     async ({ messageId }) => {
       try {

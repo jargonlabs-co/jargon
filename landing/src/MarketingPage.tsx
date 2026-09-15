@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from './components/BrandMark'
 import { ClaudeMark } from './components/ClaudeMark'
 import { LogoMark } from './components/LogoMark'
-import { ClaudeConnectorMock, CliDeployMock, ContextMock, DialerMock } from './components/ProductMocks'
+import { CliDeployMock, ContextMock, DialerMock } from './components/ProductMocks'
+import { CONNECTOR_DESCRIPTION, ConnectorGallery } from './components/ConnectorGallery'
 
 function useReveal() {
   const ref = useRef<HTMLElement | null>(null)
@@ -157,16 +158,14 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
 
         <Reveal className="section run-section" as="section">
           <div className="section-inner" id="run">
-            <div className="section-copy centered">
+            <div className="section-copy centered wide">
               <p className="eyebrow">For sales teams</p>
               <h2>Connect Claude. Work your book from there.</h2>
               <p>
-                Add Jargon as a Claude connector — sign in once, no API keys, no terminal. Instantly
-                create outbound sequences, queues, or dialers in Claude and run them there — no
-                switching tabs.
+                {CONNECTOR_DESCRIPTION} Sign in once — no API keys, no terminal.
               </p>
             </div>
-            <ClaudeConnectorMock />
+            <ConnectorGallery />
           </div>
         </Reveal>
 
@@ -217,7 +216,7 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
               <p>
                 Claude and ChatGPT showed your teams what&apos;s possible. Jargon is the next step:
                 enterprise-ready tools grounded in your CRM, data warehouse, and context layer —
-                so a today queue, dialer, or sequencer runs on how your org actually sells.
+                so an outbound dialer or sequencer runs on how your org actually sells.
               </p>
             </div>
             <ContextMock />
@@ -247,10 +246,10 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
               <li>
                 <span className="cap-glyph">⚑</span>
                 <div>
-                  <h3>Today queues</h3>
+                  <h3>Outbound sequences</h3>
                   <p>
-                    Prioritized worklists for AEs and SDRs, pulled from your CRM and context layer —
-                    ready when the day starts.
+                    Prioritized sequences for AEs and SDRs, pulled from your CRM and context layer —
+                    ready to run.
                   </p>
                 </div>
               </li>

@@ -25,7 +25,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=dialer1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=confirm1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -35,6 +35,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=surfaces1',
   'ui://jargon/email-workspace.html?v=queue1',
   'ui://jargon/email-workspace.html?v=tasks1',
+  'ui://jargon/email-workspace.html?v=dialer1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -576,7 +577,7 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
 export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Claude researches people and companies, then Jargon stores contacts and runs the motion. The in-chat UI is chosen from the user's request.
 
 Describe the interface in prompt (and spec.channels / spec.primarySurface when it helps):
-- Outbound tool / today queue / dialer / LinkedIn / multi-channel → a contact queue with Email, Call, and LinkedIn actions. Default is all three channels. The user works the list in Claude.
+- Outbound tool / outbound sequence / dialer / LinkedIn / multi-channel → a contact queue with Email, Call, and LinkedIn actions. Default is all three channels. The user works the list in Claude.
 - Sequence / cadence / over N days (email-only) → sequence flow. Put templates in spec.steps with {{first_name}}, {{company}}, and catalog keys. Call start_sequence (or the user clicks Start sequence) to enroll everyone by step day.
 - Task view / daily tasks / what's due today → one dated task per sequence step per enrolled contact. The user clicks through them: send the email, log the call, send the LinkedIn note. Open it with show_tasks; read it with list_tasks. Tasks only exist after start_sequence.
 - One-off / a handful of emails / just send these → one composer per person. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
@@ -584,7 +585,7 @@ Describe the interface in prompt (and spec.channels / spec.primarySurface when i
 
 Path:
 1. Ingest with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. Those tools open the matching outbound UI in Claude. Do not dump JSON — the UI is the workspace.
+2. Those tools open a confirmation card. Wait for the user to confirm. After they confirm, the matching outbound UI appears in the same card. Do not dump JSON — the UI is the workspace. Do not retry the write until they confirm or decline.
 3. Re-open with show_email_workspace, or show_tasks for the day's task list. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

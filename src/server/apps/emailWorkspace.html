@@ -79,6 +79,14 @@
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
     .row input[type="datetime-local"] { width: auto; min-width: 180px; }
     .empty { color: var(--muted); padding: 20px 4px; }
+    .confirm { padding: 4px 2px 8px; max-width: 440px; }
+    .confirm h1 { font-size: 16px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.02em; }
+    .confirm .lede { font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
+    .confirm dl { margin: 0 0 18px; }
+    .confirm dt { font-size: 11px; color: var(--muted); margin-top: 10px; }
+    .confirm dt:first-child { margin-top: 0; }
+    .confirm dd { margin: 2px 0 0; }
+    .confirm .actions { margin-top: 4px; }
 
     .seg {
       display: flex; gap: 4px; background: var(--bg2); border-radius: 8px; padding: 3px;
@@ -437,7 +445,7 @@ function dueLabel(task) {
 }
 
 (async () => {
-  const app = new App({ name: 'jargon-outbound', version: '1.4.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-outbound', version: '1.5.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let tab = 'sequence';
   let seqPane = 'flow';
@@ -463,6 +471,8 @@ function dueLabel(task) {
   let dialMuted = false;
   let dialTicker = 0;
   let dialConnect = 0;
+  let proposal = null;
+  let confirmBusy = false;
 
   function surface() {
     if (!ws) return 'sequence';
@@ -570,7 +580,7 @@ function dueLabel(task) {
     });
     busy = true; render();
     const result = await app.callServerTool({
-      name: 'update_sequence',
+      name: 'run_update_sequence',
       arguments: { projectId: ws.projectId, goal: ws.goal, steps },
     });
     busy = false;
@@ -611,11 +621,11 @@ function dueLabel(task) {
     busy = true; render();
     const result = existing
       ? await app.callServerTool({
-          name: 'update_draft',
+          name: 'run_update_draft',
           arguments: { messageId: existing.id, subject, body },
         })
       : await app.callServerTool({
-          name: 'save_draft',
+          name: 'run_save_draft',
           arguments: { contactId: contact.id, subject, body, channel: 'email' },
         });
     busy = false;
@@ -637,9 +647,9 @@ function dueLabel(task) {
     const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing && existing.status !== 'sent'
-      ? await app.callServerTool({ name: 'send_draft', arguments: { messageId: existing.id } })
+      ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
       : await app.callServerTool({
-          name: 'send_message',
+          name: 'run_send_message',
           arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
         });
     busy = false;
@@ -667,11 +677,11 @@ function dueLabel(task) {
     busy = true; render();
     const result = existing
       ? await app.callServerTool({
-          name: 'update_draft',
+          name: 'run_update_draft',
           arguments: { messageId: existing.id, subject, body, sendAt, status: 'queued' },
         })
       : await app.callServerTool({
-          name: 'send_message',
+          name: 'run_send_message',
           arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'queued', sendAt },
         });
     busy = false;
@@ -690,7 +700,7 @@ function dueLabel(task) {
     pendingStart = false;
     busy = true; render();
     const result = await app.callServerTool({
-      name: 'start_sequence',
+      name: 'run_start_sequence',
       arguments: { projectId: ws.projectId },
     });
     busy = false;
@@ -723,7 +733,7 @@ function dueLabel(task) {
   async function startCall(contact) {
     busy = true; render();
     const result = await app.callServerTool({
-      name: 'start_call',
+      name: 'run_start_call',
       arguments: { contactId: contact.id },
     });
     busy = false;
@@ -742,11 +752,11 @@ function dueLabel(task) {
     busy = true; render();
     const result = call && call.phase !== 'completed'
       ? await app.callServerTool({
-          name: 'complete_call',
+          name: 'run_complete_call',
           arguments: { callId: call.id, disposition: status },
         })
       : await app.callServerTool({
-          name: 'disposition',
+          name: 'run_disposition',
           arguments: { contactId: contact.id, status, channel: 'call' },
         });
     busy = false;
@@ -768,11 +778,11 @@ function dueLabel(task) {
     busy = true; render();
     const result = existing
       ? await app.callServerTool({
-          name: 'update_draft',
+          name: 'run_update_draft',
           arguments: { messageId: existing.id, body },
         })
       : await app.callServerTool({
-          name: 'save_draft',
+          name: 'run_save_draft',
           arguments: { contactId: contact.id, body, channel: 'linkedin' },
         });
     busy = false;
@@ -795,9 +805,9 @@ function dueLabel(task) {
     const existing = latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
     const result = existing && existing.status !== 'sent'
-      ? await app.callServerTool({ name: 'send_draft', arguments: { messageId: existing.id } })
+      ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
       : await app.callServerTool({
-          name: 'send_message',
+          name: 'run_send_message',
           arguments: { contactId: contact.id, body, channel: 'linkedin', status: 'sent' },
         });
     busy = false;
@@ -1495,7 +1505,125 @@ function dueLabel(task) {
     return `${kind ? `${esc(kind)} · ` : ''}${ws.contactCount} contacts · ${esc(mail)}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}`;
   }
 
+  function applyWorkspace(parsed) {
+    proposal = null;
+    ws = parsed;
+    applySurface();
+    resetDialer(null);
+    seqPane = 'flow';
+    selectedStep = 0;
+    selectedMessageId = null;
+    selectedTaskId = null;
+    taskFilter = 'open';
+    syncDrafts();
+    notice = '';
+    const first = (ws.contacts || [])[0];
+    if (listSurface() && first) {
+      selectedId = first.id;
+      actionPane = nextFor(first) || workspaceChannels()[0] || 'email';
+    }
+  }
+
+  async function confirmProposal() {
+    if (!proposal?.proposalId || confirmBusy) return;
+    confirmBusy = true;
+    render();
+    const result = await app.callServerTool({
+      name: 'run_proposal',
+      arguments: { proposalId: proposal.proposalId },
+    });
+    confirmBusy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error && !parsed.projectId) {
+      setNotice(parsed.error, 'err');
+      return;
+    }
+    if (parsed?.view === 'confirm_action') {
+      proposal = parsed;
+      render();
+      return;
+    }
+    if (parsed?.projectId && (parsed.contacts || parsed.steps)) {
+      applyWorkspace(parsed);
+      render();
+      app.updateModelContext?.({
+        content: [{ type: 'text', text: `Confirmed. Workspace ${parsed.name || parsed.projectId} is ready.` }],
+      });
+      return;
+    }
+    const doneSummary = proposal.summary;
+    proposal = { ...proposal, status: 'done', done: parsed };
+    render();
+    const billingUrl = parsed?.url || parsed?.billingUrl;
+    app.updateModelContext?.({
+      content: [{ type: 'text', text: `Confirmed: ${doneSummary}${billingUrl ? ` Link: ${billingUrl}` : ''}` }],
+    });
+  }
+
+  async function declineProposal() {
+    if (!proposal?.proposalId || confirmBusy) return;
+    confirmBusy = true;
+    render();
+    await app.callServerTool({
+      name: 'cancel_proposal',
+      arguments: { proposalId: proposal.proposalId },
+    });
+    confirmBusy = false;
+    const summary = proposal.summary;
+    proposal = { ...proposal, status: 'cancelled' };
+    render();
+    app.updateModelContext?.({
+      content: [{ type: 'text', text: `The user declined: ${summary}` }],
+    });
+  }
+
+  function renderConfirm() {
+    if (proposal.status === 'cancelled') {
+      root.innerHTML = `
+        <div class="confirm">
+          <h1>Cancelled</h1>
+          <p class="lede">${esc(proposal.summary || 'This action was not run.')}</p>
+        </div>
+      `;
+      return;
+    }
+    if (proposal.status === 'done') {
+      const billingUrl = proposal.done?.url || proposal.done?.billingUrl;
+      root.innerHTML = `
+        <div class="confirm">
+          <h1>Done</h1>
+          <p class="lede">${esc(proposal.summary || 'Finished.')}</p>
+          ${billingUrl ? `<div class="actions"><button class="btn primary" id="open-billing">Open link</button></div>` : ''}
+        </div>
+      `;
+      root.querySelector('#open-billing')?.addEventListener('click', () => app.openLink({ url: billingUrl }));
+      return;
+    }
+    const facts = (proposal.facts || []).map((f) => `
+      <dt>${esc(f.label)}</dt>
+      <dd>${esc(f.value)}</dd>
+    `).join('');
+    root.innerHTML = `
+      <div class="confirm">
+        <h1>${esc(proposal.title || 'Confirm')}</h1>
+        <p class="lede">${esc(proposal.summary || '')}</p>
+        ${facts ? `<dl>${facts}</dl>` : ''}
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        <div class="actions">
+          <button class="btn" id="decline" ${confirmBusy ? 'disabled' : ''}>Don't</button>
+          <button class="btn primary" id="confirm" ${confirmBusy ? 'disabled' : ''}>${esc(proposal.confirmLabel || 'Confirm')}</button>
+        </div>
+      </div>
+    `;
+    root.querySelector('#decline')?.addEventListener('click', () => void declineProposal());
+    root.querySelector('#confirm')?.addEventListener('click', () => void confirmProposal());
+  }
+
   function render() {
+    if (proposal?.view === 'confirm_action' && !ws) {
+      renderConfirm();
+      return;
+    }
     if (!ws) {
       root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
       return;
@@ -1654,22 +1782,16 @@ function dueLabel(task) {
 
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
-    if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
-    ws = parsed;
-    applySurface();
-    resetDialer(null);
-    seqPane = 'flow';
-    selectedStep = 0;
-    selectedMessageId = null;
-    selectedTaskId = null;
-    taskFilter = 'open';
-    syncDrafts();
-    notice = '';
-    const first = (ws.contacts || [])[0];
-    if (listSurface() && first) {
-      selectedId = first.id;
-      actionPane = nextFor(first) || workspaceChannels()[0] || 'email';
+    if (parsed?.view === 'confirm_action') {
+      proposal = parsed;
+      ws = null;
+      notice = '';
+      render();
+      return;
     }
+    if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
+    if (!parsed?.projectId) return;
+    applyWorkspace(parsed);
     render();
   };
   app.onhostcontextchanged = themeFromHost;

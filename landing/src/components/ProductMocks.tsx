@@ -11,13 +11,13 @@ export function CliDeployMock() {
           </div>
           <div className="cli-line">
             <span className="cli-prompt">$</span>
-            <span className="cli-cmd">jargon deploy &quot;Today queue for my AE book&quot;</span>
+            <span className="cli-cmd">jargon deploy &quot;Outbound dialer for my AE book&quot;</span>
           </div>
-          <div className="cli-line cli-out">Deployed Today queue for AE book</div>
+          <div className="cli-line cli-out">Deployed Outbound dialer for AE book</div>
           <div className="cli-line cli-out">Fully functional UI · CRM + context layer</div>
           <div className="cli-line cli-out">
             Open:{' '}
-            <span className="cli-link">https://jargonlabs.co/tools/ae-today</span>
+            <span className="cli-link">https://jargonlabs.co/tools/ae-dialer</span>
           </div>
           <div className="cli-line cli-cursor">
             <span className="cli-prompt">$</span>
@@ -27,7 +27,7 @@ export function CliDeployMock() {
         <div className="cli-aside">
           <div className="cli-aside-label">What sales opens</div>
           <div className="cli-aside-card">
-            <div className="cli-aside-name">Today queue · AE book</div>
+            <div className="cli-aside-name">Outbound dialer · AE book</div>
             <div className="cli-aside-meta">Functional UI · call · email · LinkedIn</div>
             <ul>
               <li>Maya Chen · Lattice</li>
@@ -49,7 +49,7 @@ export function DialerMock() {
           <div className="product-brand-row">
             <BrandMark size={26} />
             <div>
-              <div className="product-name">Today queue</div>
+              <div className="product-name">Outbound dialer</div>
               <div className="product-kind">AE book · outbound</div>
             </div>
           </div>
@@ -139,21 +139,21 @@ export function ClaudeConnectorMock() {
             <span className="claude-chat-status">Jargon connector · connected</span>
           </div>
           <div className="claude-msg user">
-            Build a today queue for my AE book and start with Maya Chen.
+            Build an outbound dialer for my AE book and start with Maya Chen.
           </div>
           <div className="claude-tool">
             <span className="claude-tool-name">Jargon</span>
             <span className="claude-tool-action">deploy_tool</span>
           </div>
           <div className="claude-msg assistant">
-            Deployed <strong>Today queue for AE book</strong> — 24 contacts from HubSpot, calling
+            Deployed <strong>Outbound dialer for AE book</strong> — 24 contacts from HubSpot, calling
             and email included. Open it in the browser, or I can pull the next call from here.
           </div>
         </div>
         <div className="cli-aside">
           <div className="cli-aside-label">What sales opens</div>
           <div className="cli-aside-card">
-            <div className="cli-aside-name">Today queue · AE book</div>
+            <div className="cli-aside-name">Outbound dialer · AE book</div>
             <div className="cli-aside-meta">From Claude · call · email · LinkedIn</div>
             <ul>
               <li>Maya Chen · Lattice</li>
@@ -191,7 +191,7 @@ export function ContextMock() {
           <span>☎</span> Dialers
         </div>
         <div className="context-tool">
-          <span>⚑</span> Today queues
+          <span>⚑</span> Outbound sequences
         </div>
         <div className="context-tool">
           <span>↻</span> Sequencers

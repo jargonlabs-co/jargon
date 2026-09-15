@@ -1,6 +1,6 @@
 # Jargon (Claude Code)
 
-When the user asks to build or deploy a dialer, sequencer, cadence, or today queue with Jargon:
+When the user asks to build or deploy a dialer, sequencer, cadence, or outbound sequence with Jargon:
 
 ## Deploy
 
@@ -27,7 +27,7 @@ npm run jargon -- connect railway
 # open the URL, authorize, share the outbound-ops project
 npm run jargon -- connect railway projects
 npm run jargon -- connect railway bind --project-id <id> --environment-id <id> --service-id <id> --table jargon_prospects
-npm run jargon -- deploy "Build a Today queue for GTM Engineers in the US"
+npm run jargon -- deploy "Build an outbound dialer for GTM Engineers in the US"
 ```
 
 Or connect from the website: **Connect Railway** → pick Postgres → Use this database.

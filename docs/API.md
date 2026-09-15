@@ -123,7 +123,7 @@ KEY=jarg_...
 
 # Deploy / open a workspace
 curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
-  -d '{"prompt":"Today queue for GTM Engineers in the US"}' \
+  -d '{"prompt":"Outbound dialer for GTM Engineers in the US"}' \
   "$API/tools/deploy"
 # → projectId
 

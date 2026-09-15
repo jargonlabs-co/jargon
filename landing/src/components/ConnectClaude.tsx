@@ -4,19 +4,22 @@ import { useAuth } from '../auth'
 import { ClaudeMark } from './ClaudeMark'
 import { LoginPanel } from './LoginPanel'
 import { LogoMark } from './LogoMark'
+import { CONNECTOR_DESCRIPTION, CONNECTOR_TAGLINE, ConnectorGallery } from './ConnectorGallery'
 
 function ConnectShell({
   title,
   subtitle,
+  wide,
   children
 }: {
   title: string
   subtitle: string
+  wide?: boolean
   children: React.ReactNode
 }) {
   return (
-    <main className="connect-claude">
-      <div className="connect-claude-inner">
+    <main className={`connect-claude${wide ? ' wide' : ''}`}>
+      <div className={`connect-claude-inner${wide ? ' wide' : ''}`}>
         <header className="connect-claude-head">
           <div className="connect-claude-pair">
             <span className="connect-claude-tile">
@@ -83,6 +86,71 @@ export function ConnectClaude() {
     return <div className="page-loading">Loading…</div>
   }
 
+  if (!hasOAuth) {
+    return (
+      <ConnectShell title="Add Jargon to Claude" subtitle={CONNECTOR_TAGLINE} wide>
+        <p className="connect-claude-head-desc">{CONNECTOR_DESCRIPTION}</p>
+        <ConnectorGallery className="connect-claude-gallery" />
+        {user ? (
+          <div className="connect-claude-card">
+            <div className="connect-claude-identity">
+              <span className="connect-claude-avatar" aria-hidden="true">
+                {user.email.slice(0, 1).toUpperCase()}
+              </span>
+              <div>
+                <strong>{user.email}</strong>
+                {org ? <span>{org.name}</span> : null}
+              </div>
+              <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
+                Switch
+              </button>
+            </div>
+            <ol className="connect-claude-steps">
+              <li>
+                <span className="connect-claude-step-label">Claude desktop or web</span>
+                <a
+                  className="btn primary btn-full"
+                  href={getClaudeConnectorInstallUrl()}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Add connector in Claude
+                </a>
+              </li>
+              <li>
+                <span className="connect-claude-step-label">Claude Code</span>
+                <div className="connect-claude-cmd">
+                  <code>{command}</code>
+                  <button type="button" className="connect-claude-copy" onClick={() => void copyCommand()}>
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </li>
+            </ol>
+          </div>
+        ) : (
+          <>
+            <LoginPanel embedded showBrand={false} onModeChange={setAuthMode} />
+            <p className="connect-claude-foot">
+              {authMode === 'login' ? (
+                <>
+                  New to Jargon? Choose <strong>Create account</strong> above.
+                </>
+              ) : (
+                <>You&apos;ll come straight back here to connect Claude.</>
+              )}
+            </p>
+          </>
+        )}
+        {user ? (
+          <p className="connect-claude-foot">
+            <a href="/claude">Back to dashboard</a>
+          </p>
+        ) : null}
+      </ConnectShell>
+    )
+  }
+
   if (!user) {
     return (
       <ConnectShell
@@ -100,61 +168,8 @@ export function ConnectClaude() {
               New to Jargon? Choose <strong>Create account</strong> above.
             </>
           ) : (
-            <>You'll come straight back here to approve Claude.</>
+            <>You&apos;ll come straight back here to approve Claude.</>
           )}
-        </p>
-      </ConnectShell>
-    )
-  }
-
-  const identity = (
-    <div className="connect-claude-identity">
-      <span className="connect-claude-avatar" aria-hidden="true">
-        {user.email.slice(0, 1).toUpperCase()}
-      </span>
-      <div>
-        <strong>{user.email}</strong>
-        {org ? <span>{org.name}</span> : null}
-      </div>
-      <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
-        Switch
-      </button>
-    </div>
-  )
-
-  if (!hasOAuth) {
-    return (
-      <ConnectShell
-        title="Add Jargon to Claude"
-        subtitle="Two ways to install the connector. Claude will send you back here to approve access."
-      >
-        <div className="connect-claude-card">
-          {identity}
-          <ol className="connect-claude-steps">
-            <li>
-              <span className="connect-claude-step-label">Claude desktop or web</span>
-              <a
-                className="btn primary btn-full"
-                href={getClaudeConnectorInstallUrl()}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Add connector in Claude
-              </a>
-            </li>
-            <li>
-              <span className="connect-claude-step-label">Claude Code</span>
-              <div className="connect-claude-cmd">
-                <code>{command}</code>
-                <button type="button" className="connect-claude-copy" onClick={() => void copyCommand()}>
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </li>
-          </ol>
-        </div>
-        <p className="connect-claude-foot">
-          <a href="/claude">Back to dashboard</a>
         </p>
       </ConnectShell>
     )
@@ -166,7 +181,18 @@ export function ConnectClaude() {
       subtitle={`Approve to let Claude work inside ${org?.name ?? 'your workspace'}.`}
     >
       <div className="connect-claude-card">
-        {identity}
+        <div className="connect-claude-identity">
+          <span className="connect-claude-avatar" aria-hidden="true">
+            {user.email.slice(0, 1).toUpperCase()}
+          </span>
+          <div>
+            <strong>{user.email}</strong>
+            {org ? <span>{org.name}</span> : null}
+          </div>
+          <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
+            Switch
+          </button>
+        </div>
         <ul className="connect-claude-scopes">
           <li>Read your contacts, queues, and tool configuration</li>
           <li>Deploy and update tools in your workspace</li>
@@ -182,7 +208,7 @@ export function ConnectClaude() {
           </a>
         </div>
       </div>
-      <p className="connect-claude-foot">You can revoke Claude's access any time from your dashboard.</p>
+      <p className="connect-claude-foot">You can revoke Claude&apos;s access any time from your dashboard.</p>
     </ConnectShell>
   )
 }

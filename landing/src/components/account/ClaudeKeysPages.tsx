@@ -1,5 +1,6 @@
 import { getApiBase, getClaudeConnectorInstallUrl, resolveMcpUrl, type ApiKeyPublic, type ClaudeConnector } from '../../api'
 import { formatWhen } from './nav'
+import { CONNECTOR_DESCRIPTION, CONNECTOR_TAGLINE, ConnectorGallery } from '../ConnectorGallery'
 
 export function ClaudePage({ claude }: { claude?: ClaudeConnector }) {
   const mcpUrl = resolveMcpUrl(claude?.mcpUrl)
@@ -11,11 +12,11 @@ export function ClaudePage({ claude }: { claude?: ClaudeConnector }) {
       <div className="section-heading">
         <p className="eyebrow">Account</p>
         <h1>Claude connector</h1>
-        <p className="section-lede">
-          Jargon is an HTTP MCP connector. Add it in Claude, then Connect and sign in with this
-          Jargon account. Claude can deploy tools, run outbound, and check credits from there.
-        </p>
+        <p className="section-lede">{CONNECTOR_TAGLINE}</p>
+        <p className="section-lede">{CONNECTOR_DESCRIPTION}</p>
       </div>
+
+      <ConnectorGallery />
 
       <article className="context-card claude-connector-card">
         <div className="context-card-top">

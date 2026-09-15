@@ -62,7 +62,7 @@ export function workspaceKindLabel(spec: WorkspaceSpec): string {
   if (spec.channels.length === 1 && spec.channels[0] === 'call') return 'Outbound dialer'
   if (spec.channels.length === 1 && spec.channels[0] === 'email') return 'Email sequencer'
   if (spec.primarySurface === 'dial') return 'Outbound dialer'
-  if (spec.kind === 'today' || spec.primarySurface === 'queue') return 'Today queue'
+  if (spec.kind === 'today' || spec.primarySurface === 'queue') return 'Outbound sequence'
   if (spec.channels.includes('linkedin') || spec.channels.length > 1) return 'Multi-channel cadence'
   if (spec.kind === 'sequencer') return 'Email sequencer'
   return 'Outbound workspace'
@@ -297,7 +297,7 @@ function inferGoal(t: string, channels: Channel[]): string {
   if (channels.length === 1 && channels[0] === 'call') return 'Dial accounts'
   if (channels.length === 1 && channels[0] === 'linkedin') return 'Start a LinkedIn conversation'
   if (/\bcadence/.test(t)) return 'Run a cadence'
-  if (/\btoday|daily/.test(t)) return "Work today's queue"
+  if (/\btoday|daily/.test(t)) return 'Work the outbound sequence'
   return 'Book a meeting'
 }
 

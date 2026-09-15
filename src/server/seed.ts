@@ -107,7 +107,7 @@ export function seedProject(
     kind === 'today'
       ? segment !== 'HubSpot contacts' && segment !== 'Target accounts'
         ? `${segment} · ${label}`
-        : `Today · ${label}`
+        : label
       : segment !== 'General' && segment !== 'Target accounts' && segment !== 'HubSpot contacts'
         ? `${segment} ${label}`
         : `${team} ${label}`
@@ -294,7 +294,7 @@ function buildCampaigns(project: Project, contactCount: number): Campaign[] {
       id: uid('camp'),
       orgId: project.orgId,
       projectId: project.id,
-      name: project.kind === 'today' ? `Today · ${contactCount} prospects` : `${project.segment} ${goal}`,
+      name: project.kind === 'today' ? `Outbound sequence · ${contactCount} prospects` : `${project.segment} ${goal}`,
       state: 'ACTIVE',
       type,
       done: 0,

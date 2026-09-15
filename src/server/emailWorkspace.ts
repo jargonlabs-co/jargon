@@ -25,7 +25,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=tasks1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=dialer1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -34,6 +34,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=enroll1',
   'ui://jargon/email-workspace.html?v=surfaces1',
   'ui://jargon/email-workspace.html?v=queue1',
+  'ui://jargon/email-workspace.html?v=tasks1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -372,6 +373,7 @@ export const SAMPLE_QUEUE_WORKSPACE: EmailWorkspace = {
       day: 0,
       channel: 'call',
       label: 'Discovery dial',
+      body: 'Reference the intro email. Ask how {{company}} runs outbound today and who owns it.',
       order: 1
     },
     {

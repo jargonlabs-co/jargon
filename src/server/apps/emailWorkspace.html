@@ -212,6 +212,55 @@
     .runner-h .kicker { font-size: 12.5px; }
     .runner .banner { margin: 10px 0 0; }
     .nav { display: flex; gap: 6px; }
+
+    .dialer {
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px; margin-top: 12px; background: var(--bg);
+    }
+    .dial-h {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .dial-h select {
+      border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bg); padding: 5px 8px; max-width: 180px;
+    }
+    .dial-who { text-align: center; margin-top: 14px; font-weight: 600; }
+    .dial-num {
+      text-align: center; font-size: 22px; font-weight: 600;
+      letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 2px;
+    }
+    .dial-timer {
+      text-align: center; color: var(--muted); font-size: 12px;
+      font-variant-numeric: tabular-nums; min-height: 17px;
+    }
+    .dial-script { margin-top: 12px; }
+    .dial-script p {
+      margin: 0; color: var(--muted); font-size: 12.5px;
+      white-space: pre-wrap; line-height: 1.5;
+    }
+    .keypad {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      width: min(250px, 100%); margin: 14px auto 0;
+    }
+    .key {
+      border: 1px solid var(--line); background: var(--bg); border-radius: 999px;
+      padding: 9px 0; display: grid; justify-items: center; gap: 1px;
+    }
+    .key:hover { background: var(--bg2); }
+    .key span { font-size: 17px; font-weight: 550; line-height: 1.1; }
+    .key em {
+      font-style: normal; font-size: 8.5px; font-weight: 650;
+      letter-spacing: 0.08em; color: var(--muted); min-height: 10px;
+    }
+    .dial-actions {
+      display: flex; gap: 8px; justify-content: center;
+      margin-top: 14px; flex-wrap: wrap;
+    }
+    .btn.call { background: var(--ok); border-color: var(--ok); color: #fff; }
+    .btn.end { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .btn.call:hover, .btn.end:hover { opacity: 0.92; }
+    .btn.on { background: var(--fg); border-color: var(--fg); color: var(--bg); }
   </style>
 </head>
 <body>
@@ -404,6 +453,13 @@ function dueLabel(task) {
   let callTimer = 0;
   let taskFilter = 'open';
   let selectedTaskId = null;
+  let dialState = 'idle';
+  let dialContactId = null;
+  let dialDigits = '';
+  let dialSeconds = 0;
+  let dialMuted = false;
+  let dialTicker = 0;
+  let dialConnect = 0;
 
   function surface() {
     if (!ws) return 'sequence';
@@ -697,6 +753,7 @@ function dueLabel(task) {
     const next = (ws.contacts || []).find((c) => c.id === contact.id);
     if (nextFor(next) && next) actionPane = nextFor(next);
     advanceTask();
+    resetDialer();
     setNotice(`Logged ${status.replace('_', ' ')} for ${contact.name}.`, 'ok');
   }
 
@@ -813,7 +870,7 @@ function dueLabel(task) {
     const preview = oneLine(step.subject || step.body) || (step.channel === 'call' ? 'Talk track from the queue' : 'No copy yet');
     const ico = step.channel === 'call' ? ICO.phone : step.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
     return `
-      <button class="node ${selectedStep === i && seqPane === 'email' ? 'on' : ''}" type="button" data-step="${i}">
+      <button class="node ${selectedStep === i && seqPane !== 'flow' ? 'on' : ''}" type="button" data-step="${i}">
         <div class="node-top">
           <span class="ico">${ico}</span>
           <div class="node-copy">
@@ -827,6 +884,136 @@ function dueLabel(task) {
         </div>
       </button>
     `;
+  }
+
+  const KEYS = [
+    ['1', ''], ['2', 'ABC'], ['3', 'DEF'],
+    ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
+    ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'],
+    ['*', ''], ['0', '+'], ['#', ''],
+  ];
+
+  function clockText(seconds) {
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  function dialerContact() {
+    const people = ws.contacts || [];
+    return people.find((c) => c.id === dialContactId) || people[0] || null;
+  }
+
+  function dialerNumber() {
+    return dialDigits || dialerContact()?.phone || '';
+  }
+
+  function resetDialer(contactId) {
+    clearTimeout(dialConnect);
+    clearInterval(dialTicker);
+    dialConnect = 0;
+    dialTicker = 0;
+    dialState = 'idle';
+    dialSeconds = 0;
+    dialMuted = false;
+    dialDigits = '';
+    if (contactId !== undefined) dialContactId = contactId;
+  }
+
+  function placeCall() {
+    if (!dialerNumber()) { setNotice('No number yet — use the keypad to enter one.', 'err'); return; }
+    clearTimeout(dialConnect);
+    clearInterval(dialTicker);
+    dialState = 'dialing';
+    dialSeconds = 0;
+    dialMuted = false;
+    notice = '';
+    render();
+    dialConnect = setTimeout(() => {
+      if (dialState !== 'dialing') return;
+      dialState = 'connected';
+      dialTicker = setInterval(() => {
+        dialSeconds += 1;
+        const el = document.getElementById('dial-timer');
+        if (!el) { clearInterval(dialTicker); return; }
+        el.textContent = clockText(dialSeconds);
+      }, 1000);
+      render();
+    }, 1600);
+  }
+
+  function hangUp() {
+    clearTimeout(dialConnect);
+    clearInterval(dialTicker);
+    dialState = dialSeconds ? 'ended' : 'idle';
+    render();
+  }
+
+  function renderDialer(step) {
+    const people = ws.contacts || [];
+    const contact = dialerContact();
+    const number = dialerNumber();
+    const live = dialState === 'dialing' || dialState === 'connected';
+    const status = dialState === 'dialing'
+      ? 'Calling…'
+      : dialState === 'connected'
+        ? 'On the line'
+        : dialState === 'ended'
+          ? `Ended · ${clockText(dialSeconds)}`
+          : [contact?.title, contact?.company].filter(Boolean).join(' · ') || 'Ready';
+    const script = contact ? interpolate(step.body || '', contact) : step.body || '';
+    return `
+      <div class="dialer">
+        <div class="dial-h">
+          <div>
+            <div class="kicker">${esc(step.label || 'Call')}</div>
+            <div class="meta">${esc(status)}</div>
+          </div>
+          ${people.length > 1 && !live ? `
+            <select id="dial-who">
+              ${people.map((c) => `<option value="${esc(c.id)}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+          ` : ''}
+        </div>
+        <div class="dial-who">${esc(contact?.name || 'Keypad')}</div>
+        <div class="dial-num">${esc(number || 'Enter a number')}</div>
+        <div class="dial-timer" id="dial-timer">${live ? clockText(dialSeconds) : ''}</div>
+        ${script ? `
+          <div class="dial-script">
+            <label>Talk track</label>
+            <p>${esc(script)}</p>
+          </div>
+        ` : ''}
+        <div class="keypad">
+          ${KEYS.map(([key, sub]) => `
+            <button type="button" class="key" data-key="${esc(key)}"><span>${esc(key)}</span><em>${esc(sub)}</em></button>
+          `).join('')}
+        </div>
+        <div class="dial-actions">
+          ${live ? `
+            <button class="btn ${dialMuted ? 'on' : ''}" id="dial-mute">${dialMuted ? 'Unmute' : 'Mute'}</button>
+            <button class="btn end" id="dial-end">End call</button>
+          ` : `
+            ${dialDigits ? `<button class="btn" id="dial-back">Delete</button>` : ''}
+            <button class="btn call" id="dial-call">${dialState === 'ended' ? 'Call again' : 'Call'}</button>
+          `}
+        </div>
+        ${dialState === 'ended' ? `
+          <label>Log outcome</label>
+          <div class="row">
+            <button class="btn" data-disp="interested" ${busy ? 'disabled' : ''}>Interested</button>
+            <button class="btn" data-disp="no_answer" ${busy ? 'disabled' : ''}>No answer</button>
+            <button class="btn" data-disp="not_interested" ${busy ? 'disabled' : ''}>Not interested</button>
+            <button class="btn" data-disp="completed" ${busy ? 'disabled' : ''}>Done</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function dialerPane() {
+    if (seqPane !== 'call') return '';
+    const step = visibleSteps()[selectedStep];
+    if (!step || step.channel !== 'call') return '';
+    return renderDialer(step);
   }
 
   function renderFlow() {
@@ -877,6 +1064,7 @@ function dueLabel(task) {
     if (queue) {
       return `
         ${renderFlow()}
+        ${dialerPane()}
         <div class="row">
           ${emailSteps().length ? `<button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>` : ''}
           <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
@@ -888,7 +1076,7 @@ function dueLabel(task) {
         <button type="button" class="${seqPane === 'flow' ? 'on' : ''}" data-pane="flow">Flow</button>
         <button type="button" class="${seqPane === 'email' ? 'on' : ''}" data-pane="email">Emails</button>
       </div>
-      ${seqPane === 'flow' ? renderFlow() : renderEmailEditor()}
+      ${seqPane === 'call' ? `${renderFlow()}${dialerPane()}` : seqPane === 'flow' ? renderFlow() : renderEmailEditor()}
       <div class="row">
         <button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>
         <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
@@ -1334,19 +1522,31 @@ function dueLabel(task) {
     root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
     root.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
+      resetDialer();
       tab = el.getAttribute('data-tab');
       if (tab !== 'inbox') selectedMessageId = null;
       render();
     }));
     root.querySelectorAll('[data-pane]').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
+      resetDialer();
       seqPane = el.getAttribute('data-pane');
       render();
     }));
     root.querySelectorAll('[data-step]').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
-      selectedStep = Number(el.getAttribute('data-step'));
-      seqPane = 'email';
+      const next = Number(el.getAttribute('data-step'));
+      const changed = next !== selectedStep;
+      selectedStep = next;
+      const step = visibleSteps()[selectedStep];
+      seqPane = step?.channel === 'call' ? 'call' : 'email';
+      if (seqPane === 'call') {
+        if (changed || dialState === 'idle') resetDialer(selectedId ?? undefined);
+        selectedId = dialerContact()?.id ?? selectedId;
+      } else {
+        resetDialer();
+      }
+      notice = '';
       render();
     }));
     root.querySelectorAll('[data-filter]').forEach((el) => el.addEventListener('click', () => {
@@ -1382,6 +1582,25 @@ function dueLabel(task) {
       bind('edit-subject', 'subject');
       bind('edit-body', 'body');
     }
+    root.querySelectorAll('[data-key]').forEach((el) => el.addEventListener('click', () => {
+      dialDigits = `${dialDigits}${el.getAttribute('data-key')}`.slice(0, 20);
+      render();
+    }));
+    root.querySelector('#dial-back')?.addEventListener('click', () => {
+      dialDigits = dialDigits.slice(0, -1);
+      render();
+    });
+    root.querySelector('#dial-call')?.addEventListener('click', placeCall);
+    root.querySelector('#dial-end')?.addEventListener('click', hangUp);
+    root.querySelector('#dial-mute')?.addEventListener('click', () => {
+      dialMuted = !dialMuted;
+      render();
+    });
+    root.querySelector('#dial-who')?.addEventListener('change', (e) => {
+      resetDialer(e.target.value);
+      selectedId = dialContactId;
+      render();
+    });
     root.querySelector('#save-seq')?.addEventListener('click', saveSequence);
     root.querySelector('#start-seq')?.addEventListener('click', startSequence);
     root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
@@ -1435,6 +1654,7 @@ function dueLabel(task) {
     if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
     ws = parsed;
     applySurface();
+    resetDialer(null);
     seqPane = 'flow';
     selectedStep = 0;
     selectedMessageId = null;

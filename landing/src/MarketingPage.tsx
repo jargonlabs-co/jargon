@@ -122,7 +122,7 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
             <h1>For those who are brave enough to build.</h1>
             <p className="hero-lede">
               Build real outbound sequences inside the tools your reps already use. Kill workflow
-              bottlenecks and build more pipeline instantly.
+              bottlenecks and build more pipeline.
             </p>
             <div className="hero-actions">
               <a

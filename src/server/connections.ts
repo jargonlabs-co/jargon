@@ -78,6 +78,20 @@ export function upsertConnection(
   return result!
 }
 
+export function setConnectionMeta(
+  store: DataStore,
+  orgId: string,
+  provider: ConnectionProvider,
+  meta: Record<string, string>
+): void {
+  store.update((db) => {
+    const existing = db.connections.find((c) => c.orgId === orgId && c.provider === provider)
+    if (!existing) return
+    existing.meta = { ...existing.meta, ...meta }
+    existing.updatedAt = Date.now()
+  })
+}
+
 export function createOAuthState(
   store: DataStore,
   input: {

@@ -38,8 +38,6 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
-import { runOutboundSchedulerTick } from './scheduler'
-
 const ContactStatus = z.enum([
   'queued',
   'active',
@@ -708,7 +706,6 @@ export function registerJargonTools(
         sandbox
       })
       if (!result.ok) return fail(result.error)
-      await runOutboundSchedulerTick(store, config, billing)
       return workspaceOk(store, config, actor.orgId, projectId, sandbox)
     }
   )

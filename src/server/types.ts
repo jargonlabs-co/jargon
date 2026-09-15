@@ -281,6 +281,9 @@ export interface Message {
   status: MessageStatus
   channel: 'email' | 'linkedin'
   providerMessageId?: string
+  /** HeyReach conversation + sending LinkedIn account, for threading replies */
+  providerThreadId?: string
+  providerAccountId?: number
   mode: 'demo' | 'gmail' | 'heyreach'
   createdAt: number
   updatedAt: number

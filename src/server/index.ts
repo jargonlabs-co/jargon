@@ -43,9 +43,6 @@ import {
   voiceTwiml
 } from './providers/twilio'
 import {
-  sendHeyReachLinkedInMessage
-} from './providers/heyreach'
-import {
   exchangeHubSpotCode,
   fetchHubSpotContacts,
   finishHubSpotOAuthHtml,

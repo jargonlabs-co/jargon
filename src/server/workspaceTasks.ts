@@ -170,8 +170,9 @@ export function buildWorkspaceTasks(input: {
       }
 
       const sendAt = message?.sendAt ?? dueAt
-      // A draft is actionable the moment it exists; everything else waits for its send day.
-      const actionable = message?.status === 'draft' || sendAt <= now
+      // An ad-hoc draft is actionable the moment it exists; anything with a send
+      // day — including a cadence drafted at enrollment — waits for that day.
+      const actionable = (message?.status === 'draft' && message.sendAt == null) || sendAt <= now
       const state: TaskState = stopped
         ? 'skipped'
         : !target?.trim()

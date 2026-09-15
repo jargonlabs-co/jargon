@@ -40,8 +40,6 @@ import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
-import { runOutboundSchedulerTick } from './scheduler'
-
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
   return Array.isArray(value) ? value[0] : value
@@ -513,8 +511,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(400).json({ error: result.error })
       return
     }
-    const sent = await runOutboundSchedulerTick(store, config, billing)
-    res.status(201).json({ ...result, sentDue: sent })
+    res.status(201).json({ ...result, sentDue: 0 })
   })
 
   router.get('/projects/:id/messages', auth, (req, res) => {

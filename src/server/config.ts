@@ -34,6 +34,10 @@ export interface ServerConfig {
   }
   heyreach: {
     apiKey: string
+    /** LinkedIn account to send from; defaults to the first active HeyReach account */
+    senderAccountId: string
+    /** Campaign used for cold outreach when no conversation exists yet */
+    campaignId: string
   }
   supabase: {
     url: string
@@ -120,7 +124,9 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       fromNumber: (process.env.TWILIO_FROM_NUMBER ?? '').trim()
     },
     heyreach: {
-      apiKey: (process.env.HEYREACH_API_KEY ?? '').trim()
+      apiKey: (process.env.HEYREACH_API_KEY ?? '').trim(),
+      senderAccountId: (process.env.HEYREACH_SENDER_ACCOUNT_ID ?? '').trim(),
+      campaignId: (process.env.HEYREACH_CAMPAIGN_ID ?? '').trim()
     },
     supabase: {
       url: (process.env.SUPABASE_URL ?? '').trim().replace(/\/$/, ''),

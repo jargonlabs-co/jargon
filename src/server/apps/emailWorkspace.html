@@ -354,6 +354,7 @@ function toLocalInput(ms) {
 
 function cadenceLabel(ws, contact, steps) {
   let queued = 0;
+  let drafted = 0;
   let sent = 0;
   let any = false;
   for (const step of steps) {
@@ -361,9 +362,11 @@ function cadenceLabel(ws, contact, steps) {
     if (!msg) continue;
     any = true;
     if (msg.status === 'queued') queued += 1;
+    if (msg.status === 'draft') drafted += 1;
     if (msg.status === 'sent') sent += 1;
   }
   if (queued) return `${queued} scheduled`;
+  if (drafted) return `${drafted} drafted`;
   if (sent && sent === steps.length) return 'Sent';
   if (sent) return `${sent} sent`;
   return statusLabel(ws, contact);
@@ -681,7 +684,7 @@ function dueLabel(task) {
   async function startSequence() {
     if (!pendingStart) {
       pendingStart = true;
-      setNotice('Start this sequence for everyone? Day 0 sends now; later emails send on their wait days.', '');
+      setNotice('Start this sequence for everyone? Every step is drafted up front — nothing sends until you send it.', '');
       return;
     }
     pendingStart = false;
@@ -695,7 +698,7 @@ function dueLabel(task) {
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
     ws = parsed;
     syncDrafts();
-    setNotice('Sequence started. Emails are queued by day and will send automatically.', 'ok');
+    setNotice('Sequence started. Emails are drafted by day — review and send each one.', 'ok');
     app.updateModelContext?.({
       content: [{ type: 'text', text: `Started the email sequence for ${ws.name} (${ws.contactCount} contacts).` }],
     });

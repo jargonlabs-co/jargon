@@ -647,8 +647,16 @@ export async function sendPublicMessage(
   }
   let mode: Message['mode'] = 'demo'
   let providerMessageId: string | undefined
+  let providerThreadId: string | undefined
+  let providerAccountId: number | undefined
   let error: string | undefined
-  const sendAt = finalStatus === 'queued' ? input.sendAt ?? now : undefined
+  // Drafts keep their send day so the queue can still schedule them by step.
+  const sendAt =
+    finalStatus === 'queued'
+      ? input.sendAt ?? now
+      : finalStatus === 'draft'
+        ? input.sendAt
+        : undefined
   const shouldSendNow = finalStatus === 'sent'
 
   if (shouldSendNow && messageChannel === 'email') {
@@ -672,25 +680,29 @@ export async function sendPublicMessage(
   }
 
   if (shouldSendNow && messageChannel === 'linkedin') {
-    if (input.sandbox) {
-      mode = 'demo'
-      providerMessageId = `sandbox_li_${now}`
-    } else {
-      const apiKey = config.heyreach.apiKey.trim() || 'demo'
-      const demo = !config.heyreach.apiKey.trim() || apiKey === 'demo'
-      try {
-        const result = await sendHeyReachLinkedInMessage({
-          apiKey,
-          linkedinUrl: contact.linkedinUrl ?? '',
-          message: body,
-          demo
-        })
-        mode = result.mode
-        providerMessageId = result.id
-      } catch (err) {
-        finalStatus = 'failed'
-        error = err instanceof Error ? err.message : 'LinkedIn send failed'
-      }
+    try {
+      const result = await sendHeyReachLinkedInMessage({
+        store,
+        config,
+        orgId: contact.orgId,
+        linkedinUrl: contact.linkedinUrl ?? '',
+        message: body,
+        subject,
+        contact: {
+          name: contact.name,
+          company: contact.company,
+          title: contact.title,
+          email: contact.email
+        },
+        sandbox: input.sandbox
+      })
+      mode = result.mode
+      providerMessageId = result.id
+      providerThreadId = result.conversationId
+      providerAccountId = result.accountId
+    } catch (err) {
+      finalStatus = 'failed'
+      error = err instanceof Error ? err.message : 'LinkedIn send failed'
     }
   }
 
@@ -706,6 +718,8 @@ export async function sendPublicMessage(
       channel: messageChannel,
       mode,
       providerMessageId,
+      providerThreadId,
+      providerAccountId,
       error,
       sandbox: input.sandbox,
       createdAt: now,
@@ -944,6 +958,8 @@ export async function deliverPublicMessage(
   const now = Date.now()
   let mode: Message['mode'] = message.mode
   let providerMessageId = message.providerMessageId
+  let providerThreadId = message.providerThreadId
+  let providerAccountId = message.providerAccountId
   let error: string | undefined
   let finalStatus: MessageStatus = 'sent'
   const demo = sandbox || message.sandbox
@@ -967,25 +983,29 @@ export async function deliverPublicMessage(
       }
     }
   } else {
-    if (demo) {
-      mode = 'demo'
-      providerMessageId = `sandbox_li_${now}`
-    } else {
-      const apiKey = config.heyreach.apiKey.trim() || 'demo'
-      const heyreachDemo = !config.heyreach.apiKey.trim() || apiKey === 'demo'
-      try {
-        const result = await sendHeyReachLinkedInMessage({
-          apiKey,
-          linkedinUrl: contact.linkedinUrl ?? '',
-          message: message.body,
-          demo: heyreachDemo
-        })
-        mode = result.mode
-        providerMessageId = result.id
-      } catch (err) {
-        finalStatus = 'failed'
-        error = err instanceof Error ? err.message : 'LinkedIn send failed'
-      }
+    try {
+      const result = await sendHeyReachLinkedInMessage({
+        store,
+        config,
+        orgId,
+        linkedinUrl: contact.linkedinUrl ?? '',
+        message: message.body,
+        subject: message.subject,
+        contact: {
+          name: contact.name,
+          company: contact.company,
+          title: contact.title,
+          email: contact.email
+        },
+        sandbox: demo
+      })
+      mode = result.mode
+      providerMessageId = result.id
+      providerThreadId = result.conversationId
+      providerAccountId = result.accountId
+    } catch (err) {
+      finalStatus = 'failed'
+      error = err instanceof Error ? err.message : 'LinkedIn send failed'
     }
   }
 
@@ -995,6 +1015,8 @@ export async function deliverPublicMessage(
     row.status = finalStatus
     row.mode = mode
     row.providerMessageId = providerMessageId
+    row.providerThreadId = providerThreadId
+    row.providerAccountId = providerAccountId
     row.error = error
     row.updatedAt = now
     row.sentAt = finalStatus === 'sent' ? now : undefined
@@ -1087,7 +1109,8 @@ export async function enrollPublicSequence(
         subject: step.subject,
         body: step.body ?? '',
         channel: step.channel,
-        status: 'queued',
+        // Enrollment drafts the cadence; nothing leaves until a human sends it.
+        status: 'draft',
         sendAt: startAt + Number(step.day || 0) * DAY_MS,
         stepId: step.id,
         sandbox: input?.sandbox
@@ -1122,7 +1145,7 @@ export async function enrollPublicSequence(
       orgId,
       projectId,
       kind: 'campaign',
-      summary: `Started sequence · queued ${created.length} messages for ${wanted.length} contacts`,
+      summary: `Started sequence · drafted ${created.length} messages for ${wanted.length} contacts`,
       createdAt: now
     })
   })

@@ -1,6 +1,7 @@
 import type { DataStore } from './store'
 import type {
   CallSession,
+  Channel,
   Contact,
   ContactStatus,
   Database,
@@ -68,6 +69,7 @@ export type PublicContact = {
   accountName?: string
   context?: string[]
   attrs?: Record<string, unknown>
+  channelsDone?: Contact['channelsDone']
   createdAt: number
   updatedAt: number
 }
@@ -163,6 +165,7 @@ export function toPublicContact(contact: Contact): PublicContact {
     accountName: contact.accountName,
     context: contact.context,
     attrs: contact.attrs && Object.keys(contact.attrs).length ? contact.attrs : undefined,
+    channelsDone: contact.channelsDone?.length ? contact.channelsDone : undefined,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt
   }
@@ -431,7 +434,7 @@ function cancelQueuedFollowups(db: Database, contactId: string, now: number, rea
 export function applyDisposition(
   store: DataStore,
   contactId: string,
-  input: { status: ContactStatus; note?: string; advanceStep?: boolean }
+  input: { status: ContactStatus; note?: string; advanceStep?: boolean; channel?: Channel }
 ): { contact: PublicContact; next: QueueNextPublic } {
   const now = Date.now()
   const doAdvance = shouldAdvanceStep(input.status, input.advanceStep)
@@ -440,6 +443,11 @@ export function applyDisposition(
     if (!c) return
     c.status = input.status
     c.updatedAt = now
+    if (input.channel) {
+      const done = new Set(c.channelsDone ?? [])
+      done.add(input.channel)
+      c.channelsDone = [...done]
+    }
     if (doAdvance) {
       c.stepIndex = Math.min(c.stepIndex + 1, 99)
     }

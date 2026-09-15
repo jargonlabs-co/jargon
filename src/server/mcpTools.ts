@@ -66,9 +66,10 @@ function workspaceOk(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  sandbox: boolean
+  sandbox: boolean,
+  focus?: 'tasks'
 ) {
-  const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox })
+  const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox, focus })
   if (!ws) return fail('Project not found')
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(ws) }],
@@ -110,7 +111,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list or deploy_tool. Describe the UI in prompt: sequence, one-off emails, or inbox. That opens the matching outbound UI. For a cadence, write spec.steps with {{field}} templates and call start_sequence. For one-offs, save_draft / send_draft. Reopen with show_email_workspace. dashboardUrl is overflow only.'
+          'Import a list with import_list or deploy_tool. Describe the UI in prompt: a three-channel queue, sequence, one-off emails, or inbox. That opens the matching outbound UI in Claude. For a cadence, write spec.steps with {{field}} templates. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
       })
     }
   )
@@ -283,13 +284,13 @@ export function registerJargonTools(
     {
       title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from chat, another connector, or a pasted table and open the outbound UI in Claude (sequence, one-off emails, or inbox — from the prompt). Extra fields become template variables. For a cadence, pass spec.steps with {{field}} templates. contacts is required.',
+        'Ingest people from chat, another connector, or a pasted table and open the outbound UI in Claude. The prompt picks the chrome: a contact queue (email + phone + LinkedIn), sequence, one-off emails, or inbox. Extra fields become template variables. For a cadence, pass spec.steps with {{field}} templates. contacts is required.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z
           .string()
           .min(1)
-          .describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
+          .describe('What to build, e.g. outbound queue for these 10 RevOps leaders'),
         contacts: z
           .array(ContactInput)
           .min(1)
@@ -319,7 +320,7 @@ export function registerJargonTools(
     {
       title: 'Deploy outbound workspace',
       description:
-        'Create an outbound workspace from a prompt and open the matching UI in Claude when the motion includes email (sequence, one-off emails, or inbox). Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. dashboardUrl is overflow (dialer, queue) — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace from a prompt and open the matching UI in Claude (queue for email/phone/LinkedIn, or sequence / one-off / inbox for email-only). Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
@@ -533,14 +534,15 @@ export function registerJargonTools(
         contactId: z.string(),
         status: ContactStatus,
         note: z.string().optional(),
-        advanceStep: z.boolean().optional()
+        advanceStep: z.boolean().optional(),
+        channel: z.enum(['email', 'call', 'linkedin']).optional()
       })
     },
-    async ({ contactId, status, note, advanceStep }) => {
+    async ({ contactId, status, note, advanceStep, channel }) => {
       if (!isContactStatus(status)) return fail('invalid status')
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      return ok(applyDisposition(store, contact.id, { status, note, advanceStep }))
+      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel }))
     }
   )
 
@@ -566,7 +568,7 @@ export function registerJargonTools(
     {
       title: 'Get sequence',
       description:
-        'Open the outbound UI (sequence, inbox, or one-off emails) with steps, catalog, contacts, and messages. Prefer this or show_email_workspace over dumping JSON into chat.',
+        'Open the outbound UI (queue, sequence, inbox, or one-off emails) with steps, catalog, contacts, and messages. Prefer this or show_email_workspace over dumping JSON into chat.',
       inputSchema: z.object({ projectId: z.string() }),
       annotations: { readOnlyHint: true },
       _meta: EMAIL_WORKSPACE_TOOL_META
@@ -579,12 +581,75 @@ export function registerJargonTools(
     {
       title: 'Show email workspace',
       description:
-        'Reopen the outbound UI in Claude (sequence, one-off emails, or inbox). Call after import_list, deploy_tool, or writing drafts.',
+        'Reopen the outbound UI in Claude (queue, sequence, one-off emails, or inbox). Call after import_list, deploy_tool, or writing drafts.',
       inputSchema: z.object({ projectId: z.string() }),
       annotations: { readOnlyHint: true },
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
     async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+  )
+
+  server.registerTool(
+    'show_tasks',
+    {
+      title: "Show today's tasks",
+      description:
+        'Open the task view in Claude: every sequence step that is due for every enrolled contact, in due order. The user clicks through them one at a time — send the email, log the call, send the LinkedIn note. Use this when they ask what is due today or want to work their tasks.',
+      inputSchema: z.object({ projectId: z.string() }),
+      annotations: { readOnlyHint: true },
+      _meta: EMAIL_WORKSPACE_TOOL_META
+    },
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
+  )
+
+  server.registerTool(
+    'list_tasks',
+    {
+      title: 'List sequence tasks',
+      description:
+        'Sequence steps due for enrolled contacts, as JSON. Use to answer questions about workload; use show_tasks when the user wants to work them.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        bucket: z
+          .enum(['open', 'overdue', 'today', 'upcoming', 'done', 'skipped', 'all'])
+          .optional()
+          .describe('Defaults to open — overdue plus due today.'),
+        contactId: z.string().optional(),
+        limit: z.number().int().min(1).max(200).optional()
+      }),
+      annotations: { readOnlyHint: true }
+    },
+    async ({ projectId, bucket, contactId, limit }) => {
+      const ws = getEmailWorkspace(store, config, actor.orgId, projectId, { sandbox })
+      if (!ws) return fail('Project not found')
+      const want = bucket ?? 'open'
+      const tasks = ws.tasks.filter((task) => {
+        if (contactId && task.contactId !== contactId) return false
+        if (want === 'all') return true
+        if (want === 'open') return task.bucket === 'overdue' || task.bucket === 'today'
+        return task.bucket === want
+      })
+      return ok({
+        projectId: ws.projectId,
+        name: ws.name,
+        stats: ws.taskStats,
+        tasks: tasks.slice(0, limit ?? 50).map((task) => ({
+          id: task.id,
+          contactId: task.contactId,
+          contact: task.contactName,
+          company: task.contactMeta,
+          channel: task.channel,
+          step: task.stepLabel,
+          day: task.day,
+          dueAt: new Date(task.dueAt).toISOString(),
+          state: task.state,
+          bucket: task.bucket,
+          subject: task.subject,
+          reason: task.reason
+        })),
+        total: tasks.length
+      })
+    }
   )
 
   server.registerTool(

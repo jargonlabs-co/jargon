@@ -17,7 +17,7 @@ export type {
 }
 
 /** In-Claude MCP App chrome. Web still uses PrimarySurface. */
-export type McpSurface = 'sequence' | 'inbox' | 'one_off' | 'overflow'
+export type McpSurface = 'sequence' | 'inbox' | 'one_off' | 'queue' | 'tasks' | 'overflow'
 
 const CHANNELS: Channel[] = ['email', 'call', 'linkedin']
 const SURFACES: PrimarySurface[] = ['queue', 'dial', 'inbox', 'linkedin', 'sequence']
@@ -73,6 +73,8 @@ const MCP_SEQUENCE_RE =
   /\bsequenc|\bcadence\b|\bdrip\b|\bfollow[ -]?ups?\b|\bover \d+ days\b|\bday \d+\b/
 const MCP_ONE_OFF_RE =
   /\bone[ -]?offs?\b|\bhandful\b|\ba few emails\b|\bindividual emails?\b|\bjust (?:send|email|draft)/
+const MCP_TASKS_RE =
+  /\btasks? (?:view|list|feed|tab|board)\b|\bdaily tasks\b|\btoday'?s tasks\b|\btasks? due\b|\bdue today\b|\bto[ -]?do list\b|\bwork (?:through )?(?:my |the )?tasks\b|\bclick through .{0,24}tasks\b/
 
 export function inferMcpSurface(input: {
   prompt: string
@@ -85,7 +87,17 @@ export function inferMcpSurface(input: {
   const steps = input.steps ?? []
   const emailSteps = steps.filter((step) => step.channel === 'email')
   const emailMotion = channels.includes('email') || emailSteps.length > 0
-  if (!emailMotion) return 'overflow'
+  const executionList =
+    channels.includes('call') ||
+    channels.includes('linkedin') ||
+    input.primarySurface === 'dial' ||
+    input.primarySurface === 'linkedin' ||
+    input.primarySurface === 'queue' ||
+    /\btoday|daily (tasks?|queue)|work the (list|queue)|\bdialer|power[ -]?dial/.test(t)
+
+  if (MCP_TASKS_RE.test(t)) return 'tasks'
+  if (executionList) return 'queue'
+  if (!emailMotion) return 'queue'
 
   if (MCP_ONE_OFF_RE.test(t) && !MCP_SEQUENCE_RE.test(t)) return 'one_off'
   if (MCP_SEQUENCE_RE.test(t) || input.primarySurface === 'sequence') return 'sequence'
@@ -96,14 +108,6 @@ export function inferMcpSurface(input: {
       !MCP_INBOX_RE.test(t) &&
       (channels.length === 0 || (channels.length === 1 && channels[0] === 'email'))
     if (!compiledDefaultInbox) return 'inbox'
-  }
-  if (
-    (input.primarySurface === 'dial' ||
-      input.primarySurface === 'linkedin' ||
-      input.primarySurface === 'queue') &&
-    channels.length > 1
-  ) {
-    return 'overflow'
   }
   return 'one_off'
 }
@@ -247,18 +251,24 @@ function inferChannels(t: string, kind?: ProjectKind): Channel[] {
     return orderByMention(t, found)
   }
 
-  if (/\bcadence\b|multi[ -]?channel/.test(t)) return ['email', 'call', 'linkedin']
+  if (
+    /\bcadence\b|multi[ -]?channel|\boutbound\b|\btoday\b|daily (tasks?|queue)|work the (list|queue)/.test(
+      t
+    )
+  ) {
+    return ['email', 'call', 'linkedin']
+  }
   if (sequencer) return ['email']
   if (/\bdialer|power[ -]?dial/.test(t)) return exclusive ? ['call'] : ['call', 'email']
   if (kind === 'dialer') return ['call', 'email']
   if (kind === 'sequencer' || kind === 'list') return ['email']
-  if (kind === 'cadence') return ['email', 'call', 'linkedin']
-  return ['email', 'call']
+  if (kind === 'cadence' || kind === 'today') return ['email', 'call', 'linkedin']
+  return ['email', 'call', 'linkedin']
 }
 
 function inferPrimarySurface(t: string, channels: Channel[]): PrimarySurface {
   if (/\bdialer|power[ -]?dial/.test(t) && channels.includes('call')) return 'dial'
-  if (/\btoday|daily (tasks?|queue)|work the (list|queue)/.test(t)) return 'queue'
+  if (/\btoday|daily (tasks?|queue)|work the (list|queue)/.test(t) || MCP_TASKS_RE.test(t)) return 'queue'
   if (MCP_INBOX_RE.test(t) && channels.includes('email')) return 'inbox'
   if (MCP_ONE_OFF_RE.test(t) && channels.includes('email')) return 'inbox'
   if (/\bsequenc|\bcadence/.test(t) && !/\btoday|daily/.test(t)) return 'sequence'

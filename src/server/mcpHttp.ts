@@ -18,7 +18,7 @@ import {
 } from './mcpOauth'
 import { registerJargonTools } from './mcpTools'
 import type { BillingService } from './billing/types'
-import { JARGON_MCP_INSTRUCTIONS } from './emailWorkspace'
+import { JARGON_MCP_INSTRUCTIONS, SAMPLE_QUEUE_WORKSPACE, SAMPLE_TASKS_WORKSPACE } from './emailWorkspace'
 import { emailWorkspacePreviewHtml, registerEmailWorkspaceApp } from './mcpApps'
 
 const actorStore = new AsyncLocalStorage<McpActor>()
@@ -44,7 +44,14 @@ export function mountMcp(
   const auth = requireAuth(store, config)
 
   app.get('/mcp/apps/email-workspace', (req, res) => {
-    const payload = typeof req.query.payload === 'string' ? req.query.payload : undefined
+    const payload =
+      typeof req.query.payload === 'string'
+        ? req.query.payload
+        : req.query.surface === 'queue'
+          ? JSON.stringify(SAMPLE_QUEUE_WORKSPACE)
+          : req.query.surface === 'tasks'
+            ? JSON.stringify(SAMPLE_TASKS_WORKSPACE)
+            : undefined
     res.type('html').send(emailWorkspacePreviewHtml(payload))
   })
 

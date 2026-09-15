@@ -200,7 +200,7 @@ function createServer(): McpServer {
     {
       title: 'Import list into an outbound workspace',
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound workspace from that exact list. Describe the interface in prompt (sequence, one-off emails, inbox, LinkedIn queue, dialer). Optionally pass spec.channels / spec.primarySurface. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound workspace from that exact list. Describe the interface in prompt (queue with email/phone/LinkedIn, sequence, one-off emails, inbox). Optionally pass spec.channels / spec.primarySurface. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         prompt: z.string().min(1).describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
         contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue'),

@@ -1954,45 +1954,233 @@ button {
 }
 
 .connect-claude {
-  max-width: 560px;
-  margin: 48px auto;
-  padding: 0 20px 64px;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 48px 20px;
+  background: var(--bg);
 }
 
-.connect-claude-brand {
+.connect-claude-inner {
+  width: min(420px, 100%);
+}
+
+.connect-claude-head {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.connect-claude-pair {
   display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  margin-bottom: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
-.connect-claude-brand h1 {
-  font-size: 1.35rem;
-  margin: 0 0 4px;
+.connect-claude-tile {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
 }
 
-.connect-claude-lede,
-.connect-claude-card p {
+/* the Claude mark is its own squircle — drop the tile chrome around it */
+.connect-claude-tile.bare {
+  background: none;
+  border: none;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.connect-claude-wire {
+  width: 26px;
+  border-top: 2px dotted var(--text-dim);
+}
+
+.connect-claude-head h1 {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.connect-claude-head p {
+  margin: 8px auto 0;
+  max-width: 34ch;
   color: var(--text-muted);
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 
+.connect-claude .login-panel,
 .connect-claude-card {
-  padding: 20px;
+  width: 100%;
+  padding: 24px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--bg-panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.connect-claude-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  font-size: 0.8125rem;
+}
+
+.connect-claude-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--cream);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.connect-claude-identity > div {
+  display: grid;
+  min-width: 0;
+}
+
+.connect-claude-identity strong,
+.connect-claude-identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-claude-identity span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.connect-claude-switch {
+  margin-left: auto;
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.connect-claude-switch:hover {
+  color: var(--text);
+  border-color: #d9cfc0;
+}
+
+.connect-claude-scopes {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 18px 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.connect-claude-scopes li {
+  display: flex;
+  gap: 10px;
+}
+
+.connect-claude-scopes li::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.connect-claude-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.connect-claude-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.connect-claude-step-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
 .connect-claude-cmd {
-  margin: 16px 0;
-  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
   border-radius: 12px;
   background: #1a1f21;
-  color: #e8eee9;
-  font-size: 0.8125rem;
+}
+
+.connect-claude-cmd code {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
-  overflow-x: auto;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: #e8eee9;
+}
+
+.connect-claude-copy {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(253, 248, 238, 0.24);
+  background: transparent;
+  color: #e8eee9;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.connect-claude-copy:hover {
+  background: rgba(253, 248, 238, 0.12);
+}
+
+.connect-claude-foot {
+  margin-top: 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8125rem;
+}
+
+.connect-claude-foot a {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .key-actions {

@@ -1,11 +1,43 @@
 import { useState } from 'react'
 import { api, getClaudeConnectorInstallUrl, getMcpUrl } from '../api'
 import { useAuth } from '../auth'
+import { ClaudeMark } from './ClaudeMark'
 import { LoginPanel } from './LoginPanel'
 import { LogoMark } from './LogoMark'
 
+function ConnectShell({
+  title,
+  subtitle,
+  children
+}: {
+  title: string
+  subtitle: string
+  children: React.ReactNode
+}) {
+  return (
+    <main className="connect-claude">
+      <div className="connect-claude-inner">
+        <header className="connect-claude-head">
+          <div className="connect-claude-pair">
+            <span className="connect-claude-tile">
+              <LogoMark size={22} />
+            </span>
+            <span className="connect-claude-wire" aria-hidden="true" />
+            <span className="connect-claude-tile bare">
+              <ClaudeMark size={44} />
+            </span>
+          </div>
+          <h1>{title}</h1>
+          <p>{subtitle}</p>
+        </header>
+        {children}
+      </div>
+    </main>
+  )
+}
+
 export function ConnectClaude() {
-  const { user, org, loading } = useAuth()
+  const { user, org, loading, signOut } = useAuth()
   const params = new URLSearchParams(window.location.search)
   const clientId = params.get('client_id') ?? ''
   const redirectUri = params.get('redirect_uri') ?? ''
@@ -14,6 +46,10 @@ export function ConnectClaude() {
   const hasOAuth = Boolean(clientId && redirectUri && codeChallenge)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+
+  const command = `claude mcp add --transport http --scope user jargon ${getMcpUrl()}`
 
   async function approve() {
     setBusy(true)
@@ -33,63 +69,120 @@ export function ConnectClaude() {
     }
   }
 
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
+  }
+
   if (loading) {
     return <div className="page-loading">Loading…</div>
   }
 
-  return (
-    <div className="connect-claude">
-      <header className="connect-claude-brand">
-        <LogoMark size={28} />
-        <div>
-          <h1>Connect Claude to Jargon</h1>
-          <p>Claude will use your Jargon account to deploy queues and run outbound.</p>
-        </div>
-      </header>
+  if (!user) {
+    return (
+      <ConnectShell
+        title="Connect Claude to Jargon"
+        subtitle={
+          authMode === 'login'
+            ? 'Sign in to your Jargon account so Claude can deploy queues and run outbound on your behalf.'
+            : 'Create a Jargon workspace for Claude to deploy queues and run outbound in.'
+        }
+      >
+        <LoginPanel embedded showBrand={false} onModeChange={setAuthMode} />
+        <p className="connect-claude-foot">
+          {authMode === 'login' ? (
+            <>
+              New to Jargon? Choose <strong>Create account</strong> above.
+            </>
+          ) : (
+            <>You'll come straight back here to approve Claude.</>
+          )}
+        </p>
+      </ConnectShell>
+    )
+  }
 
-      {!user ? (
-        <>
-          <p className="connect-claude-lede">Sign in with the same account you use on jargonlabs.co.</p>
-          <LoginPanel embedded />
-        </>
-      ) : !hasOAuth ? (
-        <div className="connect-claude-card">
-          <p>
-            Signed in as <strong>{user.email}</strong>
-            {org ? ` · ${org.name}` : ''}. Open Claude to add Jargon as a connector, then approve
-            here when Claude sends you back.
-          </p>
-          <a
-            className="btn primary"
-            href={getClaudeConnectorInstallUrl()}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Connect Claude
-          </a>
-          <pre className="connect-claude-cmd">{`claude mcp add --transport http --scope user jargon ${getMcpUrl()}`}</pre>
-          <a className="btn ghost" href="/claude">
-            Back to dashboard
-          </a>
-        </div>
-      ) : (
-        <div className="connect-claude-card">
-          <p>
-            <strong>Claude</strong> wants access to <strong>{org?.name ?? 'your workspace'}</strong> as{' '}
-            {user.email}. This can send email and place calls on your plan.
-          </p>
-          {error ? <p className="form-error">{error}</p> : null}
-          <div className="key-actions">
-            <button type="button" className="btn primary" disabled={busy} onClick={() => void approve()}>
-              {busy ? 'Connecting…' : 'Allow Claude'}
-            </button>
-            <a className="btn ghost" href="/claude">
-              Cancel
-            </a>
-          </div>
-        </div>
-      )}
+  const identity = (
+    <div className="connect-claude-identity">
+      <span className="connect-claude-avatar" aria-hidden="true">
+        {user.email.slice(0, 1).toUpperCase()}
+      </span>
+      <div>
+        <strong>{user.email}</strong>
+        {org ? <span>{org.name}</span> : null}
+      </div>
+      <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
+        Switch
+      </button>
     </div>
   )
-}
 
+  if (!hasOAuth) {
+    return (
+      <ConnectShell
+        title="Add Jargon to Claude"
+        subtitle="Two ways to install the connector. Claude will send you back here to approve access."
+      >
+        <div className="connect-claude-card">
+          {identity}
+          <ol className="connect-claude-steps">
+            <li>
+              <span className="connect-claude-step-label">Claude desktop or web</span>
+              <a
+                className="btn primary btn-full"
+                href={getClaudeConnectorInstallUrl()}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Add connector in Claude
+              </a>
+            </li>
+            <li>
+              <span className="connect-claude-step-label">Claude Code</span>
+              <div className="connect-claude-cmd">
+                <code>{command}</code>
+                <button type="button" className="connect-claude-copy" onClick={() => void copyCommand()}>
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <p className="connect-claude-foot">
+          <a href="/claude">Back to dashboard</a>
+        </p>
+      </ConnectShell>
+    )
+  }
+
+  return (
+    <ConnectShell
+      title="Claude wants access to Jargon"
+      subtitle={`Approve to let Claude work inside ${org?.name ?? 'your workspace'}.`}
+    >
+      <div className="connect-claude-card">
+        {identity}
+        <ul className="connect-claude-scopes">
+          <li>Read your contacts, queues, and tool configuration</li>
+          <li>Deploy and update tools in your workspace</li>
+          <li>Send email and place calls billed to your plan</li>
+        </ul>
+        {error ? <p className="form-error">{error}</p> : null}
+        <div className="connect-claude-actions">
+          <button type="button" className="btn primary btn-full" disabled={busy} onClick={() => void approve()}>
+            {busy ? 'Connecting…' : 'Allow access'}
+          </button>
+          <a className="btn ghost btn-full" href="/claude">
+            Cancel
+          </a>
+        </div>
+      </div>
+      <p className="connect-claude-foot">You can revoke Claude's access any time from your dashboard.</p>
+    </ConnectShell>
+  )
+}

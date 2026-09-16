@@ -16,7 +16,7 @@ import {
   type PublicMessage,
   type PublicStep
 } from './publicApi'
-import { inferMcpSurface, motionComplete, nextChannel, type McpSurface } from '../shared/workspaceSpec'
+import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
 import {
   buildWorkspaceTasks,
   summarizeTasks,
@@ -25,7 +25,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=confirm1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=nl1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -36,6 +36,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=queue1',
   'ui://jargon/email-workspace.html?v=tasks1',
   'ui://jargon/email-workspace.html?v=dialer1',
+  'ui://jargon/email-workspace.html?v=confirm1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -51,11 +52,21 @@ export type WorkspaceContact = PublicContact & {
   linkedinPreview?: { body: string }
 }
 
+export type StepStat = {
+  stepId: string
+  drafted: number
+  queued: number
+  sent: number
+  skipped: number
+  due: number
+}
+
 export type EmailWorkspace = {
   view: 'email_workspace' | 'queue' | 'overflow'
   surface: McpSurface
-  /** Tab the app should land on, regardless of the inferred surface. */
-  focus?: 'tasks'
+  /** Tab the app should land on. Lifecycle default unless a tool set focus. */
+  focus?: McpTab
+  defaultTab: McpTab
   projectId: string
   name: string
   goal: string
@@ -77,6 +88,7 @@ export type EmailWorkspace = {
   /** Every sequence step for every enrolled contact, oldest due date first. */
   tasks: WorkspaceTask[]
   taskStats: TaskStats
+  stepStats: StepStat[]
   stats: {
     drafts: number
     queued: number
@@ -94,6 +106,25 @@ function projectChannels(project: Project): Channel[] {
   return []
 }
 
+function stepStatsFor(
+  steps: PublicStep[],
+  tasks: WorkspaceTask[],
+  messages: PublicMessage[]
+): StepStat[] {
+  return steps.map((step) => {
+    const forStep = tasks.filter((t) => t.stepId === step.id)
+    const msgs = messages.filter((m) => m.stepId === step.id)
+    return {
+      stepId: step.id,
+      drafted: msgs.filter((m) => m.status === 'draft').length,
+      queued: msgs.filter((m) => m.status === 'queued').length,
+      sent: msgs.filter((m) => m.status === 'sent').length,
+      skipped: forStep.filter((t) => t.state === 'skipped').length,
+      due: forStep.filter((t) => t.bucket === 'overdue' || t.bucket === 'today').length
+    }
+  })
+}
+
 export function isEmailMotion(project: Project, steps: Array<{ channel: string }>): boolean {
   if (projectChannels(project).includes('email')) return true
   return steps.some((step) => step.channel === 'email')
@@ -104,7 +135,7 @@ export function getEmailWorkspace(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  opts?: { sandbox?: boolean; focus?: 'tasks' }
+  opts?: { sandbox?: boolean; focus?: McpTab }
 ): EmailWorkspace | null {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return null
@@ -180,13 +211,20 @@ export function getEmailWorkspace(
     (c) => c.projectId === projectId && c.phase !== 'completed' && c.phase !== 'failed'
   )
   const tasks = buildWorkspaceTasks({ contacts, steps, messages, calls: projectCalls })
+  const taskStats = summarizeTasks(tasks)
+  const defaultTab = inferMcpDefaultTab({
+    surface,
+    focus: opts?.focus,
+    enrolled: taskStats.enrolled > 0
+  })
   const remaining = contacts.filter((c) => !motionComplete(c, spec)).length
   const view =
     surface === 'overflow' ? 'overflow' : surface === 'queue' || surface === 'tasks' ? 'queue' : 'email_workspace'
   return {
     view,
     surface,
-    focus: opts?.focus,
+    focus: opts?.focus ?? defaultTab,
+    defaultTab,
     projectId: project.id,
     name: project.name,
     goal: sequence.goal || project.spec?.goal || project.answers.goal || '',
@@ -206,7 +244,8 @@ export function getEmailWorkspace(
     openCall: openCallRow ? toPublicCall(openCallRow) : null,
     sources,
     tasks,
-    taskStats: summarizeTasks(tasks),
+    taskStats,
+    stepStats: stepStatsFor(steps, tasks, messages),
     stats: {
       drafts: messages.filter((m) => m.status === 'draft' && m.channel === 'email').length,
       queued: messages.filter((m) => m.status === 'queued' && m.channel === 'email').length,
@@ -223,6 +262,8 @@ export function getEmailWorkspace(
 export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   view: 'email_workspace',
   surface: 'sequence',
+  defaultTab: 'contacts',
+  focus: 'contacts',
   projectId: 'proj_preview',
   name: 'GTM Engineers · US',
   goal: 'Book a 20-minute intro',
@@ -328,6 +369,10 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   sources: [{ provider: 'hubspot', status: 'connected', accountLabel: 'Northwind CRM' }],
   tasks: [],
   taskStats: summarizeTasks([]),
+  stepStats: [
+    { stepId: 'step_1', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
+    { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 }
+  ],
   stats: {
     drafts: 0,
     queued: 0,
@@ -343,6 +388,8 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
 export const SAMPLE_QUEUE_WORKSPACE: EmailWorkspace = {
   view: 'queue',
   surface: 'queue',
+  defaultTab: 'queue',
+  focus: 'queue',
   projectId: 'proj_preview_queue',
   name: 'GTM Engineers · US',
   goal: 'Book a 20-minute intro',
@@ -469,6 +516,11 @@ export const SAMPLE_QUEUE_WORKSPACE: EmailWorkspace = {
   sources: [{ provider: 'hubspot', status: 'connected', accountLabel: 'Northwind CRM' }],
   tasks: [],
   taskStats: summarizeTasks([]),
+  stepStats: [
+    { stepId: 'step_1', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
+    { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
+    { stepId: 'step_3', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 }
+  ],
   stats: {
     drafts: 0,
     queued: 0,
@@ -563,10 +615,12 @@ const SAMPLE_TASKS = buildWorkspaceTasks({
 export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   ...SAMPLE_QUEUE_WORKSPACE,
   surface: 'tasks',
+  defaultTab: 'tasks',
   focus: 'tasks',
   messages: SAMPLE_TASK_MESSAGES,
   tasks: SAMPLE_TASKS,
   taskStats: summarizeTasks(SAMPLE_TASKS),
+  stepStats: stepStatsFor(SAMPLE_QUEUE_WORKSPACE.steps, SAMPLE_TASKS, SAMPLE_TASK_MESSAGES),
   stats: {
     ...SAMPLE_QUEUE_WORKSPACE.stats,
     queued: 3,
@@ -574,18 +628,20 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Claude researches people and companies, then Jargon stores contacts and runs the motion. The in-chat UI is chosen from the user's request.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Claude researches people and companies, then Jargon stores contacts and runs the motion.
 
-Describe the interface in prompt (and spec.channels / spec.primarySurface when it helps):
-- Outbound tool / outbound sequence / dialer / LinkedIn / multi-channel → a contact queue with Email, Call, and LinkedIn actions. Default is all three channels. The user works the list in Claude.
-- Sequence / cadence / over N days (email-only) → sequence flow. Put templates in spec.steps with {{first_name}}, {{company}}, and catalog keys. Call start_sequence (or the user clicks Start sequence) to enroll everyone by step day.
-- Task view / daily tasks / what's due today → one dated task per sequence step per enrolled contact. The user clicks through them: send the email, log the call, send the LinkedIn note. Open it with show_tasks; read it with list_tasks. Tasks only exist after start_sequence.
-- One-off / a handful of emails / just send these → one composer per person. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
-- Inbox / mailbox / replies / what's been sent → message list for the workspace.
+One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
+
+- After import_list / deploy_tool, the user sees Contacts — the people on this list.
+- Sequence is where they build and edit the cadence. Describe steps in workspace with {{first_name}}, {{company}}, catalog keys. Call start_sequence, or they click Start sequence, to enroll everyone by step day. That opens Tasks.
+- Tasks is today's work: one dated task per step per enrolled contact. They click through — send the email, log the call, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
+- Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn. Default is all three channels.
+- One-off / a handful / just send these → Contacts with a composer. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
+- Inbox / mailbox / replies / what's been sent → the message log. Not the send path for a cadence.
 
 Path:
 1. Ingest with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. Those tools open a confirmation card. Wait for the user to confirm. After they confirm, the matching outbound UI appears in the same card. Do not dump JSON — the UI is the workspace. Do not retry the write until they confirm or decline.
-3. Re-open with show_email_workspace, or show_tasks for the day's task list. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
+2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table. After they click Allow, the write runs and Contacts appears. Do not dump JSON into chat.
+3. Re-open with show_email_workspace, or show_tasks after the sequence is started. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

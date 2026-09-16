@@ -191,16 +191,6 @@ function createServer(): McpServer {
     subject: z.string().optional(),
     body: z.string().optional()
   })
-  const SpecInput = z
-    .object({
-      goal: z.string().optional(),
-      segment: z.string().optional(),
-      primarySurface: z.enum(['queue', 'dial', 'inbox', 'linkedin', 'sequence']).optional(),
-      channels: z.array(z.enum(['email', 'call', 'linkedin'])).min(1).max(3).optional(),
-      steps: z.array(SpecStep).min(1).max(8).optional()
-    })
-    .optional()
-
   const ContactInput = z
     .object({
       name: z.string().min(1).describe('Full name'),
@@ -222,17 +212,20 @@ function createServer(): McpServer {
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people from anywhere (Crustdata, research, a ranked list, a CSV) and create an outbound workspace from that exact list. Describe the interface in prompt (queue with email/phone/LinkedIn, sequence, one-off emails, inbox). Optionally pass spec.channels / spec.primarySurface. contacts is required. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people and create an outbound workspace. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table — never as a contacts array. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
-        prompt: z.string().min(1).describe('What to build, e.g. LinkedIn queue for these 10 RevOps leaders'),
-        contacts: z.array(ContactInput).min(1).max(100).describe('The exact people to put in the queue'),
-        spec: SpecInput
+        workspace: z
+          .string()
+          .min(1)
+          .describe(
+            'What to build, plus the people as a markdown table (Name | Company | Title | Email | LinkedIn). Do not pass a contacts array.'
+          )
       })
     },
-    async ({ prompt, contacts, spec }) => {
+    async ({ workspace }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts, spec } }))
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace } }))
       } catch (err) {
         return toolError(err)
       }
@@ -244,22 +237,20 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace from a prompt. Pass spec to control channels (email, call, linkedin) and which screen opens first. To ingest a researched list, pass contacts[] or put people in prompt. Omit both only to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the motion in workspace. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
-        prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
-        contacts: z
-          .array(ContactInput)
+        workspace: z
+          .string()
           .min(1)
-          .max(100)
-          .optional()
-          .describe('Optional override list. Prefer import_list when you already have people.'),
-        spec: SpecInput
+          .describe(
+            'What to build. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway.'
+          )
       })
     },
-    async ({ prompt, contacts, spec }) => {
+    async ({ workspace }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt, contacts, spec } }))
+        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace } }))
       } catch (err) {
         return toolError(err)
       }

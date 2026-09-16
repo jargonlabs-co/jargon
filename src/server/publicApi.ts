@@ -422,13 +422,82 @@ export function isSequenceStopStatus(status: ContactStatus): boolean {
 function cancelQueuedFollowups(db: Database, contactId: string, now: number, reason: string): number {
   let n = 0
   for (const message of db.messages) {
-    if (message.contactId !== contactId || message.status !== 'queued') continue
+    if (message.contactId !== contactId) continue
+    if (message.status !== 'queued' && message.status !== 'draft') continue
+    if (!message.stepId) continue
     message.status = 'cancelled'
     message.error = reason
     message.updatedAt = now
     n += 1
   }
   return n
+}
+
+export function unenrollPublicContact(
+  store: DataStore,
+  orgId: string,
+  contactId: string
+): { ok: true; contact: PublicContact; cancelled: number } | { ok: false; error: string } {
+  const contact = findOrgContact(store, orgId, contactId)
+  if (!contact) return { ok: false, error: 'Contact not found' }
+  let cancelled = 0
+  store.update((db) => {
+    const now = Date.now()
+    cancelled = cancelQueuedFollowups(db, contactId, now, 'Unenrolled')
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const hasSent = db.messages.some((m) => m.contactId === contactId && m.status === 'sent')
+    if (!hasSent && row.status === 'active') {
+      row.status = 'queued'
+      row.updatedAt = now
+    } else {
+      row.updatedAt = now
+    }
+    db.activities.unshift({
+      id: uid('act'),
+      orgId,
+      projectId: row.projectId,
+      contactId,
+      kind: 'campaign',
+      summary: `Unenrolled ${row.name} from the sequence`,
+      createdAt: now
+    })
+  })
+  return { ok: true, contact: toPublicContact(store.db.contacts.find((c) => c.id === contactId)!), cancelled }
+}
+
+export function skipPublicTask(
+  store: DataStore,
+  orgId: string,
+  contactId: string,
+  stepId: string
+): { ok: true; contactId: string; stepId: string } | { ok: false; error: string } {
+  const contact = findOrgContact(store, orgId, contactId)
+  if (!contact) return { ok: false, error: 'Contact not found' }
+  store.update((db) => {
+    const now = Date.now()
+    const message = db.messages.find(
+      (m) =>
+        m.contactId === contactId &&
+        m.stepId === stepId &&
+        m.status !== 'sent' &&
+        m.status !== 'cancelled'
+    )
+    if (message) {
+      message.status = 'cancelled'
+      message.error = 'Skipped'
+      message.updatedAt = now
+    }
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const skipped = Array.isArray(row.attrs?._skippedSteps)
+      ? [...(row.attrs._skippedSteps as unknown[])]
+      : []
+    if (!skipped.includes(stepId)) skipped.push(stepId)
+    row.attrs = { ...(row.attrs ?? {}), _skippedSteps: skipped }
+    row.updatedAt = now
+  })
+  return { ok: true, contactId, stepId }
 }
 
 export function applyDisposition(

@@ -52,7 +52,11 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
         if (cancelled) return
         setBundle(next)
         onBundleChange?.(next)
-        setPage(defaultPage(specOf(next.project)))
+        setPage(
+          defaultPage(specOf(next.project), {
+            enrolled: next.contacts.some((c) => c.status !== 'queued') || next.analytics.enrolled > 0
+          })
+        )
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
@@ -100,7 +104,19 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
       {page === 'context' ? (
         <ContextPage
           bundle={bundle}
-          onContinue={() => setPage(spec ? continuePage(spec) : 'dashboard')}
+          onContinue={() => {
+            if (!spec) {
+              setPage('dashboard')
+              return
+            }
+            if (spec.primarySurface === 'sequence') {
+              const enrolled =
+                bundle.contacts.some((c) => c.status !== 'queued') || bundle.analytics.enrolled > 0
+              setPage(enrolled ? 'today' : 'contacts')
+              return
+            }
+            setPage(continuePage(spec))
+          }}
         />
       ) : null}
       {page === 'today' ? (
@@ -138,8 +154,12 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
       {page === 'sequences' ? (
         <SequencesPage
           bundle={bundle}
-          onOpenInbox={() => setPage('inbox')}
-          onStartSequence={() => setPage(spec ? continuePage(spec) : 'today')}
+          onWorkTasks={() => setPage('today')}
+          onStartSequence={async () => {
+            await api.startSequence(bundle.project.id)
+            await refresh()
+            setPage('today')
+          }}
         />
       ) : null}
       {page === 'contacts' ? (
@@ -147,6 +167,20 @@ export function ProductApp({ projectId, onBundleChange, voice }: Props) {
           bundle={bundle}
           onRefresh={refresh}
           onConnectData={() => setPage('connections')}
+          onStartSequence={async () => {
+            await api.startSequence(bundle.project.id)
+            await refresh()
+            setPage('today')
+          }}
+          onWorkTasks={() => setPage('today')}
+          onEnroll={async (id) => {
+            await api.startSequence(bundle.project.id, { contactIds: [id] })
+            await refresh()
+          }}
+          onUnenroll={async (id) => {
+            await api.unenrollContact(id)
+            await refresh()
+          }}
           onCall={async (id) => {
             setFocusContactId(id)
             setFocusChannel('call')

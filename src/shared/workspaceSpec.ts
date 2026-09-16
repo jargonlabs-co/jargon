@@ -19,6 +19,9 @@ export type {
 /** In-Claude MCP App chrome. Web still uses PrimarySurface. */
 export type McpSurface = 'sequence' | 'inbox' | 'one_off' | 'queue' | 'tasks' | 'overflow'
 
+/** Tab the in-chat workspace lands on. Surface is the motion; this is the phase. */
+export type McpTab = 'contacts' | 'sequence' | 'tasks' | 'inbox' | 'queue'
+
 const CHANNELS: Channel[] = ['email', 'call', 'linkedin']
 const SURFACES: PrimarySurface[] = ['queue', 'dial', 'inbox', 'linkedin', 'sequence']
 const KINDS: ProjectKind[] = ['dialer', 'sequencer', 'cadence', 'list', 'today', 'generic']
@@ -101,15 +104,24 @@ export function inferMcpSurface(input: {
 
   if (MCP_ONE_OFF_RE.test(t) && !MCP_SEQUENCE_RE.test(t)) return 'one_off'
   if (MCP_SEQUENCE_RE.test(t) || input.primarySurface === 'sequence') return 'sequence'
-  if (MCP_INBOX_RE.test(t) || input.primarySurface === 'inbox') {
-    // Email-only compile defaults to inbox even when the user never asked for one.
-    const compiledDefaultInbox =
-      input.primarySurface === 'inbox' &&
-      !MCP_INBOX_RE.test(t) &&
-      (channels.length === 0 || (channels.length === 1 && channels[0] === 'email'))
-    if (!compiledDefaultInbox) return 'inbox'
-  }
-  return 'one_off'
+  // Inbox only when they asked for a mailbox — not because email-only compile defaulted to inbox.
+  if (MCP_INBOX_RE.test(t)) return 'inbox'
+  return 'sequence'
+}
+
+/** Contacts after import, Sequence while designing, Tasks after enroll. */
+export function inferMcpDefaultTab(input: {
+  surface: McpSurface
+  focus?: McpTab
+  enrolled: boolean
+}): McpTab {
+  if (input.focus) return input.focus
+  if (input.surface === 'tasks') return 'tasks'
+  if (input.surface === 'queue') return 'queue'
+  if (input.surface === 'inbox') return 'inbox'
+  if (input.surface === 'one_off') return 'contacts'
+  if (input.enrolled) return 'tasks'
+  return 'contacts'
 }
 
 export function specFromProject(project: {
@@ -275,7 +287,7 @@ function inferPrimarySurface(t: string, channels: Channel[]): PrimarySurface {
   if (channels.length === 1) {
     if (channels[0] === 'call') return 'dial'
     if (channels[0] === 'linkedin') return 'linkedin'
-    return 'inbox'
+    return 'sequence'
   }
   if (channels[0] === 'call') return 'dial'
   if (channels[0] === 'linkedin') return 'queue'

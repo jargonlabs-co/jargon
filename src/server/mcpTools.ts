@@ -4,7 +4,7 @@ import type { DataStore } from './store'
 import type { ServerConfig } from './config'
 import { toPublicUser } from './auth'
 import type { McpActor } from './mcpOauth'
-import { parseDeployContacts, parseRequiredContacts } from './deployContacts'
+import { extractContactsFromPrompt, parseDeployContacts, parseRequiredContacts } from './deployContacts'
 import {
   addPublicContacts,
   addPublicNote,
@@ -30,7 +30,9 @@ import {
   toPublicContact,
   toPublicProject,
   toPublicQueueNext,
-  updatePublicSequence
+  updatePublicSequence,
+  unenrollPublicContact,
+  skipPublicTask
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
@@ -38,15 +40,8 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
-import {
-  createProposal,
-  deleteProposal,
-  fallbackSummary,
-  getProposal,
-  namesList,
-  type ConfirmFact,
-  type McpProposal
-} from './mcpProposals'
+import type { McpTab } from '../shared/workspaceSpec'
+
 const ContactStatus = z.enum([
   'queued',
   'active',
@@ -57,21 +52,18 @@ const ContactStatus = z.enum([
   'not_interested'
 ])
 
-// Headline on the in-chat confirmation card. Write tools are read-only previews
-// that open that card; the write itself is an app-only `run_*` / `run_proposal`.
+// Claude's Allow card dumps nested objects/arrays as a JSON fence. Write tools
+// that the model calls only take strings — `summary` first so it sorts before
+// `workspace` — and the write runs when the user clicks Allow.
 const Summary = z
   .string()
   .min(1)
-  .max(160)
-  .optional()
+  .max(200)
   .describe(
-    'Always provide this. One plain-language sentence for the confirmation card. Name the people, workspace, or channel involved. No ids, field names, tool names, or JSON. Example: "Add 12 RevOps leaders to a new outbound queue."'
+    'The sentence shown on Claude\'s Allow card. Name the people and what Jargon will do. No ids, field names, tool names, or JSON. Example: "Add Tara Debek at Jargon to an 8-day outbound cadence."'
   )
 
 const APP_ONLY_META = { ui: { visibility: ['app'] as const } }
-
-const PENDING_INSTRUCTION =
-  'A confirmation card is showing. Wait for the user to confirm or decline. Do not call this tool again until they do.'
 
 const HINTS = {
   read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -103,7 +95,7 @@ function workspaceOk(
   orgId: string,
   projectId: string,
   sandbox: boolean,
-  focus?: 'tasks'
+  focus?: McpTab
 ) {
   const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox, focus })
   if (!ws) return fail('Project not found')
@@ -111,33 +103,6 @@ function workspaceOk(
     content: [{ type: 'text' as const, text: JSON.stringify(ws) }],
     _meta: EMAIL_WORKSPACE_TOOL_META
   }
-}
-
-function confirmOk(proposal: McpProposal) {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({
-          view: 'confirm_action',
-          status: 'pending_confirmation',
-          proposalId: proposal.id,
-          title: proposal.title,
-          summary: proposal.summary,
-          facts: proposal.facts,
-          confirmLabel: proposal.confirmLabel,
-          instruction: PENDING_INSTRUCTION
-        })
-      }
-    ],
-    _meta: EMAIL_WORKSPACE_TOOL_META
-  }
-}
-
-function personFact(contacts: Array<{ name?: string }> | undefined, count = contacts?.length ?? 0): ConfirmFact {
-  const names = namesList(contacts)
-  if (names) return { label: count === 1 ? 'Person' : 'People', value: names }
-  return { label: 'People', value: count === 1 ? '1 person' : `${count} people` }
 }
 
 export function registerJargonTools(
@@ -148,28 +113,6 @@ export function registerJargonTools(
   billing: BillingService
 ): void {
   const sandbox = actor.environment === 'sandbox'
-
-  function queueWrite(
-    tool: string,
-    title: string,
-    confirmLabel: string,
-    summary: string,
-    facts: ConfirmFact[],
-    args: Record<string, unknown>
-  ) {
-    return confirmOk(
-      createProposal({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        tool,
-        title,
-        confirmLabel,
-        summary,
-        facts,
-        args
-      })
-    )
-  }
 
   server.registerTool(
     'get_me',
@@ -195,7 +138,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list or deploy_tool. Those open a confirmation card — wait for the user to confirm. Then the matching outbound UI appears. Describe the UI in prompt: a three-channel queue, sequence, one-off emails, or inbox. For a cadence, write spec.steps with {{field}} templates. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
+          'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Then Contacts / Sequence / Tasks appears. Describe the motion in workspace: a three-channel queue, a cadence, or one-off emails. For a cadence, describe the steps in workspace. For one-offs, save_draft / send_draft. After start_sequence, work is Tasks. Reopen with show_email_workspace.'
       })
     }
   )
@@ -248,22 +191,12 @@ export function registerJargonTools(
   server.registerTool(
     'create_billing_link',
     {
-      ...display('Open your billing page', HINTS.read),
+      ...display('Open your billing page', HINTS.send),
       description:
-        'Open a confirmation card for a billing URL (upgrade, top-up, or portal). Claude must not collect card details. Does not create the link until the user confirms.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Return a URL to upgrade the plan, buy credit top-ups, or open the billing portal. Claude must not collect card details — send the user to this URL.',
       inputSchema: BillingLinkInput
     },
-    async ({ summary, intent, plan, packId }) =>
-      queueWrite(
-        'create_billing_link',
-        'Open your billing page',
-        intent === 'upgrade' ? 'Get upgrade link' : intent === 'topup' ? 'Get top-up link' : 'Open billing',
-        summary?.trim() ||
-          (intent === 'upgrade' ? 'Open a link to upgrade your Jargon plan' : intent === 'topup' ? 'Open a link to buy more credits' : 'Open your Jargon billing portal'),
-        [{ label: 'Action', value: intent === 'upgrade' ? 'Upgrade plan' : intent === 'topup' ? 'Buy credits' : 'Manage billing' }],
-        { intent, plan, packId }
-      )
+    async ({ intent, plan, packId }) => execCreateBillingLink(intent, plan, packId)
   )
 
   server.registerTool(
@@ -364,53 +297,32 @@ export function registerJargonTools(
     subject: z.string().optional(),
     body: z.string().optional()
   })
-  const SpecInput = z
-    .object({
-      goal: z.string().optional().describe('What success looks like'),
-      segment: z.string().optional(),
-      primarySurface: z
-        .enum(['queue', 'dial', 'inbox', 'linkedin', 'sequence'])
-        .optional()
-        .describe('Which screen the rep opens first'),
-      channels: z
-        .array(z.enum(['email', 'call', 'linkedin']))
-        .min(1)
-        .max(3)
-        .optional()
-        .describe('Channels to run, in order. Overrides prompt inference.'),
-      steps: z.array(SpecStep).min(1).max(8).optional()
-    })
-    .optional()
-    .describe('Optional motion spec. If omitted, Jargon compiles it from prompt.')
 
   const ImportListInput = z.object({
     summary: Summary,
-    prompt: z
+    workspace: z
       .string()
       .min(1)
-      .describe('What to build, e.g. outbound queue for these 10 RevOps leaders'),
-    contacts: z
-      .array(ContactInput)
-      .min(1)
-      .max(100)
-      .describe('The exact people to put in the queue'),
-    spec: SpecInput
+      .describe(
+        'What to build, plus the people as a markdown table with columns Name, Company, Title, Email, LinkedIn. Do not pass a contacts array.'
+      )
   })
   const DeployToolInput = z.object({
     summary: Summary,
-    prompt: z.string().min(1).describe('What to build: LinkedIn queue, email sequencer, dialer, cadence, etc.'),
-    contacts: z
-      .array(ContactInput)
+    workspace: z
+      .string()
       .min(1)
-      .max(100)
-      .optional()
-      .describe('Optional override list. Prefer import_list when you already have people.'),
-    spec: SpecInput
+      .describe(
+        'What to build: outbound dialer, sequencer, cadence, etc. To ingest a researched list, include a markdown people table (Name | Company | Title | Email | LinkedIn). Omit the table only to hydrate HubSpot/Railway.'
+      )
   })
   const AddContactsInput = z.object({
     summary: Summary,
-    projectId: z.string(),
-    contacts: z.array(ContactInput).min(1).max(100)
+    workspaceId: z.string().describe('The workspace to add people to'),
+    people: z
+      .string()
+      .min(1)
+      .describe('People as a markdown table (Name | Company | Title | Email | LinkedIn) or a JSON array in the text.')
   })
 
   async function execDeploy(prompt: string, contacts: unknown, spec: unknown) {
@@ -421,12 +333,14 @@ export function registerJargonTools(
     return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox)
   }
 
-  async function execImportList(prompt: string, contacts: unknown, spec: unknown) {
-    const parsed = parseRequiredContacts(contacts)
-    if (!parsed.ok) return fail(parsed.error)
-    const result = await deployPublicTool(store, config, actor.orgId, prompt, parsed.contacts, spec)
-    if (!result.ok) return fail(result.body.error)
-    return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox)
+  async function execImportList(workspace: string) {
+    const contacts = extractContactsFromPrompt(workspace)
+    if (!contacts?.length) {
+      return fail(
+        'Put the people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn) or a JSON array in the text.'
+      )
+    }
+    return execDeploy(workspace, contacts, undefined)
   }
 
   async function execAddContacts(projectId: string, contacts: unknown) {
@@ -437,116 +351,81 @@ export function registerJargonTools(
     return ok(result)
   }
 
+  async function execAddPeople(projectId: string, people: string) {
+    const contacts = extractContactsFromPrompt(people)
+    if (!contacts?.length) {
+      return fail('Put the people as a markdown table (Name | Company | Title | Email | LinkedIn).')
+    }
+    return execAddContacts(projectId, contacts)
+  }
+
   server.registerTool(
     'import_list',
     {
-      ...display('Add these people to an outbound list', HINTS.read),
+      ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people from chat, another connector, or a pasted table. Opens a confirmation card — does not add anyone until the user confirms. The prompt picks the chrome: a contact queue (email + phone + LinkedIn), sequence, one-off emails, or inbox. Extra fields become template variables. For a cadence, pass spec.steps with {{field}} templates. contacts is required.',
+        'Ingest people and open Contacts / Sequence / Tasks. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn) — never as a contacts array. Describe a cadence, a dialer queue, or one-off emails in the same text.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: ImportListInput
     },
-    async ({ summary, prompt, contacts, spec }) => {
-      const parsed = parseRequiredContacts(contacts)
-      if (!parsed.ok) return fail(parsed.error)
-      const count = parsed.contacts.length
-      return queueWrite(
-        'import_list',
-        'Add these people to an outbound list',
-        'Add to Jargon',
-        summary?.trim() || fallbackSummary('Add', namesList(parsed.contacts), count),
-        [personFact(parsed.contacts, count), { label: 'Workspace', value: prompt.trim() }],
-        { prompt, contacts, spec }
-      )
-    }
+    async ({ workspace }) => execImportList(workspace)
   )
 
   server.registerTool(
     'run_import_list',
     {
       ...display('Add these people to an outbound list', HINTS.write),
-      description: 'Execute a confirmed import. Not for the model.',
+      description: 'Execute an import from the in-chat workspace. Not for the model.',
       _meta: APP_ONLY_META,
       inputSchema: ImportListInput.omit({ summary: true })
     },
-    async ({ prompt, contacts, spec }) => execImportList(prompt, contacts, spec)
+    async ({ workspace }) => execImportList(workspace)
   )
 
   server.registerTool(
     'deploy_tool',
     {
-      ...display('Set up a new outbound workspace', HINTS.read),
+      ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace from a prompt. Opens a confirmation card — does not create anything until the user confirms. Pass contacts[] for a researched list, or omit contacts to hydrate HubSpot/Railway. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the motion in workspace. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: DeployToolInput
     },
-    async ({ summary, prompt, contacts, spec }) => {
-      const parsed = parseDeployContacts(contacts)
-      if (!parsed.ok) return fail(parsed.error)
-      const rows = parsed.contacts ?? []
-      const facts: ConfirmFact[] = rows.length
-        ? [personFact(rows, rows.length)]
-        : [{ label: 'People', value: 'Your connected HubSpot or Railway list' }]
-      facts.push({ label: 'Workspace', value: prompt.trim() })
-      return queueWrite(
-        'deploy_tool',
-        'Set up a new outbound workspace',
-        'Create workspace',
-        summary?.trim() ||
-          (rows.length
-            ? fallbackSummary('Set up a workspace for', namesList(rows), rows.length)
-            : `Set up a workspace: ${prompt.trim()}`),
-        facts,
-        { prompt, contacts, spec }
-      )
-    }
+    async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
   )
 
   server.registerTool(
     'run_deploy_tool',
     {
       ...display('Set up a new outbound workspace', HINTS.write),
-      description: 'Execute a confirmed deploy. Not for the model.',
+      description: 'Execute a deploy from the in-chat workspace. Not for the model.',
       _meta: APP_ONLY_META,
       inputSchema: DeployToolInput.omit({ summary: true })
     },
-    async ({ prompt, contacts, spec }) => execDeploy(prompt, contacts, spec)
+    async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
   )
 
   server.registerTool(
     'add_contacts',
     {
-      ...display('Add more people to an existing list', HINTS.read),
+      ...display('Add more people to an existing list', HINTS.write),
       description:
-        'Append people from any source to an existing workspace queue. Opens a confirmation card — does not add anyone until the user confirms.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Append people to a workspace. summary is the sentence on Claude\'s Allow card. Put people as a markdown table — never as a contacts array.',
       inputSchema: AddContactsInput
     },
-    async ({ summary, projectId, contacts }) => {
-      const parsed = parseRequiredContacts(contacts)
-      if (!parsed.ok) return fail(parsed.error)
-      const project = findOrgProject(store, actor.orgId, projectId)
-      if (!project) return fail('Project not found')
-      const count = parsed.contacts.length
-      return queueWrite(
-        'add_contacts',
-        'Add more people to an existing list',
-        'Add people',
-        summary?.trim() || fallbackSummary('Add', namesList(parsed.contacts), count),
-        [personFact(parsed.contacts, count), { label: 'Workspace', value: project.name }],
-        { projectId, contacts }
-      )
-    }
+    async ({ workspaceId, people }) => execAddPeople(workspaceId, people)
   )
 
   server.registerTool(
     'run_add_contacts',
     {
       ...display('Add more people to an existing list', HINTS.write),
-      description: 'Execute a confirmed add. Not for the model.',
+      description: 'Execute an add from the in-chat workspace. Not for the model.',
       _meta: APP_ONLY_META,
-      inputSchema: AddContactsInput.omit({ summary: true })
+      inputSchema: z.object({
+        projectId: z.string(),
+        contacts: z.array(ContactInput).min(1).max(100)
+      })
     },
     async ({ projectId, contacts }) => execAddContacts(projectId, contacts)
   )
@@ -704,30 +583,12 @@ export function registerJargonTools(
   server.registerTool(
     'send_message',
     {
-      ...display('Send an email or LinkedIn message', HINTS.read),
+      ...display('Send an email or LinkedIn message', HINTS.send),
       description:
-        'Send or draft email/LinkedIn. Opens a confirmation card — does not send until the user confirms. Live login can send real email and spends credits.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Send or draft email/LinkedIn. summary is the sentence on Claude\'s Allow card. Live login can send real email and spends credits.',
       inputSchema: SendMessageInput
     },
-    async ({ summary, contactId, body, channel, status, subject, sendAt }) => {
-      const contact = findOrgContact(store, actor.orgId, contactId)
-      if (!contact) return fail('Contact not found')
-      const kind = channel === 'linkedin' ? 'LinkedIn' : 'email'
-      const verb = status === 'draft' ? 'Save a draft' : status === 'queued' ? 'Schedule' : 'Send'
-      return queueWrite(
-        'send_message',
-        'Send an email or LinkedIn message',
-        status === 'draft' ? 'Save draft' : status === 'queued' ? 'Schedule' : 'Send',
-        summary?.trim() || `${verb} ${kind} to ${contact.name}`,
-        [
-          { label: 'To', value: contact.name },
-          { label: 'Channel', value: kind },
-          ...(subject ? [{ label: 'Subject', value: subject }] : [])
-        ],
-        { contactId, body, channel, status, subject, sendAt }
-      )
-    }
+    async (input) => execSendMessage(input)
   )
 
   server.registerTool(
@@ -744,24 +605,12 @@ export function registerJargonTools(
   server.registerTool(
     'start_call',
     {
-      ...display('Start a call', HINTS.read),
+      ...display('Start a call', HINTS.send),
       description:
-        'Start a dial session. Opens a confirmation card — does not dial until the user confirms. Live login can place real calls and spends credits.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Start a dial session. summary is the sentence on Claude\'s Allow card. Live login can place real calls and spends credits.',
       inputSchema: StartCallInput
     },
-    async ({ summary, contactId }) => {
-      const contact = findOrgContact(store, actor.orgId, contactId)
-      if (!contact) return fail('Contact not found')
-      return queueWrite(
-        'start_call',
-        'Start a call',
-        'Start call',
-        summary?.trim() || `Start a call with ${contact.name}`,
-        [{ label: 'Person', value: contact.name }],
-        { contactId }
-      )
-    }
+    async ({ contactId }) => execStartCall(contactId)
   )
 
   server.registerTool(
@@ -778,27 +627,15 @@ export function registerJargonTools(
   server.registerTool(
     'complete_call',
     {
-      ...display('Log how a call ended', HINTS.read),
-      description: 'Complete an open call with a disposition. Opens a confirmation card first.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+      ...display('Log how a call ended', HINTS.write),
+      description: 'Complete an open call with a disposition. summary is the sentence on Claude\'s Allow card.',
       inputSchema: CompleteCallInput
     },
-    async ({ summary, callId, disposition }) => {
+    async ({ callId, disposition }) => {
       if (!isContactStatus(disposition)) return fail('invalid disposition')
       const call = findOrgCall(store, actor.orgId, callId)
       if (!call) return fail('Call not found')
-      const contact = findOrgContact(store, actor.orgId, call.contactId)
-      return queueWrite(
-        'complete_call',
-        'Log how a call ended',
-        'Save outcome',
-        summary?.trim() || `Log ${disposition.replaceAll('_', ' ')}${contact ? ` for ${contact.name}` : ''}`,
-        [
-          ...(contact ? [{ label: 'Person', value: contact.name }] : []),
-          { label: 'Outcome', value: disposition.replaceAll('_', ' ') }
-        ],
-        { callId, disposition }
-      )
+      return ok(completePublicCall(store, call.id, disposition))
     }
   )
 
@@ -821,26 +658,15 @@ export function registerJargonTools(
   server.registerTool(
     'disposition',
     {
-      ...display('Log an outcome on a contact', HINTS.read),
-      description: 'Log an outcome without an open call. Opens a confirmation card first.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+      ...display('Log an outcome on a contact', HINTS.write),
+      description: 'Log an outcome without an open call. summary is the sentence on Claude\'s Allow card.',
       inputSchema: DispositionInput
     },
-    async ({ summary, contactId, status, note, advanceStep, channel }) => {
+    async ({ contactId, status, note, advanceStep, channel }) => {
       if (!isContactStatus(status)) return fail('invalid status')
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      return queueWrite(
-        'disposition',
-        'Log an outcome on a contact',
-        'Save outcome',
-        summary?.trim() || `Log ${status.replaceAll('_', ' ')} for ${contact.name}`,
-        [
-          { label: 'Person', value: contact.name },
-          { label: 'Outcome', value: status.replaceAll('_', ' ') }
-        ],
-        { contactId, status, note, advanceStep, channel }
-      )
+      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel }))
     }
   )
 
@@ -863,22 +689,14 @@ export function registerJargonTools(
   server.registerTool(
     'add_note',
     {
-      ...display('Add a note to a contact', HINTS.read),
-      description: 'Append a note to a contact. Opens a confirmation card first.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+      ...display('Add a note to a contact', HINTS.write),
+      description: 'Append a note to a contact. summary is the sentence on Claude\'s Allow card.',
       inputSchema: AddNoteInput
     },
-    async ({ summary, contactId, note }) => {
+    async ({ contactId, note }) => {
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      return queueWrite(
-        'add_note',
-        'Add a note to a contact',
-        'Add note',
-        summary?.trim() || `Add a note on ${contact.name}`,
-        [{ label: 'Person', value: contact.name }],
-        { contactId, note }
-      )
+      return ok({ contact: addPublicNote(store, contact.id, note) })
     }
   )
 
@@ -902,7 +720,7 @@ export function registerJargonTools(
     {
       ...display('Open the outbound workspace', HINTS.read),
       description:
-        'Open the outbound UI (queue, sequence, inbox, or one-off emails) with steps, catalog, contacts, and messages. Prefer this or show_email_workspace over dumping JSON into chat.',
+        'Open the outbound workspace in Claude: Contacts, Sequence, and Tasks (Queue for a dialer). Prefer this or show_email_workspace over dumping JSON into chat.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -914,7 +732,7 @@ export function registerJargonTools(
     {
       ...display('Open your outbound workspace', HINTS.read),
       description:
-        'Reopen the outbound UI in Claude (queue, sequence, one-off emails, or inbox). Call after import_list, deploy_tool, or writing drafts.',
+        'Reopen the outbound workspace in Claude (Contacts, Sequence, Tasks). Call after import_list, deploy_tool, or writing drafts. After a cadence is started, prefer show_tasks.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -926,7 +744,7 @@ export function registerJargonTools(
     {
       ...display("Show what's due today", HINTS.read),
       description:
-        'Open the task view in Claude: every sequence step that is due for every enrolled contact, in due order. The user clicks through them one at a time — send the email, log the call, send the LinkedIn note. Use this when they ask what is due today or want to work their tasks.',
+        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Use this when they ask what is due today or want to work their tasks.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -1040,7 +858,7 @@ export function registerJargonTools(
       sandbox
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox)
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
   }
 
   async function execSaveDraft(contactId: string, body: string, subject?: string, channel?: 'email' | 'linkedin') {
@@ -1112,27 +930,12 @@ export function registerJargonTools(
   server.registerTool(
     'update_sequence',
     {
-      ...display('Rewrite the cadence steps', HINTS.read),
+      ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Replace sequence steps without redeploying. Opens a confirmation card first. Templates may use catalog keys such as {{first_name}} and {{funding_round}}.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Replace sequence steps without redeploying. summary is the sentence on Claude\'s Allow card. Templates may use catalog keys such as {{first_name}} and {{funding_round}}.',
       inputSchema: UpdateSequenceInput
     },
-    async ({ summary, projectId, goal, steps }) => {
-      const project = findOrgProject(store, actor.orgId, projectId)
-      if (!project) return fail('Project not found')
-      return queueWrite(
-        'update_sequence',
-        'Rewrite the cadence steps',
-        'Save steps',
-        summary?.trim() || `Update the cadence in ${project.name}`,
-        [
-          { label: 'Workspace', value: project.name },
-          { label: 'Steps', value: String(steps.length) }
-        ],
-        { projectId, goal, steps }
-      )
-    }
+    async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)
   )
 
   server.registerTool(
@@ -1149,28 +952,13 @@ export function registerJargonTools(
   server.registerTool(
     'start_sequence',
     {
-      ...display('Start sending the cadence', HINTS.read),
+      ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the shared cadence. Opens a confirmation card — does not queue mail until the user confirms. For sequences only — not one-off sends. Idempotent per contact+step. Replies cancel later queued emails.',
+        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. For sequences only — not one-off sends. Idempotent per contact+step. Pass contactIds to enroll a subset.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: StartSequenceInput
     },
-    async ({ summary, projectId, startAt, contactIds }) => {
-      const project = findOrgProject(store, actor.orgId, projectId)
-      if (!project) return fail('Project not found')
-      const who = contactIds?.length ? `${contactIds.length} contacts` : 'everyone in the workspace'
-      return queueWrite(
-        'start_sequence',
-        'Start sending the cadence',
-        'Start sequence',
-        summary?.trim() || `Start the cadence for ${who} in ${project.name}`,
-        [
-          { label: 'Workspace', value: project.name },
-          { label: 'Enroll', value: who }
-        ],
-        { projectId, startAt, contactIds }
-      )
-    }
+    async ({ projectId, startAt, contactIds }) => execStartSequence(projectId, startAt, contactIds)
   )
 
   server.registerTool(
@@ -1185,30 +973,46 @@ export function registerJargonTools(
   )
 
   server.registerTool(
-    'save_draft',
+    'run_unenroll_contact',
     {
-      ...display('Save a draft message', HINTS.read),
-      description:
-        'Save proposed copy for a contact. Opens a confirmation card first. Templates are interpolated from attrs.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
-      inputSchema: SaveDraftInput
+      ...display('Unenroll a contact', HINTS.write),
+      description: 'Stop remaining cadence steps for one contact. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({ contactId: z.string() })
     },
-    async ({ summary, contactId, body, subject, channel }) => {
+    async ({ contactId }) => {
+      const result = unenrollPublicContact(store, actor.orgId, contactId)
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, result.contact.projectId, sandbox)
+    }
+  )
+
+  server.registerTool(
+    'run_skip_task',
+    {
+      ...display('Skip this task', HINTS.write),
+      description: 'Skip one sequence step for one contact. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({ contactId: z.string(), stepId: z.string() })
+    },
+    async ({ contactId, stepId }) => {
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      const kind = channel === 'linkedin' ? 'LinkedIn' : 'email'
-      return queueWrite(
-        'save_draft',
-        'Save a draft message',
-        'Save draft',
-        summary?.trim() || `Save a ${kind} draft for ${contact.name}`,
-        [
-          { label: 'To', value: contact.name },
-          { label: 'Channel', value: kind }
-        ],
-        { contactId, body, subject, channel }
-      )
+      const result = skipPublicTask(store, actor.orgId, contactId, stepId)
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, contact.projectId, sandbox, 'tasks')
     }
+  )
+
+  server.registerTool(
+    'save_draft',
+    {
+      ...display('Save a draft message', HINTS.write),
+      description:
+        'Save proposed copy for a contact. summary is the sentence on Claude\'s Allow card. Templates are interpolated from attrs.',
+      inputSchema: SaveDraftInput
+    },
+    async ({ contactId, body, subject, channel }) => execSaveDraft(contactId, body, subject, channel)
   )
 
   server.registerTool(
@@ -1249,24 +1053,12 @@ export function registerJargonTools(
   server.registerTool(
     'update_draft',
     {
-      ...display('Edit a saved draft', HINTS.read),
-      description: 'Edit draft/queued copy or reschedule sendAt. Opens a confirmation card first.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+      ...display('Edit a saved draft', HINTS.write),
+      description: 'Edit draft/queued copy or reschedule sendAt. summary is the sentence on Claude\'s Allow card.',
       inputSchema: UpdateDraftInput
     },
-    async ({ summary, messageId, subject, body, sendAt, status }) => {
-      const message = findOrgMessage(store, actor.orgId, messageId)
-      if (!message) return fail('Message not found')
-      const contact = findOrgContact(store, actor.orgId, message.contactId)
-      return queueWrite(
-        'update_draft',
-        'Edit a saved draft',
-        'Save draft',
-        summary?.trim() || `Edit the draft${contact ? ` for ${contact.name}` : ''}`,
-        contact ? [{ label: 'To', value: contact.name }] : [],
-        { messageId, subject, body, sendAt, status }
-      )
-    }
+    async ({ messageId, subject, body, sendAt, status }) =>
+      execUpdateDraft(messageId, subject, body, sendAt, status)
   )
 
   server.registerTool(
@@ -1284,28 +1076,11 @@ export function registerJargonTools(
   server.registerTool(
     'send_draft',
     {
-      ...display('Send a saved draft now', HINTS.read),
-      description: 'Send a saved draft now. Opens a confirmation card first. Spends credits on live email.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+      ...display('Send a saved draft now', HINTS.send),
+      description: 'Send a saved draft now. summary is the sentence on Claude\'s Allow card. Spends credits on live email.',
       inputSchema: SendDraftInput
     },
-    async ({ summary, messageId }) => {
-      const message = findOrgMessage(store, actor.orgId, messageId)
-      if (!message) return fail('Message not found')
-      const contact = findOrgContact(store, actor.orgId, message.contactId)
-      const kind = message.channel === 'linkedin' ? 'LinkedIn' : 'email'
-      return queueWrite(
-        'send_draft',
-        'Send a saved draft now',
-        'Send now',
-        summary?.trim() || `Send the ${kind} draft${contact ? ` to ${contact.name}` : ''}`,
-        [
-          ...(contact ? [{ label: 'To', value: contact.name }] : []),
-          { label: 'Channel', value: kind }
-        ],
-        { messageId }
-      )
-    }
+    async ({ messageId }) => execSendDraft(messageId)
   )
 
   server.registerTool(
@@ -1317,119 +1092,5 @@ export function registerJargonTools(
       inputSchema: SendDraftInput.omit({ summary: true })
     },
     async ({ messageId }) => execSendDraft(messageId)
-  )
-
-  async function runConfirmed(proposal: McpProposal) {
-    const a = proposal.args
-    switch (proposal.tool) {
-      case 'create_billing_link':
-        return execCreateBillingLink(
-          a.intent as 'upgrade' | 'topup' | 'portal',
-          a.plan as 'team' | 'scale' | undefined,
-          a.packId as 'credits_500' | 'credits_2000' | 'credits_10000' | undefined
-        )
-      case 'import_list':
-        return execImportList(String(a.prompt), a.contacts, a.spec)
-      case 'deploy_tool':
-        return execDeploy(String(a.prompt), a.contacts, a.spec)
-      case 'add_contacts':
-        return execAddContacts(String(a.projectId), a.contacts)
-      case 'send_message':
-        return execSendMessage({
-          contactId: String(a.contactId),
-          body: String(a.body),
-          channel: a.channel as 'email' | 'linkedin' | undefined,
-          status: a.status as 'draft' | 'queued' | 'sent' | undefined,
-          subject: a.subject as string | undefined,
-          sendAt: a.sendAt as number | string | undefined
-        })
-      case 'start_call':
-        return execStartCall(String(a.contactId))
-      case 'complete_call': {
-        const disposition = a.disposition
-        if (!isContactStatus(disposition)) return fail('invalid disposition')
-        const call = findOrgCall(store, actor.orgId, String(a.callId))
-        if (!call) return fail('Call not found')
-        return ok(completePublicCall(store, call.id, disposition))
-      }
-      case 'disposition': {
-        const status = a.status
-        if (!isContactStatus(status)) return fail('invalid status')
-        const contact = findOrgContact(store, actor.orgId, String(a.contactId))
-        if (!contact) return fail('Contact not found')
-        return ok(
-          applyDisposition(store, contact.id, {
-            status,
-            note: a.note as string | undefined,
-            advanceStep: a.advanceStep as boolean | undefined,
-            channel: a.channel as 'email' | 'call' | 'linkedin' | undefined
-          })
-        )
-      }
-      case 'add_note': {
-        const contact = findOrgContact(store, actor.orgId, String(a.contactId))
-        if (!contact) return fail('Contact not found')
-        return ok({ contact: addPublicNote(store, contact.id, String(a.note)) })
-      }
-      case 'update_sequence':
-        return execUpdateSequence(String(a.projectId), a.goal as string | undefined, a.steps)
-      case 'start_sequence':
-        return execStartSequence(
-          String(a.projectId),
-          a.startAt as number | string | undefined,
-          a.contactIds as string[] | undefined
-        )
-      case 'save_draft':
-        return execSaveDraft(
-          String(a.contactId),
-          String(a.body),
-          a.subject as string | undefined,
-          a.channel as 'email' | 'linkedin' | undefined
-        )
-      case 'update_draft':
-        return execUpdateDraft(
-          String(a.messageId),
-          a.subject as string | undefined,
-          a.body as string | undefined,
-          a.sendAt as number | string | undefined,
-          a.status as 'draft' | 'queued' | undefined
-        )
-      case 'send_draft':
-        return execSendDraft(String(a.messageId))
-      default:
-        return fail('Unknown action')
-    }
-  }
-
-  server.registerTool(
-    'run_proposal',
-    {
-      ...display('Confirm a Jargon action', HINTS.write),
-      description: 'Run a pending confirmation from the in-chat card. Not for the model.',
-      inputSchema: z.object({ proposalId: z.string() }),
-      _meta: APP_ONLY_META
-    },
-    async ({ proposalId }) => {
-      const proposal = getProposal(actor.orgId, proposalId)
-      if (!proposal) return fail('This confirmation expired. Ask Claude to try again.')
-      const result = await runConfirmed(proposal)
-      if (!('isError' in result && result.isError)) deleteProposal(proposal.id)
-      return result
-    }
-  )
-
-  server.registerTool(
-    'cancel_proposal',
-    {
-      ...display('Cancel a Jargon action', HINTS.write),
-      description: 'Discard a pending confirmation. Not for the model.',
-      inputSchema: z.object({ proposalId: z.string() }),
-      _meta: APP_ONLY_META
-    },
-    async ({ proposalId }) => {
-      const proposal = getProposal(actor.orgId, proposalId)
-      if (proposal) deleteProposal(proposal.id)
-      return ok({ view: 'confirm_action', status: 'cancelled', proposalId })
-    }
   )
 }

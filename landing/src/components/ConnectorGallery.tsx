@@ -58,6 +58,11 @@ function SequenceMock() {
         <strong>RevOps cadence</strong>
         <span>8 days · 3 steps</span>
       </div>
+      <div className="cg-tabs">
+        <span>Contacts</span>
+        <span className="on">Sequence</span>
+        <span>Tasks</span>
+      </div>
       <div className="cg-flow">
         {steps.map((step, i) => (
           <div key={step.kicker}>
@@ -84,6 +89,11 @@ function TasksMock() {
       <div className="cg-ui-head">
         <strong>Today’s tasks</strong>
         <span>2 due now · 1 upcoming</span>
+      </div>
+      <div className="cg-tabs">
+        <span>Contacts</span>
+        <span>Sequence</span>
+        <span className="on">Tasks</span>
       </div>
       <div className="cg-people">
         {tasks.map((task, i) => (

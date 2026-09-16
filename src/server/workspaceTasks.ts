@@ -75,6 +75,7 @@ export function buildWorkspaceTasks(input: {
     if (anchor == null) continue
 
     const stopped = STOP_STATUSES.includes(contact.status)
+    const skippedIds = skippedStepIds(contact)
     const completedCalls = input.calls
       .filter((call) => call.contactId === contact.id && call.phase === 'completed')
       .sort((a, b) => a.startedAt - b.startedAt)
@@ -96,6 +97,17 @@ export function buildWorkspaceTasks(input: {
         stepOrder: step.order,
         day: Math.max(0, step.day),
         channel: step.channel
+      }
+
+      if (skippedIds.includes(step.id)) {
+        tasks.push({
+          ...base,
+          dueAt,
+          state: 'skipped',
+          bucket: 'skipped',
+          reason: 'Skipped'
+        })
+        continue
       }
 
       if (step.channel === 'call') {
@@ -253,6 +265,12 @@ function reasonFor(
   if (state === 'blocked') return blockedReason
   if (stopped) return `Contact is ${status.replace('_', ' ')}`
   return undefined
+}
+
+export function skippedStepIds(contact: { attrs?: Record<string, unknown> }): string[] {
+  const raw = contact.attrs?._skippedSteps
+  if (!Array.isArray(raw)) return []
+  return raw.filter((id): id is string => typeof id === 'string' && id.length > 0)
 }
 
 function channelName(channel: Channel): string {

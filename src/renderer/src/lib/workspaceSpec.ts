@@ -28,12 +28,12 @@ export function specOf(project: Project): WorkspaceSpec {
   return specFromProject(project)
 }
 
-export function defaultPage(spec: WorkspaceSpec): string {
+export function defaultPage(spec: WorkspaceSpec, opts?: { enrolled?: boolean }): string {
   switch (spec.primarySurface) {
     case 'dial':
       return 'context'
     case 'sequence':
-      return 'sequences'
+      return opts?.enrolled ? 'today' : 'contacts'
     case 'inbox':
       return 'inbox'
     case 'linkedin':
@@ -52,7 +52,7 @@ export function continuePage(spec: WorkspaceSpec): string {
     case 'linkedin':
       return 'today'
     case 'sequence':
-      return hasChannel(spec, 'email') || hasChannel(spec, 'linkedin') ? 'inbox' : 'today'
+      return 'today'
     default:
       return spec.channels.length === 1 && spec.channels[0] === 'call' ? 'dial' : 'today'
   }
@@ -80,21 +80,33 @@ export function navForSpec(spec: WorkspaceSpec): NavItem[] {
   const showDashboard = spec.primarySurface === 'dial' || spec.kind === 'generic'
   const showCampaigns = hasChannel(spec, 'call') && spec.primarySurface === 'dial'
   const showSequence = spec.steps.length > 0
-  const showQueue =
+  const showTasks =
     spec.primarySurface === 'queue' ||
     spec.primarySurface === 'linkedin' ||
+    spec.primarySurface === 'sequence' ||
     spec.kind === 'today' ||
+    spec.kind === 'sequencer' ||
+    spec.kind === 'cadence' ||
     spec.channels.length > 1
   const showDial = hasChannel(spec, 'call')
   const showInbox = hasChannel(spec, 'email') || hasChannel(spec, 'linkedin')
+  const sequenceHome =
+    spec.primarySurface === 'sequence' || spec.kind === 'sequencer' || spec.kind === 'cadence'
 
   if (showDashboard) items.push({ id: 'dashboard', label: 'Dashboard' })
   if (showCampaigns) items.push({ id: 'campaigns', label: 'Campaigns' })
-  if (showSequence) items.push({ id: 'sequences', label: 'Sequence' })
-  if (showQueue) items.push({ id: 'today', label: queueLabel(spec) })
-  if (showDial) items.push({ id: 'dial', label: 'Dial console' })
-  if (showInbox) items.push({ id: 'inbox', label: inboxLabel(spec) })
-  items.push({ id: 'contacts', label: 'Contacts' })
+  if (sequenceHome) {
+    items.push({ id: 'contacts', label: 'Contacts' })
+    if (showSequence) items.push({ id: 'sequences', label: 'Sequence' })
+    if (showTasks) items.push({ id: 'today', label: 'Tasks' })
+    if (showInbox) items.push({ id: 'inbox', label: inboxLabel(spec) })
+  } else {
+    if (showSequence) items.push({ id: 'sequences', label: 'Sequence' })
+    if (showTasks) items.push({ id: 'today', label: queueLabel(spec) })
+    if (showDial) items.push({ id: 'dial', label: 'Dial console' })
+    if (showInbox) items.push({ id: 'inbox', label: inboxLabel(spec) })
+    items.push({ id: 'contacts', label: 'Contacts' })
+  }
   items.push({ id: 'analytics', label: 'Analytics' })
   return [...items, ...sharedTail]
 }
@@ -106,7 +118,7 @@ export function primaryAction(spec: WorkspaceSpec): { page: string; label: strin
   if (spec.channels.length === 1 && spec.channels[0] === 'linkedin') {
     return { page: 'today', label: 'Open LinkedIn queue' }
   }
-  if (spec.primarySurface === 'sequence') return { page: 'sequences', label: 'Open sequence' }
+  if (spec.primarySurface === 'sequence') return { page: 'today', label: 'Work tasks' }
   if (hasChannel(spec, 'email')) return { page: 'inbox', label: 'Open inbox' }
   if (hasChannel(spec, 'linkedin')) return { page: 'inbox', label: 'Open LinkedIn' }
   return { page: 'today', label: 'Open queue' }

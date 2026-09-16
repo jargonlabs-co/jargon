@@ -220,5 +220,15 @@ export const api = {
     request<Contact>(`/contacts/${contactId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch)
+    }),
+  startSequence: (projectId: string, body?: { startAt?: number; contactIds?: string[] }) =>
+    request<{ ok: true; contacts: number; queued: number }>(`/projects/${projectId}/sequence/start`, {
+      method: 'POST',
+      body: JSON.stringify(body ?? {})
+    }),
+  unenrollContact: (contactId: string) =>
+    request<{ ok: true; cancelled: number; contact: Contact }>(`/contacts/${contactId}/unenroll`, {
+      method: 'POST',
+      body: '{}'
     })
 }

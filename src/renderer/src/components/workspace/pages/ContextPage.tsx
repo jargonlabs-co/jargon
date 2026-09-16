@@ -17,7 +17,9 @@ export function ContextPage({ bundle, onContinue }: Props) {
         ? 'Open LinkedIn queue'
         : spec.primarySurface === 'inbox'
           ? 'Open inbox'
-          : 'Start sequence'
+          : spec.primarySurface === 'sequence'
+            ? 'Open contacts'
+            : 'Start sequence'
 
   return (
     <div className="prod-view">

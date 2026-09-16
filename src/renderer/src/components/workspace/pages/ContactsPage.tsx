@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { ProjectBundle } from '../../../api/client'
-import { api } from '../../../api/client'
 import { hasChannel, specOf } from '../../../lib/workspaceSpec'
 
 interface Props {
@@ -10,10 +9,29 @@ interface Props {
   onEmail: (contactId: string) => void
   onLinkedIn?: (contactId: string) => void
   onConnectData?: () => void
+  onStartSequence?: () => void | Promise<void>
+  onWorkTasks?: () => void
+  onEnroll?: (contactId: string) => void | Promise<void>
+  onUnenroll?: (contactId: string) => void | Promise<void>
 }
 
-export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, onConnectData }: Props) {
+export function ContactsPage({
+  bundle,
+  onCall,
+  onEmail,
+  onLinkedIn,
+  onConnectData,
+  onStartSequence,
+  onWorkTasks,
+  onEnroll,
+  onUnenroll
+}: Props) {
   const spec = specOf(bundle.project)
+  const sequence = bundle.sequences[0]
+  const steps = bundle.steps
+    .filter((s) => s.sequenceId === sequence?.id)
+    .sort((a, b) => a.order - b.order)
+  const enrolledCount = bundle.contacts.filter((c) => c.status !== 'queued').length
   const [selectedId, setSelectedId] = useState(
     bundle.contacts.find((c) => c.status === 'active')?.id ?? bundle.contacts[0]?.id ?? null
   )
@@ -25,10 +43,10 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
       c.company.toLowerCase().includes(query.toLowerCase())
   )
 
-  async function activate(id: string) {
-    await api.patchContact(id, { status: 'active' })
-    setSelectedId(id)
-    await onRefresh()
+  function nextLabel(contact: (typeof bundle.contacts)[number]) {
+    if (contact.status === 'queued') return 'Not enrolled'
+    const step = steps[contact.stepIndex]
+    return step?.label ?? `Step ${contact.stepIndex + 1}`
   }
 
   return (
@@ -50,6 +68,18 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
               placeholder="Search contacts"
             />
             <span>⌕</span>
+          </div>
+          <div className="prod-view-actions">
+            {onStartSequence && enrolledCount === 0 ? (
+              <button className="prod-btn primary" onClick={() => void onStartSequence()}>
+                Start sequence
+              </button>
+            ) : null}
+            {onWorkTasks && enrolledCount > 0 ? (
+              <button className="prod-btn primary" onClick={onWorkTasks}>
+                Work tasks
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -74,7 +104,7 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
                 <th>Company</th>
                 <th>Title</th>
                 <th>Status</th>
-                <th>Step</th>
+                <th>Next</th>
               </tr>
             </thead>
             <tbody>
@@ -82,7 +112,7 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
                 <tr
                   key={c.id}
                   className={c.id === selected?.id ? 'selected' : undefined}
-                  onClick={() => void activate(c.id)}
+                  onClick={() => setSelectedId(c.id)}
                 >
                   <td>
                     <strong>{c.name}</strong>
@@ -93,7 +123,7 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
                   <td>
                     <span className={`ws-chip status-${c.status}`}>{c.status.replace('_', ' ')}</span>
                   </td>
-                  <td className="mono">{c.stepIndex + 1}</td>
+                  <td>{nextLabel(c)}</td>
                 </tr>
               ))}
             </tbody>
@@ -113,6 +143,21 @@ export function ContactsPage({ bundle, onRefresh, onCall, onEmail, onLinkedIn, o
           </div>
           <div className="detail-body">
             <div className="detail-actions">
+              {selected.status === 'queued' && onEnroll ? (
+                <button className="prod-btn primary compact" onClick={() => void onEnroll(selected.id)}>
+                  Enroll
+                </button>
+              ) : null}
+              {selected.status !== 'queued' && onWorkTasks ? (
+                <button className="prod-btn primary compact" onClick={onWorkTasks}>
+                  Work tasks
+                </button>
+              ) : null}
+              {selected.status !== 'queued' && onUnenroll ? (
+                <button className="prod-btn ghost compact" onClick={() => void onUnenroll(selected.id)}>
+                  Unenroll
+                </button>
+              ) : null}
               {hasChannel(spec, 'call') ? (
                 <button className="prod-btn primary compact" onClick={() => onCall(selected.id)}>
                   Call

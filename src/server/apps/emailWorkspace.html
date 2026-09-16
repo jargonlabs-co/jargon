@@ -220,6 +220,12 @@
     .runner-h .kicker { font-size: 12.5px; }
     .runner .banner { margin: 10px 0 0; }
     .nav { display: flex; gap: 6px; }
+    .detail-panel {
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; margin-top: 12px; background: var(--bg);
+    }
+    .detail-panel .kicker { margin-bottom: 4px; }
+    .step-stat { font-size: 11px; color: var(--muted); font-weight: 650; }
 
     .dialer {
       border: 1px solid var(--line); border-radius: 12px;
@@ -445,9 +451,9 @@ function dueLabel(task) {
 }
 
 (async () => {
-  const app = new App({ name: 'jargon-outbound', version: '1.5.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-outbound', version: '1.6.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
-  let tab = 'sequence';
+  let tab = 'contacts';
   let seqPane = 'flow';
   let selectedStep = 0;
   let selectedId = null;
@@ -458,6 +464,7 @@ function dueLabel(task) {
   let busy = false;
   let pendingSend = false;
   let pendingStart = false;
+  let pendingContactIds = null;
   let peopleStep = 0;
   let draftSteps = [];
   let actionPane = 'email';
@@ -471,8 +478,6 @@ function dueLabel(task) {
   let dialMuted = false;
   let dialTicker = 0;
   let dialConnect = 0;
-  let proposal = null;
-  let confirmBusy = false;
 
   function surface() {
     if (!ws) return 'sequence';
@@ -482,11 +487,12 @@ function dueLabel(task) {
 
   function applySurface() {
     const s = surface();
-    if (ws?.focus === 'tasks' || s === 'tasks') tab = 'tasks';
-    else if (s === 'one_off') tab = 'people';
-    else if (s === 'inbox') tab = 'inbox';
-    else if (s === 'sequence') tab = 'sequence';
-    else if (s === 'queue') tab = 'queue';
+    const land = ws?.focus || ws?.defaultTab;
+    if (land === 'tasks' || s === 'tasks') tab = 'tasks';
+    else if (land === 'inbox' || s === 'inbox') tab = 'inbox';
+    else if (land === 'queue' || s === 'queue') tab = 'queue';
+    else if (land === 'sequence') tab = 'sequence';
+    else tab = 'contacts';
   }
 
   function listSurface() {
@@ -691,27 +697,69 @@ function dueLabel(task) {
     setNotice(`Scheduled for ${contact.name}.`, 'ok');
   }
 
-  async function startSequence() {
+  async function startSequence(contactIds) {
     if (!pendingStart) {
       pendingStart = true;
-      setNotice('Start this sequence for everyone? Every step is drafted up front — nothing sends until you send it.', '');
+      pendingContactIds = contactIds?.length ? contactIds : null;
+      setNotice(
+        pendingContactIds?.length === 1
+          ? 'Enroll this person in the sequence?'
+          : 'Start this sequence? Every step becomes a dated task — nothing sends until you send it or its day arrives.',
+        ''
+      );
       return;
     }
     pendingStart = false;
+    const ids = contactIds?.length ? contactIds : pendingContactIds;
+    pendingContactIds = null;
     busy = true; render();
+    const args = { projectId: ws.projectId };
+    if (ids?.length) args.contactIds = ids;
     const result = await app.callServerTool({
       name: 'run_start_sequence',
-      arguments: { projectId: ws.projectId },
+      arguments: args,
     });
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
     ws = parsed;
     syncDrafts();
-    setNotice('Sequence started. Emails are drafted by day — review and send each one.', 'ok');
+    tab = 'tasks';
+    const open = taskCounts().open;
+    setNotice(open ? `${open} tasks due — work them here.` : 'Sequence started. Tasks land here on their send day.', 'ok');
     app.updateModelContext?.({
-      content: [{ type: 'text', text: `Started the email sequence for ${ws.name} (${ws.contactCount} contacts).` }],
+      content: [{ type: 'text', text: `Started the sequence for ${ws.name} (${ws.taskStats?.enrolled || ws.contactCount} enrolled). Work is on Tasks.` }],
     });
+  }
+
+  async function unenrollContact(contact) {
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'run_unenroll_contact',
+      arguments: { contactId: contact.id },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    ws = parsed;
+    syncDrafts();
+    setNotice(`${contact.name} unenrolled. Remaining steps stopped.`, 'ok');
+  }
+
+  async function skipCurrentTask() {
+    const task = (ws.tasks || []).find((t) => t.id === selectedTaskId);
+    if (!task) { stepTask(1); return; }
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'run_skip_task',
+      arguments: { contactId: task.contactId, stepId: task.stepId },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    await reload();
+    advanceTask();
+    setNotice(`Skipped ${task.contactName}.`, 'ok');
   }
 
   async function askClaudeToWrite() {
@@ -719,9 +767,7 @@ function dueLabel(task) {
       role: 'user',
       content: [{
         type: 'text',
-        text: surface() === 'inbox'
-          ? `Write or refresh email drafts for project ${ws.projectId} from the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace.`
-          : surface() === 'one_off'
+        text: surface() === 'one_off'
             ? `Write a personalized one-off email for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace. Do not start a sequence.`
             : listSurface()
               ? `Write personalized email and LinkedIn drafts for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft with channel email or linkedin, then call show_email_workspace.`
@@ -882,6 +928,10 @@ function dueLabel(task) {
     const title = step.label || `${channelLabel(step.channel)} ${i + 1}`;
     const preview = oneLine(step.subject || step.body) || (step.channel === 'call' ? 'Talk track from the queue' : 'No copy yet');
     const ico = step.channel === 'call' ? ICO.phone : step.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
+    const st = (ws.stepStats || []).find((row) => row.stepId === step.id);
+    const counts = st && (st.sent || st.drafted || st.due)
+      ? `${st.sent} sent${st.due ? ` · ${st.due} due` : st.drafted ? ` · ${st.drafted} drafted` : ''}`
+      : '';
     return `
       <button class="node ${selectedStep === i && seqPane !== 'flow' ? 'on' : ''}" type="button" data-step="${i}">
         <div class="node-top">
@@ -893,7 +943,7 @@ function dueLabel(task) {
         </div>
         <div class="foot">
           <span class="mail-mini">${ico}</span>
-          ${live && step.channel === 'email' ? `<span class="live"><span class="dot"></span>Live</span>` : `<span class="pill">${esc(channelLabel(step.channel))}</span>`}
+          ${counts ? `<span class="step-stat">${esc(counts)}</span>` : live && step.channel === 'email' ? `<span class="live"><span class="dot"></span>Live</span>` : `<span class="pill">${esc(channelLabel(step.channel))}</span>`}
         </div>
       </button>
     `;
@@ -1073,28 +1123,37 @@ function dueLabel(task) {
   }
 
   function renderSequence() {
+    const enrolled = ws.taskStats?.enrolled || 0;
+    const open = taskCounts().open;
     const queue = listSurface();
+    const banner = enrolled
+      ? `<div class="banner ok">${enrolled} enrolled · ${open} due now</div>`
+      : '';
+    const actions = `
+      <div class="row">
+        ${emailSteps().length && !queue ? `<button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : enrolled ? 'Enroll remaining' : 'Start sequence'}</button>` : ''}
+        ${emailSteps().length && queue ? `<button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>` : ''}
+        ${enrolled ? `<button class="btn" id="work-tasks">Work tasks</button>` : ''}
+        <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
+        ${queue ? '' : `<button class="btn" id="write">Ask Claude to write drafts</button>`}
+      </div>
+    `;
     if (queue) {
       return `
+        ${banner}
         ${renderFlow()}
         ${dialerPane()}
-        <div class="row">
-          ${emailSteps().length ? `<button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>` : ''}
-          <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
-        </div>
+        ${actions}
       `;
     }
     return `
+      ${banner}
       <div class="seg">
         <button type="button" class="${seqPane === 'flow' ? 'on' : ''}" data-pane="flow">Flow</button>
         <button type="button" class="${seqPane === 'email' ? 'on' : ''}" data-pane="email">Emails</button>
       </div>
       ${seqPane === 'call' ? `${renderFlow()}${dialerPane()}` : seqPane === 'flow' ? renderFlow() : renderEmailEditor()}
-      <div class="row">
-        <button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>
-        <button class="btn" id="save-seq" ${busy ? 'disabled' : ''}>Save sequence</button>
-        <button class="btn" id="write">Ask Claude to write drafts</button>
-      </div>
+      ${actions}
     `;
   }
 
@@ -1154,6 +1213,41 @@ function dueLabel(task) {
     `;
   }
 
+  function contactEnrolled(contact) {
+    if (!contact) return false;
+    if ((ws.tasks || []).some((t) => t.contactId === contact.id)) return true;
+    return Boolean(contact.status && contact.status !== 'queued');
+  }
+
+  function contactNextLabel(contact) {
+    const next = (ws.tasks || []).find((t) => t.contactId === contact.id && t.state !== 'done' && t.state !== 'skipped');
+    if (next) return next.stepLabel;
+    if (contactEnrolled(contact)) return 'Caught up';
+    return 'Not enrolled';
+  }
+
+  function renderContactDetail(contact) {
+    const enrolled = contactEnrolled(contact);
+    const next = (ws.tasks || []).find((t) => t.contactId === contact.id && t.state !== 'done' && t.state !== 'skipped');
+    const anyEnrolled = (ws.taskStats?.enrolled || 0) > 0;
+    const missing = workspaceChannels().includes('email') && !contact.email;
+    return `
+      <div class="detail-panel">
+        <div class="kicker">${esc(contact.name)}</div>
+        <div class="meta">${esc([contact.title, contact.company, contact.email || 'no email'].filter(Boolean).join(' · '))}</div>
+        <div class="meta" style="margin-top:6px;">${esc(contactNextLabel(contact))}${contact.status ? ` · ${esc(String(contact.status).replace('_', ' '))}` : ''}</div>
+        ${missing ? '<div class="banner err" style="margin-top:10px;">Missing email — add one in Claude or the full workspace.</div>' : ''}
+        <div class="row">
+          ${!enrolled ? `<button class="btn primary" id="enroll-one" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm enroll' : 'Enroll this person'}</button>` : ''}
+          ${next ? `<button class="btn primary" id="work-contact-task">Work next task</button>` : ''}
+          ${enrolled ? `<button class="btn" id="unenroll" ${busy ? 'disabled' : ''}>Unenroll</button>` : ''}
+          ${!anyEnrolled ? `<button class="btn" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>` : `<button class="btn" id="work-tasks">Work tasks</button>`}
+          <button class="btn" id="goto-sequence">Edit sequence</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderPeople() {
     const people = ws.contacts || [];
     const oneOff = surface() === 'one_off';
@@ -1163,7 +1257,6 @@ function dueLabel(task) {
       selectedMessageId = null;
       pendingSend = false;
     }
-    const steps = emailSteps();
     return `
       ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
         ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
@@ -1175,12 +1268,13 @@ function dueLabel(task) {
                 <div>${esc(c.name)}</div>
                 <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
               </div>
-              <div class="pill">${esc(oneOff ? statusLabel(ws, c) : cadenceLabel(ws, c, steps))}</div>
+              <div class="pill">${esc(oneOff ? statusLabel(ws, c) : contactNextLabel(c))}</div>
             </button>
           `).join('')}
         </div>
       `}
-      ${selected ? renderComposer(selected, { hideSteps: oneOff, showWrite: oneOff }) : ''}
+      ${selected && oneOff ? renderComposer(selected, { hideSteps: true, showWrite: true }) : ''}
+      ${selected && !oneOff ? renderContactDetail(selected) : ''}
     `;
   }
 
@@ -1418,7 +1512,7 @@ function dueLabel(task) {
           <button type="button" class="${inboxFilter === f ? 'on' : ''}" data-filter="${f}">${f === 'all' ? `All (${counts.all})` : `${f[0].toUpperCase()}${f.slice(1)} (${counts[f]})`}</button>
         `).join('')}
       </div>
-      ${!msgs.length ? `<p class="empty">${counts.all ? 'Nothing in this filter.' : 'No emails yet. Open People to compose, or ask Claude to write drafts.'}</p>` : `
+      ${!msgs.length ? `<p class="empty">${counts.all ? 'Nothing in this filter.' : 'No emails yet. Start the sequence to generate tasks, or send from Tasks.'}</p>` : `
         <div class="people">
           ${msgs.map((m) => {
             const c = contactById(m.contactId);
@@ -1441,16 +1535,13 @@ function dueLabel(task) {
     `;
   }
 
-  const TAB_LABELS = { tasks: 'Tasks', queue: 'Queue', sequence: 'Sequence', people: 'People', inbox: 'Inbox' };
+  const TAB_LABELS = { tasks: 'Tasks', queue: 'Queue', sequence: 'Sequence', contacts: 'Contacts', inbox: 'Inbox' };
 
   function tabsFor() {
     const s = surface();
-    if (s === 'one_off') return [];
-    const withTasks = (ws.tasks || []).length > 0;
-    if (s === 'tasks') return ['tasks', 'queue', 'sequence'];
-    if (s === 'queue') return withTasks ? ['queue', 'tasks', 'sequence'] : ['queue', 'sequence'];
-    if (s === 'inbox') return withTasks ? ['inbox', 'tasks', 'people'] : ['inbox', 'people'];
-    return withTasks ? ['sequence', 'tasks', 'people'] : ['sequence', 'people'];
+    if (s === 'one_off') return ['contacts', 'inbox'];
+    if (s === 'queue' || s === 'tasks') return ['contacts', 'queue', 'sequence', 'tasks'];
+    return ['contacts', 'sequence', 'tasks', 'inbox'];
   }
 
   function renderTabs() {
@@ -1467,12 +1558,10 @@ function dueLabel(task) {
   }
 
   function renderPanel() {
-    const s = surface();
-    if (s === 'one_off') return renderPeople();
     if (tab === 'tasks') return renderTasks();
-    if (listSurface()) return tab === 'sequence' ? renderSequence() : renderQueue();
-    if (tab === 'inbox' || (s === 'inbox' && tab !== 'people')) return renderInbox();
-    if (tab === 'people') return renderPeople();
+    if (tab === 'queue') return renderQueue();
+    if (tab === 'inbox') return renderInbox();
+    if (tab === 'contacts') return renderPeople();
     return renderSequence();
   }
 
@@ -1495,6 +1584,15 @@ function dueLabel(task) {
       const counts = taskCounts();
       return `${counts.open} due now · ${counts.upcoming} upcoming · ${counts.done} done${sources ? ` · ${esc(sources)}` : ''}`;
     }
+    if (tab === 'contacts') {
+      const enrolled = ws.taskStats?.enrolled || 0;
+      return `${ws.contactCount} contacts${enrolled ? ` · ${enrolled} enrolled` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}${sources ? ` · ${esc(sources)}` : ''}`;
+    }
+    if (tab === 'sequence') {
+      const n = (ws.steps || []).length;
+      const enrolled = ws.taskStats?.enrolled || 0;
+      return `${n} steps${enrolled ? ` · ${enrolled} enrolled` : ' · not started'}${sources ? ` · ${esc(sources)}` : ''}`;
+    }
     if (listSurface()) {
       const ch = workspaceChannels().map(channelLabel).join(' · ');
       const remaining = ws.stats?.remaining;
@@ -1506,7 +1604,6 @@ function dueLabel(task) {
   }
 
   function applyWorkspace(parsed) {
-    proposal = null;
     ws = parsed;
     applySurface();
     resetDialer(null);
@@ -1524,106 +1621,7 @@ function dueLabel(task) {
     }
   }
 
-  async function confirmProposal() {
-    if (!proposal?.proposalId || confirmBusy) return;
-    confirmBusy = true;
-    render();
-    const result = await app.callServerTool({
-      name: 'run_proposal',
-      arguments: { proposalId: proposal.proposalId },
-    });
-    confirmBusy = false;
-    const parsed = parseToolResult(result);
-    if (parsed?.error && !parsed.projectId) {
-      setNotice(parsed.error, 'err');
-      return;
-    }
-    if (parsed?.view === 'confirm_action') {
-      proposal = parsed;
-      render();
-      return;
-    }
-    if (parsed?.projectId && (parsed.contacts || parsed.steps)) {
-      applyWorkspace(parsed);
-      render();
-      app.updateModelContext?.({
-        content: [{ type: 'text', text: `Confirmed. Workspace ${parsed.name || parsed.projectId} is ready.` }],
-      });
-      return;
-    }
-    const doneSummary = proposal.summary;
-    proposal = { ...proposal, status: 'done', done: parsed };
-    render();
-    const billingUrl = parsed?.url || parsed?.billingUrl;
-    app.updateModelContext?.({
-      content: [{ type: 'text', text: `Confirmed: ${doneSummary}${billingUrl ? ` Link: ${billingUrl}` : ''}` }],
-    });
-  }
-
-  async function declineProposal() {
-    if (!proposal?.proposalId || confirmBusy) return;
-    confirmBusy = true;
-    render();
-    await app.callServerTool({
-      name: 'cancel_proposal',
-      arguments: { proposalId: proposal.proposalId },
-    });
-    confirmBusy = false;
-    const summary = proposal.summary;
-    proposal = { ...proposal, status: 'cancelled' };
-    render();
-    app.updateModelContext?.({
-      content: [{ type: 'text', text: `The user declined: ${summary}` }],
-    });
-  }
-
-  function renderConfirm() {
-    if (proposal.status === 'cancelled') {
-      root.innerHTML = `
-        <div class="confirm">
-          <h1>Cancelled</h1>
-          <p class="lede">${esc(proposal.summary || 'This action was not run.')}</p>
-        </div>
-      `;
-      return;
-    }
-    if (proposal.status === 'done') {
-      const billingUrl = proposal.done?.url || proposal.done?.billingUrl;
-      root.innerHTML = `
-        <div class="confirm">
-          <h1>Done</h1>
-          <p class="lede">${esc(proposal.summary || 'Finished.')}</p>
-          ${billingUrl ? `<div class="actions"><button class="btn primary" id="open-billing">Open link</button></div>` : ''}
-        </div>
-      `;
-      root.querySelector('#open-billing')?.addEventListener('click', () => app.openLink({ url: billingUrl }));
-      return;
-    }
-    const facts = (proposal.facts || []).map((f) => `
-      <dt>${esc(f.label)}</dt>
-      <dd>${esc(f.value)}</dd>
-    `).join('');
-    root.innerHTML = `
-      <div class="confirm">
-        <h1>${esc(proposal.title || 'Confirm')}</h1>
-        <p class="lede">${esc(proposal.summary || '')}</p>
-        ${facts ? `<dl>${facts}</dl>` : ''}
-        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
-        <div class="actions">
-          <button class="btn" id="decline" ${confirmBusy ? 'disabled' : ''}>Don't</button>
-          <button class="btn primary" id="confirm" ${confirmBusy ? 'disabled' : ''}>${esc(proposal.confirmLabel || 'Confirm')}</button>
-        </div>
-      </div>
-    `;
-    root.querySelector('#decline')?.addEventListener('click', () => void declineProposal());
-    root.querySelector('#confirm')?.addEventListener('click', () => void confirmProposal());
-  }
-
   function render() {
-    if (proposal?.view === 'confirm_action' && !ws) {
-      renderConfirm();
-      return;
-    }
     if (!ws) {
       root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
       return;
@@ -1699,7 +1697,7 @@ function dueLabel(task) {
       render();
     }));
     root.querySelector('#task-prev')?.addEventListener('click', () => stepTask(-1));
-    root.querySelector('#task-next')?.addEventListener('click', () => stepTask(1));
+    root.querySelector('#task-next')?.addEventListener('click', () => void skipCurrentTask());
     const editing = emailSteps()[selectedStep];
     if (editing && seqPane === 'email') {
       const bind = (id, key, parse) => {
@@ -1733,7 +1731,24 @@ function dueLabel(task) {
       render();
     });
     root.querySelector('#save-seq')?.addEventListener('click', saveSequence);
-    root.querySelector('#start-seq')?.addEventListener('click', startSequence);
+    root.querySelector('#start-seq')?.addEventListener('click', () => void startSequence());
+    root.querySelector('#enroll-one')?.addEventListener('click', () => {
+      const c = (ws.contacts || []).find((row) => row.id === selectedId);
+      if (c) void startSequence([c.id]);
+    });
+    root.querySelector('#unenroll')?.addEventListener('click', () => {
+      const c = (ws.contacts || []).find((row) => row.id === selectedId);
+      if (c) void unenrollContact(c);
+    });
+    root.querySelector('#work-tasks')?.addEventListener('click', () => { tab = 'tasks'; notice = ''; render(); });
+    root.querySelector('#goto-sequence')?.addEventListener('click', () => { tab = 'sequence'; notice = ''; render(); });
+    root.querySelector('#work-contact-task')?.addEventListener('click', () => {
+      const next = (ws.tasks || []).find((t) => t.contactId === selectedId && t.state !== 'done' && t.state !== 'skipped');
+      if (next) selectTask(next);
+      tab = 'tasks';
+      notice = '';
+      render();
+    });
     root.querySelector('#write')?.addEventListener('click', askClaudeToWrite);
     root.querySelectorAll('[data-people-step]').forEach((el) => el.addEventListener('click', () => {
       peopleStep = Number(el.getAttribute('data-people-step'));
@@ -1782,13 +1797,6 @@ function dueLabel(task) {
 
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
-    if (parsed?.view === 'confirm_action') {
-      proposal = parsed;
-      ws = null;
-      notice = '';
-      render();
-      return;
-    }
     if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
     if (!parsed?.projectId) return;
     applyWorkspace(parsed);

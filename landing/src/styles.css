@@ -2508,6 +2508,27 @@ button {
   font-size: 11px;
 }
 
+.cg-tabs {
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid #e4e2dc;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: #6b6966;
+}
+
+.cg-tabs span {
+  padding-bottom: 6px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.cg-tabs .on {
+  color: #161513;
+  font-weight: 600;
+  border-bottom-color: #161513;
+}
+
 .cg-people {
   border: 1px solid #e4e2dc;
   border-radius: 10px;

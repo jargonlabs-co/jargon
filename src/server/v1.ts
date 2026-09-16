@@ -34,7 +34,8 @@ import {
   toPublicProject,
   toPublicQueueNext,
   updatePublicSequence,
-  enrollPublicSequence
+  enrollPublicSequence,
+  unenrollPublicContact
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
@@ -468,6 +469,15 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     res.json({ contact: addPublicNote(store, contact.id, note) })
+  })
+
+  router.post('/contacts/:id/unenroll', auth, (req, res) => {
+    const result = unenrollPublicContact(store, req.auth!.org.id, paramId(req.params.id))
+    if (!result.ok) {
+      res.status(result.error === 'Contact not found' ? 404 : 400).json({ error: result.error })
+      return
+    }
+    res.json(result)
   })
 
   router.get('/projects/:id/sequence', auth, (req, res) => {

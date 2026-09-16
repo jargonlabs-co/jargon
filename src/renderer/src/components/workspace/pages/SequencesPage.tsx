@@ -5,11 +5,11 @@ import { motionComplete, specOf, channelLabel } from '../../../lib/workspaceSpec
 
 interface Props {
   bundle: ProjectBundle
-  onOpenInbox: () => void
-  onStartSequence?: () => void
+  onWorkTasks: () => void
+  onStartSequence?: () => void | Promise<void>
 }
 
-export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
+export function SequencesPage({ bundle, onWorkTasks, onStartSequence }: Props) {
   const sequence = bundle.sequences[0]
   const steps = bundle.steps
     .filter((s) => s.sequenceId === sequence?.id)
@@ -36,13 +36,13 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
             ) : null}
           </div>
           <div className="prod-view-actions">
-            {onStartSequence ? (
-              <button className="prod-btn primary" onClick={onStartSequence}>
-                {started ? 'Continue daily tasks' : 'Start sequence'}
+            {onStartSequence && !started ? (
+              <button className="prod-btn primary" onClick={() => void onStartSequence()}>
+                Start sequence
               </button>
             ) : (
-              <button className="prod-btn primary" onClick={onOpenInbox}>
-                Open inbox
+              <button className="prod-btn primary" onClick={onWorkTasks}>
+                Work tasks
               </button>
             )}
           </div>
@@ -137,15 +137,15 @@ export function SequencesPage({ bundle, onOpenInbox, onStartSequence }: Props) {
                 </div>
               ) : null}
               {selected.body ? <pre className="email-body">{selected.body}</pre> : null}
-              {onStartSequence ? (
-                <button className="prod-btn primary" onClick={onStartSequence}>
-                  {started ? 'Continue daily tasks' : 'Start sequence'}
+              {onStartSequence && !started ? (
+                <button className="prod-btn primary" onClick={() => void onStartSequence()}>
+                  Start sequence
                 </button>
-              ) : selected.channel === 'email' || selected.channel === 'linkedin' ? (
-                <button className="prod-btn primary" onClick={onOpenInbox}>
-                  Compose from this step
+              ) : (
+                <button className="prod-btn primary" onClick={onWorkTasks}>
+                  Work tasks
                 </button>
-              ) : null}
+              )}
             </div>
           </div>
         </aside>

@@ -96,6 +96,8 @@ export type EmailWorkspace = {
   researchPending: boolean
   /** Instruction the model should follow immediately. */
   nextAction?: string
+  /** When true, the in-chat UI asks Claude to research on first paint. */
+  kickResearch?: boolean
   stats: {
     drafts: number
     queued: number
@@ -142,7 +144,7 @@ export function getEmailWorkspace(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  opts?: { sandbox?: boolean; focus?: McpTab }
+  opts?: { sandbox?: boolean; focus?: McpTab; kickResearch?: boolean }
 ): EmailWorkspace | null {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return null
@@ -261,6 +263,7 @@ export function getEmailWorkspace(
     stepStats: stepStatsFor(steps, tasks, messages),
     researchPending,
     nextAction,
+    kickResearch: Boolean(opts?.kickResearch) && researchPending,
     stats: {
       drafts: messages.filter((m) => m.status === 'draft' && m.channel === 'email').length,
       queued: messages.filter((m) => m.status === 'queued' && m.channel === 'email').length,
@@ -388,6 +391,7 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
     { stepId: 'step_1', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
     { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 }
   ],
+  researchPending: false,
   stats: {
     drafts: 0,
     queued: 0,
@@ -536,6 +540,7 @@ export const SAMPLE_QUEUE_WORKSPACE: EmailWorkspace = {
     { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
     { stepId: 'step_3', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 }
   ],
+  researchPending: false,
   stats: {
     drafts: 0,
     queued: 0,
@@ -643,20 +648,22 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and runs the motion. Claude researches people and companies and writes the send copy.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts, builds the requested tool, sequences everyone, and opens Tasks. Claude researches people and companies and writes the send copy and talk tracks.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 
-- After import_list / deploy_tool, the user sees Contacts — the people on this list.
-- Sequence is the cadence structure (days, channels, labels). Jargon may fill {{first_name}} fallback templates — those are not the send copy. Research each company and prospect, then save_draft personalized copy per person and per email/LinkedIn step (pass stepId or day for follow-ups). start_sequence enrolls and schedules without rewriting those drafts. That opens Tasks.
-- Tasks is today's work: one dated task per step per enrolled contact. They click through — send the email, log the call, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
-- Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn. Default is all three channels.
-- One-off / a handful / just send these → Contacts with a composer. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
+- User provides a list (connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
+- import_list / deploy_tool ingests the list, builds that tool, and enrolls every contact. Tasks appear immediately — one dated task per step per person.
+- Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
+- Immediately after deploy, research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Follow nextAction on the workspace payload. Do not wait to be asked.
+- Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
+- Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.
+- One-off / a handful / just send these → Contacts with a composer. save_research or save_draft then send_draft. Do not enroll unless they asked for a cadence.
 - Inbox / mailbox / replies / what's been sent → the message log. Not the send path for a cadence.
 
 Path:
-1. Ingest with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table. After they click Allow, the write runs and Contacts appears. Do not dump JSON into chat.
-3. Research each company/prospect and save_draft the copy. Then start_sequence (or they click Start sequence). Re-open with show_email_workspace, or show_tasks after the sequence is started. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
+1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
+2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. After they click Allow, Jargon sequences everyone and Tasks appears.
+3. Research each company/prospect now and save_research the copy. Re-open with show_tasks. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

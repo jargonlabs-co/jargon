@@ -195,6 +195,13 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
               <p className="call-goal">
                 Step: {step?.label ?? 'Discovery dial'} · Goal: {bundle.project.answers.goal ?? 'Book a meeting'}
               </p>
+              {talkTrackLines(selected).length ? (
+                <ul className="call-context">
+                  {talkTrackLines(selected).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
 
               {!call || call.phase === 'completed' ? (
                 <button className="prod-btn primary" disabled={busy} onClick={() => void startCall()}>
@@ -244,6 +251,26 @@ function initials(name: string): string {
     .join('')
     .slice(0, 2)
     .toUpperCase()
+}
+
+function talkTrackLines(contact: { context?: string[]; attrs?: Record<string, unknown> }): string[] {
+  const track = contact.attrs?.talkTrack
+  const fromTrack =
+    typeof track === 'string'
+      ? track
+          .split(/\n+/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : []
+  const fromContext = (contact.context ?? []).map((line) => line.trim()).filter(Boolean)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of [...fromTrack, ...fromContext]) {
+    if (seen.has(line)) continue
+    seen.add(line)
+    out.push(line)
+  }
+  return out.slice(0, 6)
 }
 
 function formatTime(total: number): string {

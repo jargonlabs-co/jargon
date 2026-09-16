@@ -99,9 +99,14 @@ function workspaceOk(
   orgId: string,
   projectId: string,
   sandbox: boolean,
-  focus?: McpTab
+  focus?: McpTab,
+  extra?: { kickResearch?: boolean }
 ) {
-  const ws = getEmailWorkspace(store, config, orgId, projectId, { sandbox, focus })
+  const ws = getEmailWorkspace(store, config, orgId, projectId, {
+    sandbox,
+    focus,
+    kickResearch: extra?.kickResearch
+  })
   if (!ws) return fail('Project not found')
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(ws) }],
@@ -334,7 +339,9 @@ export function registerJargonTools(
     if (!parsed.ok) return fail(parsed.error)
     const result = await deployPublicTool(store, config, actor.orgId, prompt, parsed.contacts, spec)
     if (!result.ok) return fail(result.body.error)
-    return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox)
+    return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox, undefined, {
+      kickResearch: true
+    })
   }
 
   async function execImportList(workspace: string) {

@@ -1,4 +1,6 @@
 import { BrandMark } from './BrandMark'
+import { ChatGptMark } from './ChatGptMark'
+import { ClaudeMark } from './ClaudeMark'
 import { MockWindow } from './MockWindow'
 
 export function CliDeployMock() {
@@ -129,39 +131,97 @@ export function DialerMock() {
   )
 }
 
-export function ClaudeConnectorMock() {
+export function HeroSequenceMock() {
   return (
-    <MockWindow className="mock-claude" wide>
-      <div className="cli-layout">
-        <div className="claude-chat">
-          <div className="claude-chat-head">
-            <span className="claude-chat-name">Claude</span>
-            <span className="claude-chat-status">Jargon connector · connected</span>
+    <MockWindow className="mock-hero-sequence" wide>
+      <div className="hero-seq">
+        <div className="hero-seq-chat">
+          <div className="hero-seq-chat-head">
+            <div className="hero-seq-apps" aria-hidden="true">
+              <span className="hero-seq-app on">
+                <ClaudeMark size={14} />
+                Claude
+              </span>
+              <span className="hero-seq-app">
+                <ChatGptMark size={14} />
+                ChatGPT
+              </span>
+            </div>
+            <span className="hero-seq-status">Jargon · HubSpot connected</span>
           </div>
-          <div className="claude-msg user">
-            Build an outbound dialer for my AE book and start with Maya Chen.
+
+          <div className="hero-seq-thread">
+            <div className="claude-msg user">
+              Build an outbound sequence for my AE book — HubSpot, VP Sales and above, West.
+            </div>
+            <div className="hero-seq-tools">
+              <div className="claude-tool">
+                <span className="claude-tool-name">Jargon</span>
+                <span className="claude-tool-action">read_crm</span>
+              </div>
+              <div className="hero-seq-tool-note">HubSpot · AE book · 24 contacts</div>
+              <div className="claude-tool">
+                <span className="claude-tool-name">Jargon</span>
+                <span className="claude-tool-action">create_sequence</span>
+              </div>
+            </div>
+            <div className="claude-msg assistant">
+              Built <strong>West AE outbound</strong> on your HubSpot book. Day 0 email, day 2 call,
+              day 5 LinkedIn — 24 contacts, ready to run from here.
+            </div>
           </div>
-          <div className="claude-tool">
-            <span className="claude-tool-name">Jargon</span>
-            <span className="claude-tool-action">deploy_tool</span>
-          </div>
-          <div className="claude-msg assistant">
-            Deployed <strong>Outbound dialer for AE book</strong> — 24 contacts from HubSpot, calling
-            and email included. Open it in the browser, or I can pull the next call from here.
+
+          <div className="hero-seq-composer" aria-hidden="true">
+            Message Claude or ChatGPT…
           </div>
         </div>
-        <div className="cli-aside">
-          <div className="cli-aside-label">What sales opens</div>
-          <div className="cli-aside-card">
-            <div className="cli-aside-name">Outbound dialer · AE book</div>
-            <div className="cli-aside-meta">From Claude · call · email · LinkedIn</div>
-            <ul>
-              <li>Maya Chen · Lattice</li>
-              <li>Jordan Blake · Rippling</li>
-              <li>Priya Nair · Notion</li>
+
+        <aside className="hero-seq-artifact">
+          <div className="hero-seq-crm">
+            <span className="hero-seq-crm-label">Your CRM</span>
+            <span className="hero-seq-crm-pill">
+              <span className="live-dot" />
+              HubSpot · connected
+            </span>
+          </div>
+
+          <div className="hero-seq-card">
+            <div className="hero-seq-card-head">
+              <BrandMark size={22} />
+              <div>
+                <div className="hero-seq-card-name">West AE outbound</div>
+                <div className="hero-seq-card-meta">24 contacts from HubSpot · AE book</div>
+              </div>
+            </div>
+
+            <div className="hero-seq-steps">
+              {[
+                { day: 'Day 0', channel: 'Email', preview: 'Note on the AE motion' },
+                { day: 'Day 2', channel: 'Call', preview: 'Talk track from the book' },
+                { day: 'Day 5', channel: 'LinkedIn', preview: 'Short note after the call' }
+              ].map((step) => (
+                <div key={step.day} className="hero-seq-step">
+                  <span className="hero-seq-step-day">{step.day}</span>
+                  <span className="hero-seq-step-channel">{step.channel}</span>
+                  <span className="hero-seq-step-preview">{step.preview}</span>
+                </div>
+              ))}
+            </div>
+
+            <ul className="hero-seq-people">
+              {[
+                { name: 'Maya Chen', meta: 'Lattice · VP Sales' },
+                { name: 'Jordan Blake', meta: 'Rippling · Director' },
+                { name: 'Priya Nair', meta: 'Notion · Head of RevOps' }
+              ].map((person) => (
+                <li key={person.name}>
+                  <span className="hero-seq-person-name">{person.name}</span>
+                  <span className="hero-seq-person-meta">{person.meta}</span>
+                </li>
+              ))}
             </ul>
           </div>
-        </div>
+        </aside>
       </div>
     </MockWindow>
   )

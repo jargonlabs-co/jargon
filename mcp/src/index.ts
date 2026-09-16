@@ -212,14 +212,14 @@ function createServer(): McpServer {
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and create an outbound workspace. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table — never as a contacts array. Does not read HubSpot or Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people and create an outbound workspace. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. Jargon sequences everyone into Tasks. Then research each contact and save_research talk tracks / email / LinkedIn copy. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
           .string()
           .min(1)
           .describe(
-            'What to build, plus the people as a markdown table (Name | Company | Title | Email | LinkedIn). Do not pass a contacts array.'
+            'What to build, plus the people as a markdown table or CSV (Name, Company, Title, Email, LinkedIn). Do not pass a contacts array.'
           )
       })
     },
@@ -237,7 +237,7 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels). After it opens, research each company/prospect and save_draft personalized copy — do not treat {{first_name}} placeholders as the send copy. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels). Jargon builds the tool and sequences everyone into Tasks. Then research each company/prospect and save_research personalized copy — do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -472,7 +472,7 @@ function createServer(): McpServer {
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the cadence. Keeps copy already saved with save_draft; sequence templates are used only when a contact has no draft for that step.',
+        'Enroll contacts into the cadence. Deploy already enrolls cadences and dialers. Keeps copy already saved with save_draft / save_research.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -514,6 +514,37 @@ function createServer(): McpServer {
         return toolResult(
           await jargonFetch('POST', `/contacts/${contactId}/messages`, {
             body: { ...body, status: 'draft' },
+            idempotency: true
+          })
+        )
+      } catch (err) {
+        return toolError(err)
+      }
+    }
+  )
+
+  server.registerTool(
+    'save_research',
+    {
+      ...display('Save researched copy for the list', HINTS.write),
+      description:
+        'Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow, then Tasks is ready. research is a JSON array of {contactId, channel, body, subject?, stepId?, context?}. Call this immediately after import_list / deploy_tool.',
+      inputSchema: z.object({
+        summary: Summary,
+        projectId: z.string(),
+        research: z
+          .string()
+          .min(1)
+          .describe(
+            'JSON array of {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[]}'
+          )
+      })
+    },
+    async ({ projectId, research }) => {
+      try {
+        return toolResult(
+          await jargonFetch('POST', `/projects/${projectId}/research`, {
+            body: { research },
             idempotency: true
           })
         )

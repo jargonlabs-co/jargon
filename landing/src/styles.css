@@ -895,6 +895,249 @@ button {
   color: var(--text-muted);
 }
 
+/* Hero: sequence inside Claude / ChatGPT on CRM data */
+
+.hero-seq {
+  display: grid;
+  grid-template-columns: 1.12fr 0.88fr;
+  min-height: 470px;
+}
+
+.hero-seq-chat {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  min-width: 0;
+}
+
+.hero-seq-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hero-seq-apps {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.hero-seq-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hero-seq-app svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.hero-seq-app.on {
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+}
+
+.hero-seq-status {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1f7a35;
+  white-space: nowrap;
+}
+
+.hero-seq-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 4px;
+}
+
+.hero-seq-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.hero-seq-tool-note {
+  margin: -2px 0 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hero-seq .claude-msg {
+  max-width: 78%;
+}
+
+.hero-seq-composer {
+  margin: 8px 16px 16px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.hero-seq-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 18px;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.hero-seq-crm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hero-seq-crm-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hero-seq-crm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(61, 191, 90, 0.1);
+  border: 1px solid rgba(61, 191, 90, 0.22);
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f7a35;
+}
+
+.hero-seq-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+.hero-seq-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-seq-card-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.hero-seq-card-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.hero-seq-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-seq-step {
+  display: grid;
+  grid-template-columns: 52px 72px 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+}
+
+.hero-seq-step-day {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hero-seq-step-channel {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.hero-seq-step-preview {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-seq-people {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hero-seq-people li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 11px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hero-seq-people li:first-child {
+  border-top: none;
+  background: var(--bg-elevated);
+}
+
+.hero-seq-person-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hero-seq-person-meta {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
 /* Product shell mocks */
 
 .product-layout {
@@ -1463,8 +1706,27 @@ button {
   }
 
   .cli-layout,
-  .product-layout {
+  .product-layout,
+  .hero-seq {
     grid-template-columns: 1fr;
+  }
+
+  .hero-seq-artifact {
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .hero-seq {
+    min-height: 0;
+  }
+
+  .hero-seq-composer {
+    display: none;
+  }
+
+  .hero-visual {
+    mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
   }
 
   .cli-aside {
@@ -1526,6 +1788,23 @@ button {
     justify-content: center;
     max-width: 100%;
     row-gap: 8px;
+  }
+
+  .hero-seq-chat-head {
+    flex-wrap: wrap;
+  }
+
+  .hero-seq-step {
+    grid-template-columns: 48px 1fr;
+  }
+
+  .hero-seq-step-preview {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .hero-seq-people li:nth-child(n + 3) {
+    display: none;
   }
 
   .metric-row {

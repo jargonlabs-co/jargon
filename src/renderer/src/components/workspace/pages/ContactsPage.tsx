@@ -31,7 +31,9 @@ export function ContactsPage({
   const steps = bundle.steps
     .filter((s) => s.sequenceId === sequence?.id)
     .sort((a, b) => a.order - b.order)
-  const enrolledCount = bundle.contacts.filter((c) => c.status !== 'queued').length
+  const enrolledCount = bundle.contacts.filter(
+    (c) => c.status !== 'queued' || typeof c.attrs?._enrolledAt === 'number'
+  ).length
   const [selectedId, setSelectedId] = useState(
     bundle.contacts.find((c) => c.status === 'active')?.id ?? bundle.contacts[0]?.id ?? null
   )
@@ -44,9 +46,11 @@ export function ContactsPage({
   )
 
   function nextLabel(contact: (typeof bundle.contacts)[number]) {
-    if (contact.status === 'queued') return 'Not enrolled'
-    const step = steps[contact.stepIndex]
-    return step?.label ?? `Step ${contact.stepIndex + 1}`
+    if (typeof contact.attrs?._enrolledAt === 'number' || contact.status !== 'queued') {
+      const step = steps[contact.stepIndex]
+      return step?.label ?? `Step ${contact.stepIndex + 1}`
+    }
+    return 'Not enrolled'
   }
 
   return (

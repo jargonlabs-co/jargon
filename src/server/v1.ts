@@ -9,7 +9,7 @@ import { readIdempotency, writeIdempotency } from './idempotency'
 import { consumeRateLimit } from './rateLimit'
 import { parseDeployContacts, parseRequiredContacts } from './deployContacts'
 import {
-  addPublicContacts,
+  addPublicContactsAndEnroll,
   addPublicNote,
   applyDisposition,
   completePublicCall,
@@ -36,8 +36,11 @@ import {
   updatePublicSequence,
   upsertPublicDraft,
   enrollPublicSequence,
-  unenrollPublicContact
+  unenrollPublicContact,
+  savePublicResearch,
+  type ResearchCopyInput
 } from './publicApi'
+import { shouldAutoStartSequence } from '../shared/workspaceSpec'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
@@ -61,6 +64,52 @@ function loadOpenApi(): unknown {
     }
   }
   return { error: 'openapi.json not found' }
+}
+
+function parseResearchBody(
+  body: unknown
+): { ok: true; drafts: ResearchCopyInput[] } | { ok: false; error: string } {
+  const rec = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
+  const raw = rec.drafts ?? rec.research
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return { ok: false, error: 'research must be a JSON array' }
+    }
+  }
+  if (!Array.isArray(parsed) || !parsed.length) {
+    return { ok: false, error: 'research must include at least one draft' }
+  }
+  const drafts: ResearchCopyInput[] = []
+  for (const [i, row] of parsed.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      return { ok: false, error: `research[${i}] must be an object` }
+    }
+    const item = row as Record<string, unknown>
+    const contactId = typeof item.contactId === 'string' ? item.contactId.trim() : ''
+    const copy = typeof item.body === 'string' ? item.body : ''
+    if (!contactId) return { ok: false, error: `research[${i}].contactId is required` }
+    if (!copy.trim()) return { ok: false, error: `research[${i}].body is required` }
+    const channel =
+      item.channel === 'email' || item.channel === 'linkedin' || item.channel === 'call'
+        ? item.channel
+        : undefined
+    const context = Array.isArray(item.context)
+      ? item.context.filter((line): line is string => typeof line === 'string' && Boolean(line.trim()))
+      : undefined
+    drafts.push({
+      contactId,
+      body: copy,
+      subject: typeof item.subject === 'string' ? item.subject : undefined,
+      channel,
+      stepId: typeof item.stepId === 'string' ? item.stepId : undefined,
+      day: typeof item.day === 'number' ? item.day : undefined,
+      context
+    })
+  }
+  return { ok: true, drafts }
 }
 
 function parseSendAt(value: unknown): number | undefined {
@@ -213,7 +262,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
     res.json(listPublicContacts(store, project.id, parsed))
   })
 
-  router.post('/projects/:id/contacts', auth, (req, res) => {
+  router.post('/projects/:id/contacts', auth, async (req, res) => {
     const project = findOrgProject(store, req.auth!.org.id, paramId(req.params.id))
     if (!project) {
       res.status(404).json({ error: 'Project not found' })
@@ -224,7 +273,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(400).json({ error: parsed.error })
       return
     }
-    const result = addPublicContacts(store, req.auth!.org.id, project.id, parsed.contacts)
+    const result = await addPublicContactsAndEnroll(store, config, req.auth!.org.id, project.id, parsed.contacts)
     if (!result.ok) {
       res.status(400).json({ error: result.error })
       return
@@ -536,6 +585,35 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     res.status(201).json({ ...result, sentDue: 0 })
+  })
+
+  router.post('/projects/:id/research', auth, async (req, res) => {
+    const projectId = paramId(req.params.id)
+    const project = findOrgProject(store, req.auth!.org.id, projectId)
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    const drafts = parseResearchBody(req.body)
+    if (!drafts.ok) {
+      res.status(400).json({ error: drafts.error })
+      return
+    }
+    const enroll = shouldAutoStartSequence({
+      prompt: project.prompt || '',
+      primarySurface: project.spec?.primarySurface,
+      channels: project.spec?.channels,
+      steps: project.spec?.steps
+    })
+    const result = await savePublicResearch(store, config, req.auth!.org.id, projectId, drafts.drafts, {
+      sandbox: req.auth!.environment === 'sandbox',
+      enroll
+    })
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.status(201).json(result)
   })
 
   router.get('/projects/:id/messages', auth, (req, res) => {

@@ -157,8 +157,8 @@ export function ConnectClaude() {
         title="Connect Claude to Jargon"
         subtitle={
           authMode === 'login'
-            ? 'Sign in to your Jargon account so Claude can deploy queues and run outbound on your behalf.'
-            : 'Create a Jargon workspace for Claude to deploy queues and run outbound in.'
+            ? 'Sign in so Claude can build sequences and work today’s tasks in your workspace.'
+            : 'Create a Jargon workspace so Claude can run contacts, sequences, and tasks from chat.'
         }
       >
         <LoginPanel embedded showBrand={false} onModeChange={setAuthMode} />
@@ -178,7 +178,7 @@ export function ConnectClaude() {
   return (
     <ConnectShell
       title="Claude wants access to Jargon"
-      subtitle={`Approve to let Claude work inside ${org?.name ?? 'your workspace'}.`}
+      subtitle={`Approve to let Claude build sequences and work today’s tasks in ${org?.name ?? 'your workspace'}.`}
     >
       <div className="connect-claude-card">
         <div className="connect-claude-identity">
@@ -194,9 +194,9 @@ export function ConnectClaude() {
           </button>
         </div>
         <ul className="connect-claude-scopes">
-          <li>Read your contacts, queues, and tool configuration</li>
-          <li>Deploy and update tools in your workspace</li>
-          <li>Send email and place calls billed to your plan</li>
+          <li>See your contacts and who is enrolled in a cadence</li>
+          <li>Build sequences and start them from chat</li>
+          <li>Work today’s tasks — email, calls, and LinkedIn billed to your plan</li>
         </ul>
         {error ? <p className="form-error">{error}</p> : null}
         <div className="connect-claude-actions">

@@ -189,6 +189,14 @@
     }
     .person.queue .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
     .call-panel .kicker { margin: 0 0 8px; }
+    .talk-track {
+      margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--line);
+      border-radius: 8px; background: var(--bg2); white-space: pre-wrap;
+    }
+    .talk-track label { margin: 0 0 6px; }
+    .talk-track p { margin: 0; font-size: 13px; line-height: 1.45; }
+    .call-context { margin: 8px 0 0; padding: 0 0 0 16px; color: var(--muted); }
+    .call-context li { margin: 0 0 4px; }
 
     .tab .count {
       display: inline-block; min-width: 17px; padding: 0 5px; margin-left: 4px;
@@ -498,6 +506,7 @@ function dueLabel(task) {
   let dialMuted = false;
   let dialTicker = 0;
   let dialConnect = 0;
+  let researchAsked = false;
 
   function surface() {
     if (!ws) return 'sequence';
@@ -784,22 +793,34 @@ function dueLabel(task) {
   }
 
   async function askClaudeToWrite() {
-    const copySteps = (ws.steps || []).filter((s) => s.channel === 'email' || s.channel === 'linkedin');
-    const stepLines = copySteps.length
-      ? copySteps.map((s) => `- ${s.id} · day ${s.day} · ${s.channel} · ${s.label || s.channel}`).join('\n')
+    const steps = ws.steps || [];
+    const stepLines = steps.length
+      ? steps.map((s) => `- ${s.id} · day ${s.day} · ${s.channel} · ${s.label || s.channel}`).join('\n')
       : '';
-    const research = `Research each contact and their company from this chat. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_draft for each person. Pass stepId when writing a follow-up step. Then call show_email_workspace.`;
+    const people = (ws.contacts || []).map((c) =>
+      `- ${c.id} · ${c.name}${c.company ? ` · ${c.company}` : ''}${c.title ? ` · ${c.title}` : ''}`
+    ).join('\n');
+    const research = `Research each contact and their company. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_research once with a JSON array. Use channel "call" for talk tracks, "email" for emails, "linkedin" for LinkedIn notes. Pass stepId for follow-ups. Include short context bullets when you have signals.`;
     await app.sendMessage({
       role: 'user',
       content: [{
         type: 'text',
         text: surface() === 'one_off'
-            ? `Write a personalized one-off email for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace. Do not start a sequence.`
-            : listSurface()
-              ? `Write personalized email and LinkedIn drafts for each contact in project ${ws.projectId}. ${research} Call save_draft with channel email or linkedin.${stepLines ? `\n\nSteps:\n${stepLines}` : ''}`
-              : `Write personalized drafts for each contact in project ${ws.projectId}. ${research}${stepLines ? `\n\nSteps:\n${stepLines}` : ''}`,
+            ? `Write a personalized one-off email for each contact in project ${ws.projectId}. Call save_research with channel email. Do not start a sequence.\n\nPeople:\n${people}`
+            : `Populate this outbound tool with researched copy for project ${ws.projectId}. ${research}${stepLines ? `\n\nSteps:\n${stepLines}` : ''}\n\nPeople:\n${people}`,
       }],
     });
+  }
+
+  function maybeAskResearch() {
+    if (researchAsked || !ws?.kickResearch || !ws.researchPending) return;
+    const key = `jargon-research-${ws.projectId}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch (_) { /* ignore */ }
+    researchAsked = true;
+    void askClaudeToWrite().catch(() => undefined);
   }
 
   async function startCall(contact) {
@@ -1329,16 +1350,33 @@ function dueLabel(task) {
     `;
   }
 
+  function talkTrackFor(contact, stepId) {
+    const tracks = contact?.attrs?._talkTracks;
+    if (stepId && tracks && typeof tracks === 'object' && typeof tracks[stepId] === 'string' && tracks[stepId].trim()) {
+      return tracks[stepId].trim();
+    }
+    if (typeof contact?.attrs?.talkTrack === 'string' && contact.attrs.talkTrack.trim()) {
+      return contact.attrs.talkTrack.trim();
+    }
+    const bullets = (contact?.context || []).filter(Boolean);
+    return bullets.length ? bullets.join('\n') : '';
+  }
+
   function renderCallPanel(contact) {
     const call = ws.openCall && ws.openCall.contactId === contact.id ? ws.openCall : null;
     const done = doneSet(contact).has('call');
     const phase = call?.phase;
+    const task = (ws.tasks || []).find((t) => t.contactId === contact.id && t.channel === 'call' && t.state !== 'done' && t.state !== 'skipped');
+    const track = task?.body || talkTrackFor(contact, task?.stepId);
+    const bullets = (contact.context || []).filter(Boolean);
     return `
       <div class="composer call-panel">
         <div class="to">${esc(contact.name)} · ${esc(contact.phone || 'No number on file')}</div>
         ${phase === 'dialing' ? '<p class="empty">Connecting…</p>' : ''}
         ${phase === 'connected' ? '<p class="kicker">On the line</p>' : ''}
         ${done && !call ? '<p class="sub">Call logged.</p>' : ''}
+        ${track ? `<div class="talk-track"><label>Talk track</label><p>${esc(track)}</p></div>` : '<p class="sub">Talk track lands here after Claude researches this contact.</p>'}
+        ${bullets.length && track !== bullets.join('\n') ? `<ul class="call-context">${bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
         <div class="row">
           <button class="btn primary" id="start-call" ${busy || (phase && phase !== 'completed') ? 'disabled' : ''}>Start call</button>
         </div>
@@ -1438,7 +1476,7 @@ function dueLabel(task) {
     const counts = taskCounts();
     if (!(ws.tasks || []).length) {
       return `
-        <p class="empty">No one is enrolled yet. Start the sequence and every step becomes a dated task here.</p>
+        <p class="empty">No tasks yet. Import a list and Jargon will sequence everyone here.</p>
         <div class="row">
           <button class="btn primary" id="start-seq" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm start' : 'Start sequence'}</button>
         </div>
@@ -1667,7 +1705,7 @@ function dueLabel(task) {
           <button class="btn" id="open">Open workspace</button>
         </div>
       </header>
-      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ws.researchPending ? '<div class="banner">Researching this list — talk tracks and copy will land on each task.</div>' : ''}
       ${renderTabs()}
       <div id="panel">${renderPanel()}</div>
     `;
@@ -1831,6 +1869,7 @@ function dueLabel(task) {
     if (!parsed?.projectId) return;
     applyWorkspace(parsed);
     render();
+    maybeAskResearch();
   };
   app.onhostcontextchanged = themeFromHost;
   await app.connect();

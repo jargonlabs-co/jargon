@@ -237,7 +237,7 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the motion in workspace. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels). After it opens, research each company/prospect and save_draft personalized copy — do not treat {{first_name}} placeholders as the send copy. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -431,7 +431,7 @@ function createServer(): McpServer {
     {
       ...display('Open the outbound workspace', HINTS.read),
       description:
-        'Sequence steps plus field catalog. Show this in Claude. Templates use {{first_name}} and catalog keys.',
+        'Sequence steps plus field catalog. Shared fallback templates may use {{first_name}}. Personalized send copy lives on drafts — research each prospect and save_draft.',
       inputSchema: z.object({ projectId: z.string() })
     },
     async ({ projectId }) => {
@@ -447,7 +447,8 @@ function createServer(): McpServer {
     'update_sequence',
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
-      description: 'Replace sequence steps without redeploying.',
+      description:
+        'Change cadence structure (days, channels, labels) without redeploying. Do not put per-person researched copy here — use save_draft.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -471,7 +472,7 @@ function createServer(): McpServer {
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the shared sequence. Queues each email with sendAt from step day.',
+        'Enroll contacts into the cadence. Keeps copy already saved with save_draft; sequence templates are used only when a contact has no draft for that step.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -496,13 +497,16 @@ function createServer(): McpServer {
     'save_draft',
     {
       ...display('Save a draft message', HINTS.write),
-      description: 'Save proposed copy for a contact. Interpolates catalog fields.',
+      description:
+        'Save researched, personalized copy for a contact. Overwrites any placeholder template for that step. Pass stepId or day for follow-ups.',
       inputSchema: z.object({
         summary: Summary,
         contactId: z.string(),
         body: z.string(),
         subject: z.string().optional(),
-        channel: z.enum(['email', 'linkedin']).optional()
+        channel: z.enum(['email', 'linkedin']).optional(),
+        stepId: z.string().optional(),
+        day: z.number().int().min(0).max(30).optional()
       })
     },
     async ({ contactId, summary: _summary, ...body }) => {

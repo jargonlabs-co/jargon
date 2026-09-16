@@ -203,13 +203,70 @@ function extractMarkdownTableContacts(prompt: string): DeployContactInput[] | un
   return undefined
 }
 
+function splitCsvRow(line: string, delim: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let quoted = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+    if (ch === delim && !quoted) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  cells.push(current.trim())
+  return cells
+}
+
+function extractCsvContacts(prompt: string): DeployContactInput[] | undefined {
+  const lines = prompt.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line || line.includes('|')) continue
+    const delim = line.includes('\t') ? '\t' : line.includes(',') ? ',' : ''
+    if (!delim) continue
+    const headers = splitCsvRow(line, delim).map(headerField)
+    if (!headers.includes('name')) continue
+    const rows: DeployContactInput[] = []
+    for (let rowIndex = i + 1; rowIndex < lines.length; rowIndex++) {
+      const rawLine = lines[rowIndex].trim()
+      if (!rawLine) break
+      if (rawLine.includes('|') || !rawLine.includes(delim)) break
+      const cells = splitCsvRow(rawLine, delim)
+      const record: Record<string, unknown> = {}
+      headers.forEach((field, idx) => {
+        if (!field) return
+        const raw = cells[idx] ?? ''
+        if (field === 'linkedinUrl') record.linkedinUrl = cellUrl(raw) ?? asTrimmed(raw)
+        else if (field === 'email') record.email = cellEmail(raw) ?? asTrimmed(raw)
+        else record[field] = asTrimmed(raw)
+      })
+      const parsed = normalizeContactRow(record)
+      if (!('error' in parsed)) rows.push(parsed)
+    }
+    if (rows.length) return rows.slice(0, MAX_CONTACTS)
+  }
+  return undefined
+}
+
 /** Claude connectors often cache tool schemas — only `prompt` is sendable. Pull people out of that text. */
 export function extractContactsFromPrompt(prompt: string): DeployContactInput[] | undefined {
   for (const value of jsonArraysIn(prompt)) {
     const parsed = parseDeployContacts(value)
     if (parsed.ok && parsed.contacts?.length) return parsed.contacts
   }
-  return extractMarkdownTableContacts(prompt)
+  return extractMarkdownTableContacts(prompt) ?? extractCsvContacts(prompt)
 }
 
 export const PROMPT_CONTACTS_HINT =

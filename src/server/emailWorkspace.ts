@@ -25,7 +25,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=nl1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=copy1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -37,6 +37,8 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=tasks1',
   'ui://jargon/email-workspace.html?v=dialer1',
   'ui://jargon/email-workspace.html?v=confirm1',
+  'ui://jargon/email-workspace.html?v=nl1',
+  'ui://jargon/email-workspace.html?v=liopen1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -628,12 +630,12 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Claude researches people and companies, then Jargon stores contacts and runs the motion.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and runs the motion. Claude researches people and companies and writes the send copy.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 
 - After import_list / deploy_tool, the user sees Contacts — the people on this list.
-- Sequence is where they build and edit the cadence. Describe steps in workspace with {{first_name}}, {{company}}, catalog keys. Call start_sequence, or they click Start sequence, to enroll everyone by step day. That opens Tasks.
+- Sequence is the cadence structure (days, channels, labels). Jargon may fill {{first_name}} fallback templates — those are not the send copy. Research each company and prospect, then save_draft personalized copy per person and per email/LinkedIn step (pass stepId or day for follow-ups). start_sequence enrolls and schedules without rewriting those drafts. That opens Tasks.
 - Tasks is today's work: one dated task per step per enrolled contact. They click through — send the email, log the call, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn. Default is all three channels.
 - One-off / a handful / just send these → Contacts with a composer. save_draft then send_draft or send_message. Do not call start_sequence unless they asked for a cadence.
@@ -642,6 +644,6 @@ One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Task
 Path:
 1. Ingest with import_list (contacts from chat, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
 2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table. After they click Allow, the write runs and Contacts appears. Do not dump JSON into chat.
-3. Re-open with show_email_workspace, or show_tasks after the sequence is started. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
+3. Research each company/prospect and save_draft the copy. Then start_sequence (or they click Start sequence). Re-open with show_email_workspace, or show_tasks after the sequence is started. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

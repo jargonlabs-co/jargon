@@ -65,13 +65,16 @@ export function buildWorkspaceTasks(input: {
   }
   const stepDays = new Map(steps.map((step) => [step.id, Math.max(0, step.day)]))
   // Contacts whose every step was skipped at enrollment still get tasks, anchored to the workspace.
-  const workspaceAnchor = enrollmentAnchor(input.messages, stepDays)
+  const workspaceAnchor =
+    enrollmentAnchor(input.messages, stepDays) ?? earliestEnrolledAt(input.contacts)
 
   const tasks: WorkspaceTask[] = []
   for (const contact of input.contacts) {
     const messages = byContact.get(contact.id) ?? []
     const anchor =
-      enrollmentAnchor(messages, stepDays) ?? (contact.status === 'queued' ? null : workspaceAnchor)
+      enrollmentAnchor(messages, stepDays) ??
+      enrolledAtOf(contact) ??
+      (contact.status === 'queued' ? null : workspaceAnchor)
     if (anchor == null) continue
 
     const stopped = STOP_STATUSES.includes(contact.status)
@@ -136,6 +139,7 @@ export function buildWorkspaceTasks(input: {
           dueAt,
           state,
           bucket: bucketFor(state, dueAt, now),
+          body: talkTrackFor(contact, step.id),
           target: contact.phone || undefined,
           reason: reasonFor(state, stopped, contact.status, 'No phone number')
         })
@@ -231,6 +235,46 @@ function pick(messages: PublicMessage[], match: (m: PublicMessage) => boolean): 
   const hits = messages.filter(match)
   if (!hits.length) return undefined
   return hits.find((m) => m.status !== 'cancelled' && m.status !== 'failed') ?? hits[0]
+}
+
+export const ATTR_ENROLLED_AT = '_enrolledAt'
+export const ATTR_TALK_TRACK = 'talkTrack'
+export const ATTR_TALK_TRACKS = '_talkTracks'
+
+export function enrolledAtOf(contact: { attrs?: Record<string, unknown> }): number | null {
+  const raw = contact.attrs?.[ATTR_ENROLLED_AT]
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+function earliestEnrolledAt(contacts: PublicContact[]): number | null {
+  let min: number | null = null
+  for (const contact of contacts) {
+    const at = enrolledAtOf(contact)
+    if (at == null) continue
+    if (min == null || at < min) min = at
+  }
+  return min
+}
+
+export function talkTrackFor(
+  contact: { context?: string[]; attrs?: Record<string, unknown> },
+  stepId?: string
+): string | undefined {
+  const tracks = contact.attrs?.[ATTR_TALK_TRACKS]
+  if (stepId && tracks && typeof tracks === 'object' && !Array.isArray(tracks)) {
+    const specific = (tracks as Record<string, unknown>)[stepId]
+    if (typeof specific === 'string' && specific.trim()) return specific.trim()
+  }
+  const single = contact.attrs?.[ATTR_TALK_TRACK]
+  if (typeof single === 'string' && single.trim()) return single.trim()
+  const context = contact.context?.map((line) => line.trim()).filter(Boolean)
+  if (context?.length) return context.join('\n')
+  return undefined
 }
 
 /** Enrollment time implied by a scheduled message: its send day minus the step's wait days. */

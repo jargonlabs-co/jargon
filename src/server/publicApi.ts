@@ -19,7 +19,7 @@ import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { inspectTwilioVoice } from './providers/twilio'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
-import { formatChannels, parseDeploySpec } from '../shared/workspaceSpec'
+import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
@@ -36,6 +36,12 @@ import {
   nextQueueContact,
   shouldAdvanceStep
 } from './queries'
+import {
+  ATTR_ENROLLED_AT,
+  ATTR_TALK_TRACK,
+  ATTR_TALK_TRACKS,
+  enrolledAtOf
+} from './workspaceTasks'
 
 export type PublicProject = {
   id: string
@@ -70,6 +76,7 @@ export type PublicContact = {
   context?: string[]
   attrs?: Record<string, unknown>
   channelsDone?: Contact['channelsDone']
+  enrichedAt?: number
   createdAt: number
   updatedAt: number
 }
@@ -166,6 +173,7 @@ export function toPublicContact(contact: Contact): PublicContact {
     context: contact.context,
     attrs: contact.attrs && Object.keys(contact.attrs).length ? contact.attrs : undefined,
     channelsDone: contact.channelsDone?.length ? contact.channelsDone : undefined,
+    enrichedAt: contact.enrichedAt,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt
   }
@@ -338,6 +346,16 @@ export async function deployPublicTool(
     if (!project) {
       return { ok: false, status: 502, body: { error: 'Project created but could not be loaded' } }
     }
+    if (
+      shouldAutoStartSequence({
+        prompt,
+        primarySurface: project.spec?.primarySurface,
+        channels: project.spec?.channels,
+        steps: project.spec?.steps
+      })
+    ) {
+      await enrollPublicSequence(store, config, orgId, projectId)
+    }
     const publicProject = toPublicProject(store.db.contacts, project, config.appUrl)
     return {
       ok: true,
@@ -447,7 +465,12 @@ export function unenrollPublicContact(
     const row = db.contacts.find((c) => c.id === contactId)
     if (!row) return
     const hasSent = db.messages.some((m) => m.contactId === contactId && m.status === 'sent')
-    if (!hasSent && row.status === 'active') {
+    const wasEnrolled = enrolledAtOf(row) != null || row.status === 'active'
+    if (row.attrs && ATTR_ENROLLED_AT in row.attrs) {
+      const { [ATTR_ENROLLED_AT]: _dropped, ...rest } = row.attrs
+      row.attrs = rest
+    }
+    if (!hasSent && wasEnrolled) {
       row.status = 'queued'
       row.updatedAt = now
     } else {
@@ -928,10 +951,12 @@ export function updatePublicSequence(
       sequence.name = `${formatChannels(next.spec.channels)} · ${next.spec.goal}`
       sequence.updatedAt = now
     }
+    const previous = db.steps.filter((s) => s.projectId === projectId).sort((a, b) => a.order - b.order)
+    const usedIds = new Set<string>()
     db.steps = db.steps.filter((s) => s.projectId !== projectId)
     db.steps.push(
       ...next.spec.steps.map((step, order) => ({
-        id: uid('step'),
+        id: reuseStepId(previous, step, order, usedIds),
         orgId,
         sequenceId: sequence?.id ?? uid('seq'),
         projectId,
@@ -982,7 +1007,7 @@ export function patchPublicMessage(
   store: DataStore,
   orgId: string,
   messageId: string,
-  input: { subject?: string; body?: string; status?: MessageStatus; sendAt?: number }
+  input: { subject?: string; body?: string; status?: MessageStatus; sendAt?: number; stepId?: string }
 ): { ok: true; message: PublicMessage } | { ok: false; error: string } {
   const message = findOrgMessage(store, orgId, messageId)
   if (!message) return { ok: false, error: 'Message not found' }
@@ -1002,6 +1027,7 @@ export function patchPublicMessage(
     }
     if (input.status) row.status = input.status
     if (input.sendAt !== undefined) row.sendAt = input.sendAt
+    if (typeof input.stepId === 'string' && input.stepId.trim()) row.stepId = input.stepId.trim()
     row.updatedAt = Date.now()
   })
   return { ok: true, message: toPublicMessage(store.db.messages.find((m) => m.id === messageId)!) }
@@ -1110,6 +1136,274 @@ export async function deliverPublicMessage(
 
 export type EnrollSkip = { contactId: string; stepId?: string; reason: string }
 
+function isOpenCadenceMessage(message: Message): boolean {
+  return message.status !== 'cancelled' && message.status !== 'failed'
+}
+
+function reuseStepId(
+  previous: SequenceStep[],
+  step: { channel: SequenceStep['channel']; day: number },
+  order: number,
+  usedIds: Set<string>
+): string {
+  const sameIndex = previous[order]
+  if (sameIndex && sameIndex.channel === step.channel && !usedIds.has(sameIndex.id)) {
+    usedIds.add(sameIndex.id)
+    return sameIndex.id
+  }
+  const sameDay = previous.find(
+    (row) => row.channel === step.channel && row.day === step.day && !usedIds.has(row.id)
+  )
+  if (sameDay) {
+    usedIds.add(sameDay.id)
+    return sameDay.id
+  }
+  return uid('step')
+}
+
+function openCadenceDrafts(store: DataStore, contactId: string, channel: 'email' | 'linkedin'): Message[] {
+  return store.db.messages
+    .filter(
+      (m) => m.contactId === contactId && m.channel === channel && isOpenCadenceMessage(m)
+    )
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt)
+}
+
+function takeDraftForStep(drafts: Message[], stepId: string, claimed: Set<string>): Message | undefined {
+  const bound = drafts.find((m) => m.stepId === stepId && !claimed.has(m.id))
+  if (bound) return bound
+  return drafts.find((m) => !m.stepId && !claimed.has(m.id))
+}
+
+function resolveDraftStep(
+  steps: Array<PublicStep & { channel: 'email' | 'linkedin' }>,
+  input?: { stepId?: string; day?: number }
+): (PublicStep & { channel: 'email' | 'linkedin' }) | undefined {
+  if (input?.stepId) return steps.find((step) => step.id === input.stepId)
+  if (input?.day != null && Number.isFinite(input.day)) {
+    return steps.find((step) => step.day === input.day) ?? steps[0]
+  }
+  return steps[0]
+}
+
+/** Save researched copy onto the matching cadence step. Never creates a second draft that hides the first. */
+export async function upsertPublicDraft(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  contactId: string,
+  input: {
+    subject?: string
+    body: string
+    channel?: 'email' | 'linkedin'
+    sandbox?: boolean
+    stepId?: string
+    day?: number
+  }
+): Promise<
+  | { ok: true; status: 200 | 201; body: { message: PublicMessage } }
+  | { ok: false; status: 404 | 502; body: { error: string; message?: PublicMessage } }
+> {
+  const contact = findOrgContact(store, orgId, contactId)
+  if (!contact) return { ok: false, status: 404, body: { error: 'Contact not found' } }
+  const channel = input.channel ?? 'email'
+  const sequence = getPublicSequence(store, orgId, contact.projectId)
+  const steps = (sequence?.steps ?? []).filter(
+    (step): step is PublicStep & { channel: 'email' | 'linkedin' } =>
+      step != null && step.channel === channel
+  )
+  const step = resolveDraftStep(steps, input)
+  const claimed = new Set<string>()
+  const existing = step
+    ? takeDraftForStep(openCadenceDrafts(store, contactId, channel), step.id, claimed)
+    : openCadenceDrafts(store, contactId, channel).find((m) => !m.stepId)
+  if (existing && existing.status !== 'sent') {
+    const patched = patchPublicMessage(store, orgId, existing.id, {
+      subject: input.subject,
+      body: input.body,
+      stepId: step?.id ?? existing.stepId
+    })
+    if (!patched.ok) return { ok: false, status: 404, body: { error: patched.error } }
+    markContactEnriched(store, contactId)
+    return { ok: true, status: 200, body: { message: patched.message } }
+  }
+  const created = await sendPublicMessage(store, config, contact, {
+    subject: input.subject,
+    body: input.body,
+    channel,
+    status: 'draft',
+    sandbox: input.sandbox,
+    stepId: step?.id
+  })
+  if (!created.ok) return created
+  markContactEnriched(store, contactId)
+  return { ok: true, status: 201, body: created.body }
+}
+
+export function projectIsSequenced(store: DataStore, projectId: string): boolean {
+  if (store.db.contacts.some((c) => c.projectId === projectId && enrolledAtOf(c) != null)) return true
+  return store.db.messages.some((m) => m.projectId === projectId && Boolean(m.stepId))
+}
+
+function markContactEnriched(store: DataStore, contactId: string): void {
+  store.update((db) => {
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const now = Date.now()
+    row.enrichedAt = now
+    row.updatedAt = now
+  })
+}
+
+function mergeContactContext(store: DataStore, contactId: string, context: string[]): void {
+  store.update((db) => {
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const merged = [...(row.context ?? [])]
+    for (const line of context) {
+      const text = line.trim()
+      if (text && !merged.includes(text)) merged.push(text)
+    }
+    row.context = merged.slice(0, 8)
+    row.updatedAt = Date.now()
+  })
+}
+
+export function savePublicTalkTrack(
+  store: DataStore,
+  orgId: string,
+  contactId: string,
+  input: { body: string; context?: string[]; stepId?: string }
+): { ok: true; contact: PublicContact } | { ok: false; error: string } {
+  const contact = findOrgContact(store, orgId, contactId)
+  if (!contact) return { ok: false, error: 'Contact not found' }
+  const body = input.body.trim()
+  if (!body) return { ok: false, error: 'Talk track is empty' }
+  store.update((db) => {
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const now = Date.now()
+    const prev =
+      row.attrs?.[ATTR_TALK_TRACKS] &&
+      typeof row.attrs[ATTR_TALK_TRACKS] === 'object' &&
+      !Array.isArray(row.attrs[ATTR_TALK_TRACKS])
+        ? { ...(row.attrs[ATTR_TALK_TRACKS] as Record<string, string>) }
+        : {}
+    if (input.stepId) prev[input.stepId] = body
+    row.attrs = {
+      ...(row.attrs ?? {}),
+      [ATTR_TALK_TRACK]: body,
+      ...(Object.keys(prev).length ? { [ATTR_TALK_TRACKS]: prev } : {})
+    }
+    if (input.context?.length) {
+      const merged = [...(row.context ?? [])]
+      for (const line of input.context) {
+        const text = line.trim()
+        if (text && !merged.includes(text)) merged.push(text)
+      }
+      row.context = merged.slice(0, 8)
+    }
+    row.enrichedAt = now
+    row.updatedAt = now
+    db.activities.unshift({
+      id: uid('act'),
+      orgId: row.orgId,
+      projectId: row.projectId,
+      contactId: row.id,
+      kind: 'note',
+      summary: `Saved talk track for ${row.name}`,
+      createdAt: now
+    })
+  })
+  return { ok: true, contact: toPublicContact(store.db.contacts.find((c) => c.id === contactId)!) }
+}
+
+export type ResearchCopyInput = {
+  contactId: string
+  body: string
+  subject?: string
+  channel?: Channel
+  stepId?: string
+  day?: number
+  context?: string[]
+}
+
+export async function savePublicResearch(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  projectId: string,
+  drafts: ResearchCopyInput[],
+  opts?: { sandbox?: boolean; enroll?: boolean }
+): Promise<
+  | { ok: true; saved: number; failed: number; enrolled?: number }
+  | { ok: false; error: string }
+> {
+  if (!findOrgProject(store, orgId, projectId)) return { ok: false, error: 'Project not found' }
+  if (!drafts.length) return { ok: false, error: 'research is empty' }
+  let saved = 0
+  let failed = 0
+  for (const draft of drafts) {
+    const contact = findOrgContact(store, orgId, draft.contactId)
+    if (!contact || contact.projectId !== projectId) {
+      failed += 1
+      continue
+    }
+    const channel = draft.channel ?? 'email'
+    if (channel === 'call') {
+      const result = savePublicTalkTrack(store, orgId, draft.contactId, {
+        body: draft.body,
+        context: draft.context,
+        stepId: draft.stepId
+      })
+      if (result.ok) saved += 1
+      else failed += 1
+      continue
+    }
+    const result = await upsertPublicDraft(store, config, orgId, draft.contactId, {
+      subject: draft.subject,
+      body: draft.body,
+      channel,
+      sandbox: opts?.sandbox,
+      stepId: draft.stepId,
+      day: draft.day
+    })
+    if (result.ok) {
+      if (draft.context?.length) mergeContactContext(store, draft.contactId, draft.context)
+      saved += 1
+    } else failed += 1
+  }
+  let enrolled: number | undefined
+  if (opts?.enroll !== false) {
+    const started = await enrollPublicSequence(store, config, orgId, projectId, {
+      sandbox: opts?.sandbox
+    })
+    if (started.ok) enrolled = started.contacts
+  }
+  return { ok: true, saved, failed, enrolled }
+}
+
+export async function addPublicContactsAndEnroll(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  projectId: string,
+  inputs: DeployContactInput[]
+): Promise<
+  | { ok: true; added: number; contactCount: number; contacts: PublicContact[] }
+  | { ok: false; error: string }
+> {
+  const result = addPublicContacts(store, orgId, projectId, inputs)
+  if (!result.ok) return result
+  if (projectIsSequenced(store, projectId)) {
+    await enrollPublicSequence(store, config, orgId, projectId, {
+      contactIds: result.contacts.map((c) => c.id)
+    })
+  }
+  return result
+}
+
 export async function enrollPublicSequence(
   store: DataStore,
   config: ServerConfig,
@@ -1135,11 +1429,8 @@ export async function enrollPublicSequence(
 > {
   const sequence = getPublicSequence(store, orgId, projectId)
   if (!sequence) return { ok: false, error: 'Project not found' }
-  const steps = sequence.steps.filter(
-    (step): step is PublicStep & { channel: 'email' | 'linkedin' } =>
-      step != null && (step.channel === 'email' || step.channel === 'linkedin')
-  )
-  if (!steps.length) return { ok: false, error: 'Sequence has no email or LinkedIn steps' }
+  const steps = sequence.steps.filter((step): step is PublicStep => Boolean(step))
+  if (!steps.length) return { ok: false, error: 'Sequence has no steps' }
   const all = store.db.contacts.filter((c) => c.projectId === projectId && c.orgId === orgId)
   const wanted = input?.contactIds?.length
     ? all.filter((c) => input.contactIds!.includes(c.id))
@@ -1154,7 +1445,14 @@ export async function enrollPublicSequence(
       skipped.push({ contactId: contact.id, reason: `Contact is ${contact.status.replace('_', ' ')}` })
       continue
     }
+    const claimed = new Set<string>()
     for (const step of steps) {
+      if (step.channel === 'call') {
+        if (!contact.phone?.trim()) {
+          skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing phone' })
+        }
+        continue
+      }
       if (step.channel === 'email' && !contact.email?.trim()) {
         skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing email' })
         continue
@@ -1163,15 +1461,24 @@ export async function enrollPublicSequence(
         skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing LinkedIn URL' })
         continue
       }
-      const existing = store.db.messages.find(
-        (m) =>
-          m.contactId === contact.id &&
-          m.stepId === step.id &&
-          m.status !== 'cancelled' &&
-          m.status !== 'failed'
+      const sendAt = startAt + Number(step.day || 0) * DAY_MS
+      const existing = takeDraftForStep(
+        openCadenceDrafts(store, contact.id, step.channel),
+        step.id,
+        claimed
       )
       if (existing) {
-        skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Already enrolled' })
+        claimed.add(existing.id)
+        if (existing.stepId === step.id && existing.sendAt != null) {
+          skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Already enrolled' })
+          continue
+        }
+        // Keep Claude's researched copy. Only attach the step and send day.
+        const patched = patchPublicMessage(store, orgId, existing.id, {
+          stepId: step.id,
+          sendAt: existing.sendAt ?? sendAt
+        })
+        if (patched.ok) created.push(patched.message)
         continue
       }
       const result = await sendPublicMessage(store, config, contact, {
@@ -1180,7 +1487,7 @@ export async function enrollPublicSequence(
         channel: step.channel,
         // Enrollment drafts the cadence; nothing leaves until a human sends it.
         status: 'draft',
-        sendAt: startAt + Number(step.day || 0) * DAY_MS,
+        sendAt,
         stepId: step.id,
         sandbox: input?.sandbox
       })
@@ -1204,8 +1511,11 @@ export async function enrollPublicSequence(
       if (!row) continue
       if (row.status === 'queued') {
         row.status = 'active'
-        row.updatedAt = now
       }
+      if (enrolledAtOf(row) == null) {
+        row.attrs = { ...(row.attrs ?? {}), [ATTR_ENROLLED_AT]: startAt }
+      }
+      row.updatedAt = now
     }
     const project = db.projects.find((p) => p.id === projectId)
     if (project) project.updatedAt = now
@@ -1214,7 +1524,7 @@ export async function enrollPublicSequence(
       orgId,
       projectId,
       kind: 'campaign',
-      summary: `Started sequence · drafted ${created.length} messages for ${wanted.length} contacts`,
+      summary: `Started sequence · ${wanted.length} contacts · ${steps.length} steps`,
       createdAt: now
     })
   })

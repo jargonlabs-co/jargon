@@ -6,7 +6,7 @@ import { toPublicUser } from './auth'
 import type { McpActor } from './mcpOauth'
 import { extractContactsFromPrompt, parseDeployContacts, parseRequiredContacts } from './deployContacts'
 import {
-  addPublicContacts,
+  addPublicContactsAndEnroll,
   addPublicNote,
   applyDisposition,
   completePublicCall,
@@ -31,8 +31,12 @@ import {
   toPublicProject,
   toPublicQueueNext,
   updatePublicSequence,
+  upsertPublicDraft,
   unenrollPublicContact,
-  skipPublicTask
+  skipPublicTask,
+  savePublicResearch,
+  savePublicTalkTrack,
+  type ResearchCopyInput
 } from './publicApi'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
@@ -41,6 +45,7 @@ import { inspectTwilioVoice } from './providers/twilio'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import type { McpTab } from '../shared/workspaceSpec'
+import { shouldAutoStartSequence } from '../shared/workspaceSpec'
 
 const ContactStatus = z.enum([
   'queued',
@@ -138,7 +143,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-          'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Then Contacts / Sequence / Tasks appears. Describe the motion in workspace: a three-channel queue, a cadence, or one-off emails. For a cadence, describe the steps in workspace. For one-offs, save_draft / send_draft. After start_sequence, work is Tasks. Reopen with show_email_workspace.'
+        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Jargon ingests the list, builds the sequencer or dialer, sequences everyone into Tasks, then you research each person and save_research talk tracks / email / LinkedIn copy. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
       })
     }
   )
@@ -304,7 +309,7 @@ export function registerJargonTools(
       .string()
       .min(1)
       .describe(
-        'What to build, plus the people as a markdown table with columns Name, Company, Title, Email, LinkedIn. Do not pass a contacts array.'
+        'What to build, plus the people as a markdown table, CSV, or JSON with columns Name, Company, Title, Email, LinkedIn. Do not pass a contacts array.'
       )
   })
   const DeployToolInput = z.object({
@@ -313,7 +318,7 @@ export function registerJargonTools(
       .string()
       .min(1)
       .describe(
-        'What to build: outbound dialer, sequencer, cadence, etc. To ingest a researched list, include a markdown people table (Name | Company | Title | Email | LinkedIn). Omit the table only to hydrate HubSpot/Railway.'
+        'What to build: outbound dialer, sequencer, cadence, etc. To ingest a list, include a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). Omit the table only to hydrate HubSpot/Railway.'
       )
   })
   const AddContactsInput = z.object({
@@ -322,7 +327,7 @@ export function registerJargonTools(
     people: z
       .string()
       .min(1)
-      .describe('People as a markdown table (Name | Company | Title | Email | LinkedIn) or a JSON array in the text.')
+      .describe('People as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn).')
   })
 
   async function execDeploy(prompt: string, contacts: unknown, spec: unknown) {
@@ -337,7 +342,7 @@ export function registerJargonTools(
     const contacts = extractContactsFromPrompt(workspace)
     if (!contacts?.length) {
       return fail(
-        'Put the people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn) or a JSON array in the text.'
+        'Put the people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn).'
       )
     }
     return execDeploy(workspace, contacts, undefined)
@@ -346,7 +351,7 @@ export function registerJargonTools(
   async function execAddContacts(projectId: string, contacts: unknown) {
     const parsed = parseRequiredContacts(contacts)
     if (!parsed.ok) return fail(parsed.error)
-    const result = addPublicContacts(store, actor.orgId, projectId, parsed.contacts)
+    const result = await addPublicContactsAndEnroll(store, config, actor.orgId, projectId, parsed.contacts)
     if (!result.ok) return fail(result.error)
     return ok(result)
   }
@@ -364,7 +369,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and open Contacts / Sequence / Tasks. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table (Name | Company | Title | Email | LinkedIn) — never as a contacts array. Describe a cadence, a dialer queue, or one-off emails in the same text.',
+        'Ingest people and open Contacts / Sequence / Tasks. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. Describe the cadence (days, channels) in the same text. Jargon sequences everyone into Tasks. Then research each company/prospect and save_research personalized talk tracks, email copy, and LinkedIn notes in one call.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: ImportListInput
     },
@@ -387,7 +392,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the motion in workspace. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels, goal). Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Jargon builds the tool, sequences everyone into Tasks, then you research each contact and save_research talk tracks / email / LinkedIn copy. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: DeployToolInput
     },
@@ -831,7 +836,28 @@ export function registerJargonTools(
     contactId: z.string(),
     body: z.string(),
     subject: z.string().optional(),
-    channel: z.enum(['email', 'linkedin']).optional()
+    channel: z.enum(['email', 'linkedin', 'call']).optional(),
+    stepId: z
+      .string()
+      .optional()
+      .describe('Sequence step to bind this copy to. Pass this when writing a follow-up, not only the first email.'),
+    day: z
+      .number()
+      .int()
+      .min(0)
+      .max(30)
+      .optional()
+      .describe('Alternative to stepId: the cadence day this copy belongs to.')
+  })
+  const SaveResearchInput = z.object({
+    summary: Summary,
+    projectId: z.string(),
+    research: z
+      .string()
+      .min(1)
+      .describe(
+        'JSON array of researched copy. Each item: {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[]}. Call channel body is the talk track. One Allow card for the whole list.'
+      )
   })
   const UpdateDraftInput = z.object({
     summary: Summary,
@@ -861,18 +887,90 @@ export function registerJargonTools(
     return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
   }
 
-  async function execSaveDraft(contactId: string, body: string, subject?: string, channel?: 'email' | 'linkedin') {
-    const contact = findOrgContact(store, actor.orgId, contactId)
-    if (!contact) return fail('Contact not found')
-    const result = await sendPublicMessage(store, config, contact, {
+  async function execSaveDraft(
+    contactId: string,
+    body: string,
+    subject?: string,
+    channel?: 'email' | 'linkedin' | 'call',
+    stepId?: string,
+    day?: number
+  ) {
+    if (channel === 'call') {
+      const result = savePublicTalkTrack(store, actor.orgId, contactId, { body, stepId })
+      if (!result.ok) return fail(result.error)
+      return ok({ contact: result.contact })
+    }
+    const result = await upsertPublicDraft(store, config, actor.orgId, contactId, {
       subject,
       body,
       channel,
-      status: 'draft',
-      sandbox
+      sandbox,
+      stepId,
+      day
     })
     if (!result.ok) return fail(result.body.error)
     return ok(result.body)
+  }
+
+  function parseResearchDrafts(raw: string): { ok: true; drafts: ResearchCopyInput[] } | { ok: false; error: string } {
+    const trimmed = raw.trim()
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      const start = trimmed.indexOf('[')
+      const end = trimmed.lastIndexOf(']')
+      if (start >= 0 && end > start) {
+        try {
+          parsed = JSON.parse(trimmed.slice(start, end + 1))
+        } catch {
+          return { ok: false, error: 'research must be a JSON array of {contactId, channel, body, subject?, stepId?, context?}' }
+        }
+      } else {
+        return { ok: false, error: 'research must be a JSON array of {contactId, channel, body, subject?, stepId?, context?}' }
+      }
+    }
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return { ok: false, error: 'research must include at least one {contactId, channel, body}' }
+    }
+    const drafts: ResearchCopyInput[] = []
+    for (const [i, row] of parsed.entries()) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return { ok: false, error: `research[${i}] must be an object` }
+      }
+      const rec = row as Record<string, unknown>
+      const contactId = typeof rec.contactId === 'string' ? rec.contactId.trim() : ''
+      const body = typeof rec.body === 'string' ? rec.body : ''
+      if (!contactId) return { ok: false, error: `research[${i}].contactId is required` }
+      if (!body.trim()) return { ok: false, error: `research[${i}].body is required` }
+      const channel =
+        rec.channel === 'email' || rec.channel === 'linkedin' || rec.channel === 'call'
+          ? rec.channel
+          : undefined
+      const context = Array.isArray(rec.context)
+        ? rec.context.filter((line): line is string => typeof line === 'string' && Boolean(line.trim()))
+        : undefined
+      drafts.push({
+        contactId,
+        body,
+        subject: typeof rec.subject === 'string' ? rec.subject : undefined,
+        channel,
+        stepId: typeof rec.stepId === 'string' ? rec.stepId : undefined,
+        day: typeof rec.day === 'number' ? rec.day : undefined,
+        context
+      })
+    }
+    return { ok: true, drafts }
+  }
+
+  async function execSaveResearch(projectId: string, research: string) {
+    const parsed = parseResearchDrafts(research)
+    if (!parsed.ok) return fail(parsed.error)
+    const result = await savePublicResearch(store, config, actor.orgId, projectId, parsed.drafts, {
+      sandbox
+    })
+    if (!result.ok) return fail(result.error)
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
   }
 
   async function execUpdateDraft(
@@ -932,7 +1030,7 @@ export function registerJargonTools(
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Replace sequence steps without redeploying. summary is the sentence on Claude\'s Allow card. Templates may use catalog keys such as {{first_name}} and {{funding_round}}.',
+        'Change cadence structure (days, channels, labels) without redeploying. summary is the sentence on Claude\'s Allow card. Shared fallback templates may use {{first_name}} and catalog keys. Do not put per-person researched copy here — use save_draft so start_sequence cannot overwrite it.',
       inputSchema: UpdateSequenceInput
     },
     async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)
@@ -954,7 +1052,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. For sequences only — not one-off sends. Idempotent per contact+step. Pass contactIds to enroll a subset.',
+        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. Deploy already enrolls cadences and dialers — use this to re-enroll or enroll a subset. Keeps copy already saved with save_draft / save_research. Pass contactIds to enroll a subset.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: StartSequenceInput
     },
@@ -1009,10 +1107,34 @@ export function registerJargonTools(
     {
       ...display('Save a draft message', HINTS.write),
       description:
-        'Save proposed copy for a contact. summary is the sentence on Claude\'s Allow card. Templates are interpolated from attrs.',
+        'Save researched, personalized copy for one contact. summary is the sentence on Claude\'s Allow card. Use channel call for a talk track, email/linkedin for send copy. Prefer save_research to write the whole list in one Allow. Pass stepId or day for follow-ups.',
       inputSchema: SaveDraftInput
     },
-    async ({ contactId, body, subject, channel }) => execSaveDraft(contactId, body, subject, channel)
+    async ({ contactId, body, subject, channel, stepId, day }) =>
+      execSaveDraft(contactId, body, subject, channel, stepId, day)
+  )
+
+  server.registerTool(
+    'save_research',
+    {
+      ...display('Save researched copy for the list', HINTS.write),
+      description:
+        'Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow, then open Tasks. summary is the sentence on Claude\'s Allow card. research is a JSON array — not nested objects on the card. Call this immediately after import_list / deploy_tool. Do not leave {{first_name}} placeholders as the send copy.',
+      _meta: EMAIL_WORKSPACE_TOOL_META,
+      inputSchema: SaveResearchInput
+    },
+    async ({ projectId, research }) => execSaveResearch(projectId, research)
+  )
+
+  server.registerTool(
+    'run_save_research',
+    {
+      ...display('Save researched copy for the list', HINTS.write),
+      description: 'Execute a confirmed research save. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: SaveResearchInput.omit({ summary: true })
+    },
+    async ({ projectId, research }) => execSaveResearch(projectId, research)
   )
 
   server.registerTool(
@@ -1023,7 +1145,8 @@ export function registerJargonTools(
       _meta: APP_ONLY_META,
       inputSchema: SaveDraftInput.omit({ summary: true })
     },
-    async ({ contactId, body, subject, channel }) => execSaveDraft(contactId, body, subject, channel)
+    async ({ contactId, body, subject, channel, stepId, day }) =>
+      execSaveDraft(contactId, body, subject, channel, stepId, day)
   )
 
   server.registerTool(

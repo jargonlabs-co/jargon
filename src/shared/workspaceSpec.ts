@@ -116,12 +116,23 @@ export function inferMcpDefaultTab(input: {
   enrolled: boolean
 }): McpTab {
   if (input.focus) return input.focus
-  if (input.surface === 'tasks') return 'tasks'
-  if (input.surface === 'queue') return 'queue'
-  if (input.surface === 'inbox') return 'inbox'
   if (input.surface === 'one_off') return 'contacts'
-  if (input.enrolled) return 'tasks'
+  if (input.surface === 'inbox') return 'inbox'
+  // Sequenced work lives on Tasks — including dialers. Queue is still a tab.
+  if (input.enrolled || input.surface === 'tasks') return 'tasks'
+  if (input.surface === 'queue') return 'queue'
   return 'contacts'
+}
+
+/** Cadences and dialers enroll on deploy. One-off sends and inbox views do not. */
+export function shouldAutoStartSequence(input: {
+  prompt: string
+  primarySurface?: PrimarySurface
+  channels?: Channel[]
+  steps?: Array<{ channel: string; day?: number }>
+}): boolean {
+  const surface = inferMcpSurface(input)
+  return surface !== 'one_off' && surface !== 'inbox'
 }
 
 export function specFromProject(project: {

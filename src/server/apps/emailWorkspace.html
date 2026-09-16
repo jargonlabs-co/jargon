@@ -350,10 +350,20 @@ function oneLine(text) {
 }
 
 function messageFor(ws, contactId, step) {
-  const msgs = (ws?.messages || []).filter((m) => m.contactId === contactId && m.channel === 'email');
+  const channel = step?.channel || 'email';
+  const msgs = (ws?.messages || []).filter((m) =>
+    m.contactId === contactId &&
+    m.channel === channel &&
+    m.status !== 'cancelled' &&
+    m.status !== 'failed'
+  );
   if (step?.id) {
     const hit = msgs.find((m) => m.stepId === step.id);
     if (hit) return hit;
+  }
+  const firstOfChannel = (ws.steps || []).find((s) => s.channel === channel);
+  if (step && firstOfChannel && step.id === firstOfChannel.id) {
+    return msgs.find((m) => !m.stepId) || null;
   }
   return null;
 }
@@ -417,7 +427,17 @@ function progressLabel(contact) {
 }
 
 function latestChannelMessage(contactId, channel) {
-  return (ws?.messages || []).find((m) => m.contactId === contactId && m.channel === channel) || null;
+  const step = (ws?.steps || []).find((s) => s.channel === channel);
+  if (step) {
+    const hit = messageFor(ws, contactId, step);
+    if (hit) return hit;
+  }
+  return (ws?.messages || []).find((m) =>
+    m.contactId === contactId &&
+    m.channel === channel &&
+    m.status !== 'cancelled' &&
+    m.status !== 'failed'
+  ) || null;
 }
 
 /** Re-bucket in the rep's timezone — the server buckets in its own. */
@@ -623,6 +643,7 @@ function dueLabel(task) {
 
   async function saveDraft(contact) {
     const { subject, body } = currentDraftFields(contact);
+    const step = emailSteps()[peopleStep] || emailSteps()[0];
     const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
@@ -632,7 +653,7 @@ function dueLabel(task) {
         })
       : await app.callServerTool({
           name: 'run_save_draft',
-          arguments: { contactId: contact.id, subject, body, channel: 'email' },
+          arguments: { contactId: contact.id, subject, body, channel: 'email', stepId: step?.id },
         });
     busy = false;
     const parsed = parseToolResult(result);
@@ -763,6 +784,11 @@ function dueLabel(task) {
   }
 
   async function askClaudeToWrite() {
+    const copySteps = (ws.steps || []).filter((s) => s.channel === 'email' || s.channel === 'linkedin');
+    const stepLines = copySteps.length
+      ? copySteps.map((s) => `- ${s.id} · day ${s.day} · ${s.channel} · ${s.label || s.channel}`).join('\n')
+      : '';
+    const research = `Research each contact and their company from this chat. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_draft for each person. Pass stepId when writing a follow-up step. Then call show_email_workspace.`;
     await app.sendMessage({
       role: 'user',
       content: [{
@@ -770,8 +796,8 @@ function dueLabel(task) {
         text: surface() === 'one_off'
             ? `Write a personalized one-off email for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft for each person who has an email, then call show_email_workspace. Do not start a sequence.`
             : listSurface()
-              ? `Write personalized email and LinkedIn drafts for each contact in project ${ws.projectId} using their fields and the research in this chat. Call save_draft with channel email or linkedin, then call show_email_workspace.`
-              : `Write personalized email drafts for each contact in project ${ws.projectId} using the sequence templates and their fields. Call save_draft for each person who has an email, then call show_email_workspace.`,
+              ? `Write personalized email and LinkedIn drafts for each contact in project ${ws.projectId}. ${research} Call save_draft with channel email or linkedin.${stepLines ? `\n\nSteps:\n${stepLines}` : ''}`
+              : `Write personalized drafts for each contact in project ${ws.projectId}. ${research}${stepLines ? `\n\nSteps:\n${stepLines}` : ''}`,
       }],
     });
   }
@@ -820,6 +846,7 @@ function dueLabel(task) {
     const body = document.getElementById('li-body')?.value
       || contact.linkedinPreview?.body
       || '';
+    const step = (ws.steps || []).find((s) => s.channel === 'linkedin');
     const existing = latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
     const result = existing
@@ -829,7 +856,7 @@ function dueLabel(task) {
         })
       : await app.callServerTool({
           name: 'run_save_draft',
-          arguments: { contactId: contact.id, body, channel: 'linkedin' },
+          arguments: { contactId: contact.id, body, channel: 'linkedin', stepId: step?.id },
         });
     busy = false;
     const parsed = parseToolResult(result);
@@ -1110,6 +1137,7 @@ function dueLabel(task) {
         <div class="editor-h">
           <strong>Email ${selectedStep + 1}${steps.length > 1 ? ` of ${steps.length}` : ''}</strong>
         </div>
+        <p class="sub">Shared fallback. Personalized drafts per contact win when you start the sequence.</p>
         <label>Send on day</label>
         <input id="edit-day" type="text" value="${esc(step.day)}" />
         <label>Label</label>
@@ -1777,10 +1805,12 @@ function dueLabel(task) {
       const id = el.getAttribute('data-id');
       const pane = el.getAttribute('data-act');
       const contact = (ws.contacts || []).find((c) => c.id === id);
-      if (contact) selectAction(contact, pane);
+      if (!contact) return;
+      selectAction(contact, pane);
       pendingSend = false;
       notice = '';
       render();
+      if (pane === 'linkedin') void openLinkedIn(contact);
     }));
     const selected = (ws.contacts || []).find((c) => c.id === selectedId);
     root.querySelector('#save-draft')?.addEventListener('click', () => selected && saveDraft(selected));

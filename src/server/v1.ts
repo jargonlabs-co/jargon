@@ -34,6 +34,7 @@ import {
   toPublicProject,
   toPublicQueueNext,
   updatePublicSequence,
+  upsertPublicDraft,
   enrollPublicSequence,
   unenrollPublicContact
 } from './publicApi'
@@ -301,12 +302,14 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    const { subject, body, status, channel, sendAt } = req.body as {
+    const { subject, body, status, channel, sendAt, stepId, day } = req.body as {
       subject?: string
       body?: string
       status?: 'draft' | 'queued' | 'sent'
       channel?: 'email' | 'linkedin'
       sendAt?: number | string
+      stepId?: string
+      day?: number
     }
     if (body === undefined || typeof body !== 'string') {
       res.status(400).json({ error: 'body required' })
@@ -353,14 +356,25 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.setHeader('X-Credits-Used', String(charge.creditsUsed))
       res.setHeader('X-Credits-Remaining', String(charge.remaining))
     }
-    const result = await sendPublicMessage(store, config, contact, {
-      subject,
-      body,
-      status,
-      channel,
-      sandbox,
-      sendAt: sendAtMs
-    })
+    const result =
+      (status ?? 'sent') === 'draft'
+        ? await upsertPublicDraft(store, config, req.auth!.org.id, contact.id, {
+            subject,
+            body,
+            channel,
+            sandbox,
+            stepId: typeof stepId === 'string' ? stepId : undefined,
+            day: typeof day === 'number' ? day : undefined
+          })
+        : await sendPublicMessage(store, config, contact, {
+            subject,
+            body,
+            status,
+            channel,
+            sandbox,
+            sendAt: sendAtMs,
+            stepId: typeof stepId === 'string' ? stepId : undefined
+          })
     if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
     }

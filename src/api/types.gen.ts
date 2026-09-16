@@ -629,8 +629,11 @@ export interface components {
             status: "draft" | "queued" | "sent";
             subject?: string;
             body: string;
-            /** @description Required when status is queued. Unix ms or ISO-8601 datetime. */
             sendAt?: number | string;
+            /** Sequence step to bind this copy to. Drafts upsert onto this step instead of creating a second message. */
+            stepId?: string;
+            /** Alternative to stepId: the cadence day this copy belongs to. */
+            day?: number;
         };
         PatchMessageRequest: {
             subject?: string;

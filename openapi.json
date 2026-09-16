@@ -1280,6 +1280,16 @@
           "sendAt": {
             "description": "Required when status is queued. Unix ms or ISO-8601 datetime.",
             "oneOf": [{ "type": "integer" }, { "type": "string" }]
+          },
+          "stepId": {
+            "type": "string",
+            "description": "Sequence step to bind this copy to. Drafts upsert onto this step instead of creating a second message."
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30,
+            "description": "Alternative to stepId: the cadence day this copy belongs to."
           }
         }
       },

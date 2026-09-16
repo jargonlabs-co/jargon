@@ -25,7 +25,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=copy1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=flow1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -39,6 +39,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=confirm1',
   'ui://jargon/email-workspace.html?v=nl1',
   'ui://jargon/email-workspace.html?v=liopen1',
+  'ui://jargon/email-workspace.html?v=copy1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -91,6 +92,10 @@ export type EmailWorkspace = {
   tasks: WorkspaceTask[]
   taskStats: TaskStats
   stepStats: StepStat[]
+  /** True until Claude has saved researched copy / talk tracks for everyone. */
+  researchPending: boolean
+  /** Instruction the model should follow immediately. */
+  nextAction?: string
   stats: {
     drafts: number
     queued: number
@@ -220,6 +225,12 @@ export function getEmailWorkspace(
     enrolled: taskStats.enrolled > 0
   })
   const remaining = contacts.filter((c) => !motionComplete(c, spec)).length
+  const researchPending = contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
+  const nextAction = researchPending
+    ? surface === 'one_off'
+      ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence.`
+      : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. Do not wait to be asked. Do not leave {{first_name}} placeholders as the send copy.`
+    : undefined
   const view =
     surface === 'overflow' ? 'overflow' : surface === 'queue' || surface === 'tasks' ? 'queue' : 'email_workspace'
   return {
@@ -248,6 +259,8 @@ export function getEmailWorkspace(
     tasks,
     taskStats,
     stepStats: stepStatsFor(steps, tasks, messages),
+    researchPending,
+    nextAction,
     stats: {
       drafts: messages.filter((m) => m.status === 'draft' && m.channel === 'email').length,
       queued: messages.filter((m) => m.status === 'queued' && m.channel === 'email').length,

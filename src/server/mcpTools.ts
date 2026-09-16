@@ -44,8 +44,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { inspectTwilioVoice } from './providers/twilio'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
-import type { McpTab } from '../shared/workspaceSpec'
-import { shouldAutoStartSequence } from '../shared/workspaceSpec'
+import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 
 const ContactStatus = z.enum([
   'queued',
@@ -966,11 +965,20 @@ export function registerJargonTools(
   async function execSaveResearch(projectId: string, research: string) {
     const parsed = parseResearchDrafts(research)
     if (!parsed.ok) return fail(parsed.error)
+    const project = findOrgProject(store, actor.orgId, projectId)
+    if (!project) return fail('Project not found')
+    const enroll = shouldAutoStartSequence({
+      prompt: project.prompt || '',
+      primarySurface: project.spec?.primarySurface,
+      channels: project.spec?.channels,
+      steps: project.spec?.steps
+    })
     const result = await savePublicResearch(store, config, actor.orgId, projectId, parsed.drafts, {
-      sandbox
+      sandbox,
+      enroll
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'tasks' : 'contacts')
   }
 
   async function execUpdateDraft(

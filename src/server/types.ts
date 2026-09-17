@@ -20,6 +20,7 @@ export type ContactStatus =
   | 'interested'
   | 'not_interested'
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
+export type CallMode = 'demo' | 'plivo' | 'twilio'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
 export type Channel = 'email' | 'call' | 'linkedin'
 export type FieldOrigin = 'identity' | 'attrs'
@@ -265,7 +266,7 @@ export interface CallSession {
   phase: CallPhase
   disposition?: ContactStatus
   providerCallSid?: string
-  mode: 'demo' | 'twilio'
+  mode: CallMode
   startedAt: number
   connectedAt?: number
   endedAt?: number

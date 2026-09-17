@@ -109,7 +109,7 @@ Response: `{ contact, next }` where `next` is the same shape as `queue/next`.
 | `POST` | `/calls/:id/complete` | `{ disposition }` (call-scoped outcome) |
 | `POST` | `/contacts/:id/notes` | `{ note }` |
 | `PATCH` | `/contacts/:id` | Partial contact update |
-| `GET` | `/voice/token` | Twilio JWT when voice is live |
+| `GET` | `/voice/token` | Browser softphone credentials when voice is live (Plivo endpoint or Twilio JWT) |
 
 Prefer **`/disposition`** for outcomes that are not tied to an open call.
 

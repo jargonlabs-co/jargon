@@ -44,7 +44,8 @@ import { shouldAutoStartSequence } from '../shared/workspaceSpec'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
-import { inspectTwilioVoice } from './providers/twilio'
+import { voiceIsLive } from './providers/voice'
+import { platformGmailReady } from './providers/gmail'
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
   return Array.isArray(value) ? value[0] : value
@@ -175,8 +176,8 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       org: { id: org.id, name: org.name, slug: org.slug },
       environment,
       outbound: {
-        email: sandbox ? 'sandbox' : config.google.refreshToken ? 'live' : 'demo',
-        voice: sandbox ? 'sandbox' : inspectTwilioVoice(config).ok ? 'live' : 'demo',
+        email: sandbox ? 'sandbox' : platformGmailReady(config) ? 'live' : 'demo',
+        voice: sandbox ? 'sandbox' : voiceIsLive(config) ? 'live' : 'demo',
         linkedin: sandbox ? 'sandbox' : config.heyreach.apiKey ? 'live' : 'demo'
       },
       ...meBillingFields(credits),
@@ -499,7 +500,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(404).json({ error: 'Call not found' })
       return
     }
-    res.json(completePublicCall(store, call.id, disposition))
+    res.json(completePublicCall(store, call.id, disposition, config))
   })
 
   router.post('/contacts/:id/disposition', auth, (req, res) => {

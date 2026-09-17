@@ -1389,7 +1389,7 @@
             "enum": ["dialing", "ringing", "connected", "completed", "failed"]
           },
           "disposition": { "$ref": "#/components/schemas/ContactStatus" },
-          "mode": { "type": "string", "enum": ["demo", "twilio"] },
+          "mode": { "type": "string", "enum": ["demo", "plivo", "twilio"] },
           "startedAt": { "type": "integer" },
           "connectedAt": { "type": "integer" },
           "endedAt": { "type": "integer" }

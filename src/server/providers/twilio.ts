@@ -63,7 +63,7 @@ export function inspectTwilioVoice(
 export function createTwilioVoiceToken(
   config: ServerConfig,
   identity: string
-): { token: string; mode: 'demo' | 'twilio'; identity: string } {
+): { token: string; mode: 'twilio'; identity: string } {
   const ready = inspectTwilioVoice(config)
   if (!ready.ok) {
     throw new Error(ready.error)

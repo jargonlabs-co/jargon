@@ -329,11 +329,20 @@ function interpolate(template, contact) {
   return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, raw) => vars[raw.trim()] ?? '');
 }
 
+function toolErrorText(text) {
+  if (!text) return 'Request failed';
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.error === 'string') return parsed.error;
+  } catch { /* not JSON */ }
+  return text;
+}
+
 function parseToolResult(result) {
   if (!result) return null;
   if (result.isError) {
     const t = result.content?.[0]?.text;
-    return { error: t || 'Request failed' };
+    return { error: toolErrorText(t) };
   }
   const text = result.content?.find((c) => c.type === 'text')?.text;
   if (!text) return result.structuredContent || result;
@@ -672,35 +681,42 @@ function dueLabel(task) {
   }
 
   async function sendNow(contact) {
-    if (!contact.email) { setNotice('This person has no email address.', 'err'); return; }
-    if (!pendingSend) {
-      pendingSend = true;
-      setNotice(`Send to ${contact.email}? This uses Gmail credits.`, '');
-      return;
-    }
-    pendingSend = false;
+    if (!contact?.email) { setNotice('This person has no email address.', 'err'); return; }
     const { subject, body } = currentDraftFields(contact);
     const existing = selectedEmailMessage(contact);
     busy = true; render();
-    const result = existing && existing.status !== 'sent'
-      ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
-      : await app.callServerTool({
+    try {
+      let result;
+      if (existing && existing.status !== 'sent') {
+        const patched = parseToolResult(await app.callServerTool({
+          name: 'run_update_draft',
+          arguments: { messageId: existing.id, subject, body },
+        }));
+        if (patched?.error) { busy = false; setNotice(patched.error, 'err'); return; }
+        result = await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } });
+      } else {
+        result = await app.callServerTool({
           name: 'run_send_message',
           arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
         });
-    busy = false;
-    const parsed = parseToolResult(result);
-    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
-    await reload();
-    if (listSurface()) {
-      const next = (ws.contacts || []).find((c) => c.id === contact.id);
-      if (nextFor(next) && next) actionPane = nextFor(next);
+      }
+      busy = false;
+      const parsed = parseToolResult(result);
+      if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+      await reload();
+      if (listSurface()) {
+        const next = (ws.contacts || []).find((c) => c.id === contact.id);
+        if (nextFor(next) && next) actionPane = nextFor(next);
+      }
+      advanceTask();
+      setNotice(`Sent to ${contact.name}.`, 'ok');
+      app.updateModelContext?.({
+        content: [{ type: 'text', text: `Sent email to ${contact.name} <${contact.email}>.` }],
+      });
+    } catch (err) {
+      busy = false;
+      setNotice(err?.message || 'Send failed.', 'err');
     }
-    advanceTask();
-    setNotice(`Sent to ${contact.name}.`, 'ok');
-    app.updateModelContext?.({
-      content: [{ type: 'text', text: `Sent email to ${contact.name} <${contact.email}>.` }],
-    });
   }
 
   async function schedule(contact) {
@@ -887,17 +903,20 @@ function dueLabel(task) {
   }
 
   async function sendLinkedIn(contact) {
-    if (!pendingSend) {
-      pendingSend = true;
-      setNotice(`Send LinkedIn to ${contact.name}?`, '');
-      return;
-    }
-    pendingSend = false;
+    if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
     const body = document.getElementById('li-body')?.value
       || contact.linkedinPreview?.body
       || '';
     const existing = latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
+    try {
+    if (existing && existing.status !== 'sent') {
+      const patched = parseToolResult(await app.callServerTool({
+        name: 'run_update_draft',
+        arguments: { messageId: existing.id, body },
+      }));
+      if (patched?.error) { busy = false; setNotice(patched.error, 'err'); return; }
+    }
     const result = existing && existing.status !== 'sent'
       ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
       : await app.callServerTool({
@@ -915,6 +934,10 @@ function dueLabel(task) {
     app.updateModelContext?.({
       content: [{ type: 'text', text: `Sent LinkedIn message to ${contact.name}.` }],
     });
+    } catch (err) {
+      busy = false;
+      setNotice(err?.message || 'Send failed.', 'err');
+    }
   }
 
   async function openLinkedIn(contact) {
@@ -1253,7 +1276,7 @@ function dueLabel(task) {
         <textarea id="draft-body">${esc(body)}</textarea>
         <div class="row">
           <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
-          <button class="btn primary" id="send" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : 'Send now'}</button>
+          <button class="btn primary" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Send now</button>
           <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
           <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
           ${showWrite ? `<button class="btn" id="write">Ask Claude to write</button>` : ''}
@@ -1402,7 +1425,7 @@ function dueLabel(task) {
         <label>Message</label>
         <textarea id="li-body">${esc(body)}</textarea>
         <div class="row">
-          <button class="btn primary" id="send-li" ${busy || sent ? 'disabled' : ''}>${pendingSend ? 'Confirm send' : sent ? 'Sent' : 'Send LinkedIn'}</button>
+          <button class="btn primary" id="send-li" data-contact-id="${esc(contact.id)}" ${busy || sent ? 'disabled' : ''}>${sent ? 'Sent' : 'Send LinkedIn'}</button>
           <button class="btn" id="save-li" ${busy || sent ? 'disabled' : ''}>Save draft</button>
           ${contact.linkedinUrl ? '<button class="btn" id="open-li">Open profile</button>' : ''}
         </div>
@@ -1852,10 +1875,20 @@ function dueLabel(task) {
     }));
     const selected = (ws.contacts || []).find((c) => c.id === selectedId);
     root.querySelector('#save-draft')?.addEventListener('click', () => selected && saveDraft(selected));
-    root.querySelector('#send')?.addEventListener('click', () => selected && sendNow(selected));
+    root.querySelector('#send')?.addEventListener('click', () => {
+      const id = root.querySelector('#send')?.getAttribute('data-contact-id') || selectedId;
+      const contact = (ws.contacts || []).find((c) => c.id === id);
+      if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+      void sendNow(contact);
+    });
     root.querySelector('#schedule')?.addEventListener('click', () => selected && schedule(selected));
     root.querySelector('#start-call')?.addEventListener('click', () => selected && startCall(selected));
-    root.querySelector('#send-li')?.addEventListener('click', () => selected && sendLinkedIn(selected));
+    root.querySelector('#send-li')?.addEventListener('click', () => {
+      const id = root.querySelector('#send-li')?.getAttribute('data-contact-id') || selectedId;
+      const contact = (ws.contacts || []).find((c) => c.id === id);
+      if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+      void sendLinkedIn(contact);
+    });
     root.querySelector('#save-li')?.addEventListener('click', () => selected && saveLinkedInDraft(selected));
     root.querySelector('#open-li')?.addEventListener('click', () => selected && openLinkedIn(selected));
     root.querySelectorAll('[data-disp]').forEach((el) => el.addEventListener('click', () => {

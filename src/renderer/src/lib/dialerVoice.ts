@@ -10,6 +10,9 @@ export type DialerVoiceConnectOpts = {
   token: string
   to: string
   callId: string
+  mode?: 'plivo' | 'twilio'
+  username?: string
+  password?: string
   onAccept: () => void
   onDisconnect: () => void
   onError: (message: string) => void

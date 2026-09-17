@@ -32,6 +32,14 @@ export interface ServerConfig {
     twimlAppSid: string
     fromNumber: string
   }
+  plivo: {
+    authId: string
+    authToken: string
+    fromNumber: string
+    appId: string
+    endpointUsername: string
+    endpointPassword: string
+  }
   heyreach: {
     apiKey: string
     /** LinkedIn account to send from; defaults to the first active HeyReach account */
@@ -91,6 +99,8 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
   const port = Number(process.env.PORT ?? process.env.JARGON_API_PORT ?? 8787)
   const publicUrl = process.env.JARGON_PUBLIC_URL ?? `http://127.0.0.1:${port}`
   const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+  const hasPlivo = Boolean(process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN)
+  const hasVoice = hasTwilio || hasPlivo
   const hasGoogle = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 
   return {
@@ -99,7 +109,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     host: process.env.JARGON_API_HOST ?? '127.0.0.1',
     port,
     deepLinkScheme: process.env.JARGON_DEEP_LINK ?? 'jargon',
-    demoMode: process.env.JARGON_DEMO_MODE === '1' || !(hasTwilio && hasGoogle),
+    demoMode: process.env.JARGON_DEMO_MODE === '1' || !(hasVoice && hasGoogle),
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID ?? '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
@@ -122,6 +132,14 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       apiKeySecret: (process.env.TWILIO_API_KEY_SECRET ?? '').trim(),
       twimlAppSid: (process.env.TWILIO_TWIML_APP_SID ?? '').trim(),
       fromNumber: (process.env.TWILIO_FROM_NUMBER ?? '').trim()
+    },
+    plivo: {
+      authId: (process.env.PLIVO_AUTH_ID ?? '').trim(),
+      authToken: (process.env.PLIVO_AUTH_TOKEN ?? '').trim(),
+      fromNumber: (process.env.PLIVO_FROM_NUMBER ?? '').trim(),
+      appId: (process.env.PLIVO_APP_ID ?? '').trim(),
+      endpointUsername: (process.env.PLIVO_ENDPOINT_USERNAME ?? '').trim(),
+      endpointPassword: (process.env.PLIVO_ENDPOINT_PASSWORD ?? '').trim()
     },
     heyreach: {
       apiKey: (process.env.HEYREACH_API_KEY ?? '').trim(),

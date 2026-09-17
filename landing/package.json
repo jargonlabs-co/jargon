@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@twilio/voice-sdk": "^2.18.4",
+    "plivo-browser-sdk": "^2.2.21",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

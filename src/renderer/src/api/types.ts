@@ -164,7 +164,7 @@ export interface CallSession {
   phase: CallPhase
   disposition?: ContactStatus
   providerCallSid?: string
-  mode: 'demo' | 'twilio'
+  mode: 'demo' | 'plivo' | 'twilio'
   startedAt: number
   connectedAt?: number
   endedAt?: number

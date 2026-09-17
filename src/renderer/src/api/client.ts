@@ -114,7 +114,13 @@ export const api = {
       body: JSON.stringify({ to })
     }),
   voiceToken: () =>
-    request<{ token: string; mode: 'demo' | 'twilio'; identity: string }>('/voice/token'),
+    request<{
+      token: string
+      mode: 'demo' | 'plivo' | 'twilio'
+      identity: string
+      username?: string
+      password?: string
+    }>('/voice/token'),
   syncHubSpot: (body: { projectId?: string; limit?: number } = {}) =>
     request<ProjectBundle | { count: number; source: string }>('/connections/hubspot/sync', {
       method: 'POST',

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ProductApp } from '../../../src/renderer/src/components/workspace/ProductApp'
 import { setClientAuthToken } from '../../../src/renderer/src/api/client'
 import { getStoredToken } from '../api'
-import { twilioVoice } from '../lib/twilioVoice'
+import { platformVoice } from '../lib/platformVoice'
 import '../../../src/renderer/src/styles/global.css'
 import '../../../src/renderer/src/styles/app.css'
 
@@ -21,7 +21,7 @@ export function ToolApp({ projectId, onBack }: { projectId: string; onBack: () =
       <button type="button" className="tool-back" onClick={onBack}>
         Account
       </button>
-      <ProductApp projectId={projectId} voice={twilioVoice} />
+      <ProductApp projectId={projectId} voice={platformVoice} />
     </div>
   )
 }

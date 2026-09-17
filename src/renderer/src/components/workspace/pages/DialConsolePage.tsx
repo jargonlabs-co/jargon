@@ -90,7 +90,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
       setCall(next)
       setToast(`Dialing ${selected.name}`)
       await onRefresh()
-      if (token.mode === 'twilio') {
+      if (token.mode === 'twilio' || token.mode === 'plivo') {
         if (!voice) {
           setToast('Calling is not available in this app')
           return
@@ -99,6 +99,9 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
           token: token.token,
           to: phone,
           callId: next.id,
+          mode: token.mode,
+          username: token.username,
+          password: token.password,
           onAccept: () => {
             setCall((current) =>
               current && current.id === next.id ? { ...current, phase: 'connected' } : current
@@ -157,7 +160,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
           <div className="prod-eyebrow">Dial console</div>
           <h2>Live queue</h2>
         </div>
-        <div className="muted">Softphone · Twilio</div>
+        <div className="muted">Softphone</div>
       </div>
 
       <div className="dial-layout">

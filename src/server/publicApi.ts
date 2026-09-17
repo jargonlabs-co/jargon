@@ -16,7 +16,7 @@ import type { ServerConfig } from './config'
 import { uid } from './crypto'
 import { sendPlatformGmail } from './providers/gmail'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
-import { inspectTwilioVoice } from './providers/twilio'
+import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParams } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
@@ -588,8 +588,8 @@ export function startPublicCall(
 ): PublicCall {
   const now = Date.now()
   const callId = uid('call')
-  const twilioReady = inspectTwilioVoice(config).ok
-  const mode = sandbox || !twilioReady ? 'demo' : 'twilio'
+  const live = inspectLiveVoice(config)
+  const mode = sandbox || !live.ok ? 'demo' : live.provider
   store.update((db) => {
     db.contacts.forEach((c) => {
       if (c.projectId !== contact.projectId) return
@@ -649,8 +649,13 @@ export function startPublicCall(
 export function completePublicCall(
   store: DataStore,
   callId: string,
-  disposition: ContactStatus
+  disposition: ContactStatus,
+  config?: ServerConfig
 ): { call: PublicCall; next: QueueNextPublic } {
+  const existing = store.db.calls.find((x) => x.id === callId)
+  if (config && existing?.providerCallSid) {
+    void hangupLiveCall(config, existing).catch(() => undefined)
+  }
   const now = Date.now()
   store.update((db) => {
     const c = db.calls.find((x) => x.id === callId)
@@ -752,9 +757,13 @@ export async function sendPublicMessage(
   const shouldSendNow = finalStatus === 'sent'
 
   if (shouldSendNow && messageChannel === 'email') {
-    if (input.sandbox) {
+    if (!contact.email?.trim()) {
+      finalStatus = 'failed'
+      error = 'This contact has no email address.'
+    } else if (input.sandbox) {
       mode = 'demo'
       providerMessageId = `sandbox_mail_${now}`
+      console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
         const result = await sendPlatformGmail(config, {
@@ -1060,9 +1069,13 @@ export async function deliverPublicMessage(
   const demo = sandbox || message.sandbox
 
   if (message.channel === 'email') {
-    if (demo) {
+    if (!contact.email?.trim()) {
+      finalStatus = 'failed'
+      error = 'This contact has no email address.'
+    } else if (demo) {
       mode = 'demo'
       providerMessageId = `sandbox_mail_${now}`
+      console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
         const result = await sendPlatformGmail(config, {

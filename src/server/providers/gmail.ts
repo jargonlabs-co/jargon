@@ -96,7 +96,7 @@ export async function refreshGmailAccessToken(
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   })
-  if (!res.ok) throw new Error(`Google token refresh failed: ${await res.text()}`)
+  if (!res.ok) throw new Error(`Google token refresh failed (${res.status})`)
   const json = (await res.json()) as {
     access_token: string
     expires_in?: number
@@ -146,36 +146,45 @@ export async function sendGmailMessage(input: {
     },
     body: JSON.stringify({ raw: encoded })
   })
-  if (!res.ok) throw new Error(`Gmail send failed: ${await res.text()}`)
+  if (!res.ok) throw new Error(`Gmail send failed (${res.status})`)
   const json = (await res.json()) as { id: string }
   return { id: json.id, mode: 'gmail' }
+}
+
+export function platformGmailReady(config: ServerConfig): boolean {
+  return Boolean(config.google.clientId && config.google.clientSecret && config.google.refreshToken)
 }
 
 /** Send from Jargon's mailbox (env refresh token). Customers do not connect Gmail. */
 export async function sendPlatformGmail(
   config: ServerConfig,
   input: { to: string; subject: string; body: string }
-): Promise<{ id: string; mode: 'demo' | 'gmail' }> {
-  if (!config.google.refreshToken || !config.google.clientId) {
-    return sendGmailMessage({
-      accessToken: 'demo-gmail-token',
-      to: input.to,
+): Promise<{ id: string; mode: 'gmail' }> {
+  const to = input.to.trim()
+  if (!to || !to.includes('@')) {
+    throw new Error('This contact has no email address.')
+  }
+  if (!platformGmailReady(config)) {
+    throw new Error('Gmail is not configured on this Jargon server.')
+  }
+  try {
+    const secrets = await refreshGmailAccessToken(config, {
+      accessToken: 'pending',
+      refreshToken: config.google.refreshToken
+    })
+    const result = await sendGmailMessage({
+      accessToken: secrets.accessToken,
+      to,
       subject: input.subject,
       body: input.body,
-      demo: true
+      demo: false
     })
+    console.log('[jargon] Gmail send ok')
+    return { id: result.id, mode: 'gmail' }
+  } catch (err) {
+    console.warn('[jargon] Gmail send failed')
+    throw err
   }
-  const secrets = await refreshGmailAccessToken(config, {
-    accessToken: 'pending',
-    refreshToken: config.google.refreshToken
-  })
-  return sendGmailMessage({
-    accessToken: secrets.accessToken,
-    to: input.to,
-    subject: input.subject,
-    body: input.body,
-    demo: false
-  })
 }
 
 export function finishGmailOAuthHtml(config: ServerConfig, ok: boolean, message: string): string {

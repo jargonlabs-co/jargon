@@ -34,14 +34,15 @@ import {
   toPublicConnection,
   upsertConnection
 } from './connections'
-import { sendPlatformGmail } from './providers/gmail'
+import { platformGmailReady } from './providers/gmail'
+import { toE164, voiceTwiml, inspectTwilioVoice } from './providers/twilio'
 import {
-  createTwilioVoiceToken,
-  hangupTwilioPstn,
-  inspectTwilioVoice,
-  toE164,
-  voiceTwiml
-} from './providers/twilio'
+  hangupLiveCall,
+  inspectLiveVoice,
+  createVoiceToken,
+  voiceIsLive
+} from './providers/voice'
+import { inspectPlivoVoice, plivoDialXml, plivoFormValue } from './providers/plivo'
 import {
   exchangeHubSpotCode,
   fetchHubSpotContacts,
@@ -121,7 +122,8 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       demoMode: config.demoMode,
       providers: {
         hubspot: config.hubspot.clientId ? 'live' : 'demo',
-        gmail: config.google.refreshToken ? 'live' : 'demo',
+        gmail: platformGmailReady(config) ? 'live' : 'demo',
+        plivo: inspectPlivoVoice(config).ok ? 'live' : 'demo',
         twilio: inspectTwilioVoice(config).ok ? 'live' : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
         railway: config.railway.clientId ? 'live' : 'demo',
@@ -268,8 +270,8 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       org: req.auth!.org,
       demoMode: config.demoMode,
       outbound: {
-        email: config.google.refreshToken ? 'live' : 'demo',
-        voice: inspectTwilioVoice(config).ok ? 'live' : 'demo',
+        email: platformGmailReady(config) ? 'live' : 'demo',
+        voice: voiceIsLive(config) ? 'live' : 'demo',
         linkedin: config.heyreach.apiKey ? 'live' : 'demo'
       },
       ...meBillingFields(credits),
@@ -719,9 +721,9 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   app.get('/voice/token', auth, (req, res) => {
     const identity = `user_${req.auth!.user.id}`.replace(/[^A-Za-z0-9_-]/g, '_')
     try {
-      res.json(createTwilioVoiceToken(config, identity))
+      res.json(createVoiceToken(config, identity))
     } catch (err) {
-      res.status(503).json({ error: err instanceof Error ? err.message : 'Twilio voice is not ready' })
+      res.status(503).json({ error: err instanceof Error ? err.message : 'Voice is not ready' })
     }
   })
 
@@ -763,6 +765,70 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         }
       })
     }
+    res.status(204).end()
+  })
+
+  const plivoCallbackUrl = `${config.publicUrl.replace(/\/$/, '')}/voice/plivo/dial`
+
+  function attachPlivoCall(
+    callId: string,
+    callUuid: string,
+    phase?: CallPhase
+  ): void {
+    store.update((db) => {
+      const byId = callId ? db.calls.find((c) => c.id === callId) : undefined
+      const bySid = callUuid ? db.calls.find((c) => c.providerCallSid === callUuid) : undefined
+      const recent =
+        !byId && !bySid
+          ? db.calls.find((c) => c.phase === 'dialing' && Date.now() - c.startedAt < 120_000)
+          : undefined
+      const call = byId ?? bySid ?? recent
+      if (!call || call.phase === 'completed') return
+      if (callUuid) call.providerCallSid = callUuid
+      if (phase === 'ringing' && call.phase === 'dialing') call.phase = 'ringing'
+      if (phase === 'connected') {
+        call.phase = 'connected'
+        call.connectedAt = call.connectedAt ?? Date.now()
+      }
+      if (phase === 'failed') call.phase = 'failed'
+    })
+  }
+
+  app.post('/voice/plivo/answer', (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const headerTo = plivoFormValue(body, 'X-PH-To')
+    const to = headerTo || plivoFormValue(body, 'To', 'Destination')
+    const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
+    const callUuid = plivoFormValue(body, 'CallUUID', 'ALegUUID')
+    const from = config.plivo.fromNumber || '+15555550100'
+    attachPlivoCall(callId, callUuid, 'ringing')
+    res.type('text/xml').send(plivoDialXml(to, from, plivoCallbackUrl))
+  })
+
+  app.post('/voice/plivo/dial', (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
+    const callUuid = plivoFormValue(body, 'DialALegUUID', 'ALegUUID', 'CallUUID')
+    const action = plivoFormValue(body, 'DialAction', 'Event', 'DialBLegStatus').toLowerCase()
+    const phase: CallPhase | undefined =
+      action === 'answer' || action === 'connected'
+        ? 'connected'
+        : action === 'hangup'
+          ? undefined
+          : plivoFormValue(body, 'DialBLegStatus').toLowerCase() === 'ringing'
+            ? 'ringing'
+            : undefined
+    attachPlivoCall(callId, callUuid, phase)
+    res.status(204).end()
+  })
+
+  app.post('/voice/plivo/hangup', (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
+    const callUuid = plivoFormValue(body, 'CallUUID', 'ALegUUID')
+    const cause = plivoFormValue(body, 'HangupCauseName', 'HangupCause').toLowerCase()
+    const failed = /busy|no.answer|rejected|cancel|failed|timeout/.test(cause)
+    attachPlivoCall(callId, callUuid, failed ? 'failed' : undefined)
     res.status(204).end()
   })
 
@@ -1100,7 +1166,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: 'Contact has no valid phone number' })
       return
     }
-    const voice = inspectTwilioVoice(config)
+    const voice = inspectLiveVoice(config)
     if (!voice.ok) {
       res.status(503).json({ error: voice.error })
       return
@@ -1125,7 +1191,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.setHeader('X-Credits-Remaining', String(charge.remaining))
     const now = Date.now()
     const callId = uid('call')
-    const mode = 'twilio'
+    const mode = voice.provider
     store.update((db) => {
       db.contacts.forEach((c) => {
         if (c.projectId !== contact.projectId) return
@@ -1204,7 +1270,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
     const now = Date.now()
     if (call.providerCallSid) {
-      void hangupTwilioPstn(config, call.providerCallSid).catch(() => undefined)
+      void hangupLiveCall(config, call).catch(() => undefined)
     }
     store.update((db) => {
       const c = db.calls.find((x) => x.id === paramId(req.params.id))

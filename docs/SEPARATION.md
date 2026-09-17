@@ -7,7 +7,7 @@
 | Surfaces | CLI + website dashboard + tool UIs | Desktop + API |
 | Customer data | HubSpot and/or **Railway OAuth → Postgres prospects** | Internal lists / Crustdata |
 | Auth / login | **Supabase Auth only** (passwords never on Railway) | Local / ops-specific |
-| Outbound | Platform Gmail, Twilio, HeyReach | Crustdata queue + Gmail/Twilio |
+| Outbound | Platform Gmail, Plivo, HeyReach | Crustdata queue + Gmail/Twilio |
 | Prospect search / seed | Customer-connected warehouse (read) | Crustdata → seed `jargon_prospects` (write) |
 | Billing | Credits + Stripe (webhooks when Atlas keys are set) | None |
 | Deploy | Product Railway + Vercel | Separate Railway |

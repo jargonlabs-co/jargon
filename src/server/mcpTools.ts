@@ -41,7 +41,8 @@ import {
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
-import { inspectTwilioVoice } from './providers/twilio'
+import { voiceIsLive } from './providers/voice'
+import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
@@ -73,7 +74,7 @@ const HINTS = {
   read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   write: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   overwrite: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  send: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+  send: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
 } as const
 
 // Spec precedence is `title` then `annotations.title`; set both so older clients
@@ -91,6 +92,10 @@ function fail(err: unknown) {
     content: [{ type: 'text' as const, text: err instanceof Error ? err.message : String(err) }],
     isError: true
   }
+}
+
+function failCharge(charge: { error: string }) {
+  return fail(charge.error)
 }
 
 function workspaceOk(
@@ -140,8 +145,8 @@ export function registerJargonTools(
         org: { id: org.id, name: org.name, slug: org.slug },
         environment: actor.environment,
         outbound: {
-          email: sandbox ? 'sandbox' : config.google.refreshToken ? 'live' : 'demo',
-          voice: sandbox ? 'sandbox' : inspectTwilioVoice(config).ok ? 'live' : 'demo',
+          email: sandbox ? 'sandbox' : platformGmailReady(config) ? 'live' : 'demo',
+          voice: sandbox ? 'sandbox' : voiceIsLive(config) ? 'live' : 'demo',
           linkedin: sandbox ? 'sandbox' : config.heyreach.apiKey ? 'live' : 'demo'
         },
         ...meBillingFields(credits),
@@ -533,16 +538,7 @@ export function registerJargonTools(
         reason: billableReason,
         projectId: contact.projectId
       })
-      if (!charge.ok) {
-        return fail(
-          JSON.stringify({
-            error: charge.error,
-            code: charge.code,
-            billingUrl: charge.billingUrl,
-            remaining: charge.remaining
-          })
-        )
-      }
+      if (!charge.ok) return failCharge(charge)
     }
     const result = await sendPublicMessage(store, config, contact, {
       subject: input.subject,
@@ -574,16 +570,7 @@ export function registerJargonTools(
       reason: 'call',
       projectId: contact.projectId
     })
-    if (!charge.ok) {
-      return fail(
-        JSON.stringify({
-          error: charge.error,
-          code: charge.code,
-          billingUrl: charge.billingUrl,
-          remaining: charge.remaining
-        })
-      )
-    }
+    if (!charge.ok) return failCharge(charge)
     return ok({
       call: startPublicCall(store, config, contact, sandbox),
       creditsUsed: charge.creditsUsed,
@@ -646,7 +633,7 @@ export function registerJargonTools(
       if (!isContactStatus(disposition)) return fail('invalid disposition')
       const call = findOrgCall(store, actor.orgId, callId)
       if (!call) return fail('Call not found')
-      return ok(completePublicCall(store, call.id, disposition))
+      return ok(completePublicCall(store, call.id, disposition, config))
     }
   )
 
@@ -662,7 +649,7 @@ export function registerJargonTools(
       if (!isContactStatus(disposition)) return fail('invalid disposition')
       const call = findOrgCall(store, actor.orgId, callId)
       if (!call) return fail('Call not found')
-      return ok(completePublicCall(store, call.id, disposition))
+      return ok(completePublicCall(store, call.id, disposition, config))
     }
   )
 
@@ -1016,16 +1003,7 @@ export function registerJargonTools(
       reason: message.channel === 'linkedin' ? 'linkedin' : 'email',
       projectId: message.projectId
     })
-    if (!charge.ok) {
-      return fail(
-        JSON.stringify({
-          error: charge.error,
-          code: charge.code,
-          billingUrl: charge.billingUrl,
-          remaining: charge.remaining
-        })
-      )
-    }
+    if (!charge.ok) return failCharge(charge)
     const result = await deliverPublicMessage(store, config, actor.orgId, messageId, sandbox)
     if (!result.ok) {
       if (charge.creditsUsed > 0) {

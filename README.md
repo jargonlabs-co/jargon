@@ -3,7 +3,7 @@
 1. `jargon deploy "Build a dialer for my AE book"`  
 2. User attaches **HubSpot** (their contacts)  
 3. UI reads that list  
-4. Email / call / LinkedIn run **through Jargon** (platform Gmail, Twilio, HeyReach)
+4. Email / call / LinkedIn run **through Jargon** (platform Gmail, Plivo, HeyReach)
 
 Internal prospecting (Crustdata, etc.) lives in the private [`outbound-ops`](https://github.com/jargonlabs-co/outbound-ops) repo. See [docs/SEPARATION.md](docs/SEPARATION.md).
 
@@ -11,7 +11,7 @@ Internal prospecting (Crustdata, etc.) lives in the private [`outbound-ops`](htt
 
 1. `jargon deploy "Build a dialer"` creates a tool (empty queue)
 2. Connect **HubSpot** so the tool can load your contacts
-3. Email, calling, and LinkedIn send through Jargon (platform Gmail, Twilio, HeyReach)
+3. Email, calling, and LinkedIn send through Jargon (platform Gmail, Plivo, HeyReach)
 
 ## Quick start
 

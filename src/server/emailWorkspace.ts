@@ -3,7 +3,8 @@ import type { ServerConfig } from './config'
 import type { Channel, FieldDef, Project } from './types'
 import { toPublicConnection } from './connections'
 import { interpolateTemplate } from '../shared/fieldCatalog'
-import { inspectTwilioVoice } from './providers/twilio'
+import { voiceIsLive } from './providers/voice'
+import { platformGmailReady } from './providers/gmail'
 import {
   dashboardFor,
   findOrgProject,
@@ -25,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=flow1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=send1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -40,6 +41,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=nl1',
   'ui://jargon/email-workspace.html?v=liopen1',
   'ui://jargon/email-workspace.html?v=copy1',
+  'ui://jargon/email-workspace.html?v=flow1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -247,8 +249,8 @@ export function getEmailWorkspace(
     dashboardPath: dashboard.dashboardPath,
     contactCount: listed.total,
     channels,
-    emailLive: !opts?.sandbox && Boolean(config.google.refreshToken),
-    voiceLive: !opts?.sandbox && inspectTwilioVoice(config).ok,
+    emailLive: !opts?.sandbox && platformGmailReady(config),
+    voiceLive: !opts?.sandbox && voiceIsLive(config),
     linkedinLive: !opts?.sandbox && Boolean(config.heyreach.apiKey.trim()),
     sandbox: Boolean(opts?.sandbox),
     catalog: sequence.fieldCatalog ?? [],

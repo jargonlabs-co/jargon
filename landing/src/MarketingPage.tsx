@@ -3,7 +3,7 @@ import { BrandMark } from './components/BrandMark'
 import { ChatGptMark } from './components/ChatGptMark'
 import { ClaudeMark } from './components/ClaudeMark'
 import { LogoMark } from './components/LogoMark'
-import { CliDeployMock, ContextMock, HeroSequenceMock } from './components/ProductMocks'
+import { CliDeployMock, ContextMock, HeroClaudeMock } from './components/ProductMocks'
 import { CONNECTOR_DESCRIPTION, ConnectorGallery } from './components/ConnectorGallery'
 
 function useReveal() {
@@ -126,7 +126,7 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
           </div>
 
           <div className="hero-visual" aria-hidden="true">
-            <HeroSequenceMock />
+            <HeroClaudeMock />
           </div>
         </section>
 

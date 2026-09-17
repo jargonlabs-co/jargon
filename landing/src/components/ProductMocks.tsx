@@ -1,7 +1,42 @@
+import { useEffect, useState } from 'react'
 import { BrandMark } from './BrandMark'
-import { ChatGptMark } from './ChatGptMark'
 import { ClaudeMark } from './ClaudeMark'
 import { MockWindow } from './MockWindow'
+
+const HERO_PROMPT =
+  'Build me a dialer for the top 100 contacts I need to build pipeline with'
+
+const HERO_CONTACTS = [
+  {
+    name: 'Alex Chen',
+    meta: 'Head of GTM Eng · Northwind',
+    next: 'Call',
+    channels: ['Email', 'Call', 'LinkedIn'] as const,
+    active: 'Call'
+  },
+  {
+    name: 'Priya Shah',
+    meta: 'VP RevOps · Harbor',
+    next: 'Call',
+    channels: ['Email', 'Call', 'LinkedIn'] as const,
+    active: null
+  },
+  {
+    name: 'Sam Ortiz',
+    meta: 'GTM Engineer · Lumen',
+    next: 'Email',
+    channels: ['Email', 'Call', 'LinkedIn'] as const,
+    active: null
+  }
+]
+
+type HeroPhase = 'idle' | 'typing' | 'sent' | 'tool' | 'widget' | 'ready'
+
+function wait(ms: number, timers: number[]) {
+  return new Promise<void>((resolve) => {
+    timers.push(window.setTimeout(resolve, ms))
+  })
+}
 
 export function CliDeployMock() {
   return (
@@ -131,97 +166,223 @@ export function DialerMock() {
   )
 }
 
-export function HeroSequenceMock() {
+export function HeroClaudeMock() {
+  const [phase, setPhase] = useState<HeroPhase>('idle')
+  const [typed, setTyped] = useState('')
+  const [remaining, setRemaining] = useState(0)
+  const [visiblePeople, setVisiblePeople] = useState(0)
+
+  useEffect(() => {
+    const timers: number[] = []
+    let cancelled = false
+
+    async function play() {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        setTyped(HERO_PROMPT)
+        setPhase('ready')
+        setRemaining(100)
+        setVisiblePeople(HERO_CONTACTS.length)
+        return
+      }
+
+      while (!cancelled) {
+        setPhase('idle')
+        setTyped('')
+        setRemaining(0)
+        setVisiblePeople(0)
+        await wait(1800, timers)
+        if (cancelled) return
+
+        setPhase('typing')
+        for (let i = 1; i <= HERO_PROMPT.length; i += 1) {
+          if (cancelled) return
+          setTyped(HERO_PROMPT.slice(0, i))
+          const char = HERO_PROMPT[i - 1]
+          await wait(char === ' ' ? 140 : 72, timers)
+        }
+
+        await wait(1600, timers)
+        if (cancelled) return
+        setPhase('sent')
+
+        await wait(1600, timers)
+        if (cancelled) return
+        setPhase('tool')
+
+        await wait(2200, timers)
+        if (cancelled) return
+        setPhase('widget')
+
+        for (let n = 0; n <= 100; n += 2) {
+          if (cancelled) return
+          setRemaining(n)
+          await wait(48, timers)
+        }
+        setRemaining(100)
+
+        for (let i = 1; i <= HERO_CONTACTS.length; i += 1) {
+          if (cancelled) return
+          setVisiblePeople(i)
+          await wait(900, timers)
+        }
+
+        setPhase('ready')
+        await wait(10000, timers)
+      }
+    }
+
+    void play()
+    return () => {
+      cancelled = true
+      timers.forEach((id) => window.clearTimeout(id))
+    }
+  }, [])
+
+  const showThread = phase !== 'idle' && phase !== 'typing'
+  const showCall = phase === 'ready'
+
   return (
-    <MockWindow className="mock-hero-sequence" wide>
-      <div className="hero-seq">
-        <div className="hero-seq-chat">
-          <div className="hero-seq-chat-head">
-            <div className="hero-seq-apps" aria-hidden="true">
-              <span className="hero-seq-app on">
-                <ClaudeMark size={14} />
-                Claude
-              </span>
-              <span className="hero-seq-app">
-                <ChatGptMark size={14} />
-                ChatGPT
-              </span>
-            </div>
-            <span className="hero-seq-status">Jargon · HubSpot connected</span>
-          </div>
-
-          <div className="hero-seq-thread">
-            <div className="claude-msg user">
-              Build an outbound sequence for my AE book — HubSpot, VP Sales and above, West.
-            </div>
-            <div className="hero-seq-tools">
-              <div className="claude-tool">
-                <span className="claude-tool-name">Jargon</span>
-                <span className="claude-tool-action">read_crm</span>
-              </div>
-              <div className="hero-seq-tool-note">HubSpot · AE book · 24 contacts</div>
-              <div className="claude-tool">
-                <span className="claude-tool-name">Jargon</span>
-                <span className="claude-tool-action">create_sequence</span>
-              </div>
-            </div>
-            <div className="claude-msg assistant">
-              Built <strong>West AE outbound</strong> on your HubSpot book. Day 0 email, day 2 call,
-              day 5 LinkedIn — 24 contacts, ready to run from here.
-            </div>
-          </div>
-
-          <div className="hero-seq-composer" aria-hidden="true">
-            Message Claude or ChatGPT…
-          </div>
+    <MockWindow className="mock-hero-claude" wide>
+      <div className="hc">
+        <div className="hc-head">
+          <span className="hc-brand">
+            <ClaudeMark size={18} />
+            Claude
+          </span>
+          <span className="hc-status">Jargon connected</span>
         </div>
 
-        <aside className="hero-seq-artifact">
-          <div className="hero-seq-crm">
-            <span className="hero-seq-crm-label">Your CRM</span>
-            <span className="hero-seq-crm-pill">
-              <span className="live-dot" />
-              HubSpot · connected
-            </span>
-          </div>
+        <div className="hc-thread">
+          {showThread ? (
+            <div className="hc-user">
+              {HERO_PROMPT}
+            </div>
+          ) : null}
 
-          <div className="hero-seq-card">
-            <div className="hero-seq-card-head">
-              <BrandMark size={22} />
-              <div>
-                <div className="hero-seq-card-name">West AE outbound</div>
-                <div className="hero-seq-card-meta">24 contacts from HubSpot · AE book</div>
+          {phase === 'tool' || phase === 'widget' || phase === 'ready' ? (
+            <div className="hc-tools">
+              <div className="claude-tool">
+                <span className="claude-tool-name">Jargon</span>
+                <span className="claude-tool-action">deploy_tool</span>
               </div>
+              {phase !== 'tool' ? (
+                <div className="hc-tool-note">HubSpot · top 100 contacts</div>
+              ) : null}
             </div>
+          ) : null}
 
-            <div className="hero-seq-steps">
-              {[
-                { day: 'Day 0', channel: 'Email', preview: 'Note on the AE motion' },
-                { day: 'Day 2', channel: 'Call', preview: 'Talk track from the book' },
-                { day: 'Day 5', channel: 'LinkedIn', preview: 'Short note after the call' }
-              ].map((step) => (
-                <div key={step.day} className="hero-seq-step">
-                  <span className="hero-seq-step-day">{step.day}</span>
-                  <span className="hero-seq-step-channel">{step.channel}</span>
-                  <span className="hero-seq-step-preview">{step.preview}</span>
+          {phase === 'widget' || phase === 'ready' ? (
+            <div className={`hc-app ${phase === 'ready' ? 'is-ready' : 'is-building'}`}>
+              <header className="hc-app-head">
+                <div>
+                  <h3>Pipeline dialer · top 100</h3>
+                  <p>
+                    Email · Call · LinkedIn · {remaining} contacts remaining · HubSpot
+                  </p>
                 </div>
-              ))}
-            </div>
+                <div className="hc-app-actions">
+                  <span>Full screen</span>
+                  <span>Open workspace</span>
+                </div>
+              </header>
 
-            <ul className="hero-seq-people">
-              {[
-                { name: 'Maya Chen', meta: 'Lattice · VP Sales' },
-                { name: 'Jordan Blake', meta: 'Rippling · Director' },
-                { name: 'Priya Nair', meta: 'Notion · Head of RevOps' }
-              ].map((person) => (
-                <li key={person.name}>
-                  <span className="hero-seq-person-name">{person.name}</span>
-                  <span className="hero-seq-person-meta">{person.meta}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
+              {phase === 'widget' && visiblePeople === 0 ? (
+                <div className="hc-banner">Building dialer from your CRM…</div>
+              ) : (
+                <>
+                  <div className="hc-tabs">
+                    <span>Contacts</span>
+                    <span className="on">Queue</span>
+                    <span>Sequence</span>
+                    <span>
+                      Tasks <em>100</em>
+                    </span>
+                  </div>
+                  <div className="hc-stats">
+                    <div>
+                      <strong>{remaining}</strong>
+                      <span>remaining</span>
+                    </div>
+                    <div>
+                      <strong>0</strong>
+                      <span>emailed</span>
+                    </div>
+                    <div>
+                      <strong>0</strong>
+                      <span>called</span>
+                    </div>
+                    <div>
+                      <strong>0</strong>
+                      <span>LinkedIn</span>
+                    </div>
+                  </div>
+                  {remaining === 100 ? (
+                    <div className="hc-banner">Showing 3 of 100. Open workspace for the full list.</div>
+                  ) : null}
+                  <div className="hc-people">
+                    {HERO_CONTACTS.slice(0, visiblePeople).map((person, i) => (
+                      <div key={person.name} className={`hc-person ${i === 0 ? 'on' : ''}`}>
+                        <div>
+                          <div className="hc-name">{person.name}</div>
+                          <div className="hc-meta">{person.meta}</div>
+                        </div>
+                        <div className="hc-side">
+                          <span className="hc-pill">Next · {person.next}</span>
+                          <div className="hc-chans">
+                            {person.channels.map((channel) => (
+                              <span
+                                key={channel}
+                                className={`hc-chan ${person.active === channel ? 'on' : ''} ${person.next === channel && person.active !== channel ? 'next' : ''}`}
+                              >
+                                {channel}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {showCall ? (
+                <div className="hc-call">
+                  <div className="hc-call-to">Alex Chen · +1 (415) 555-0142</div>
+                  <div className="hc-track">
+                    <label>Talk track</label>
+                    <p>
+                      Reference the intro email. Ask how Northwind runs outbound today and who owns
+                      pipeline.
+                    </p>
+                  </div>
+                  <div className="hc-call-row">
+                    <span className="hc-btn primary">Start call</span>
+                    <span className="hc-btn">Interested</span>
+                    <span className="hc-btn">No answer</span>
+                    <span className="hc-btn">Not interested</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div className={`hc-composer ${phase === 'typing' || phase === 'idle' ? 'is-live' : ''}`}>
+          {phase === 'typing' || (phase === 'idle' && typed) ? (
+            <span>
+              {typed}
+              <span className="hc-caret" />
+            </span>
+          ) : phase === 'idle' ? (
+            <span className="hc-placeholder">
+              Message Claude…
+              <span className="hc-caret" />
+            </span>
+          ) : (
+            <span className="hc-placeholder">Message Claude…</span>
+          )}
+          <span className={`hc-send ${phase === 'typing' && typed ? 'on' : ''}`} />
+        </div>
       </div>
     </MockWindow>
   )

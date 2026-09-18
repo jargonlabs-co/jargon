@@ -229,13 +229,16 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(400).json({ error: parsed.error })
       return
     }
+    const enroll =
+      typeof req.body?.enroll === 'boolean' ? (req.body.enroll as boolean) : undefined
     const result = await deployPublicTool(
       store,
       config,
       req.auth!.org.id,
       prompt,
       parsed.contacts,
-      req.body?.spec
+      req.body?.spec,
+      enroll === undefined ? undefined : { enroll }
     )
     res.status(result.status).json(result.body)
   })

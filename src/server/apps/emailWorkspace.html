@@ -349,6 +349,34 @@ function parseToolResult(result) {
   try { return JSON.parse(text); } catch { return { error: text }; }
 }
 
+function sendError(parsed) {
+  if (!parsed) return 'Request failed';
+  if (parsed.error) return parsed.error;
+  const message = parsed.message;
+  if (message?.status === 'failed' || message?.error) return message.error || 'Send failed.';
+  return '';
+}
+
+function toE164(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if ([...document.scripts].some((s) => s.src === src)) { resolve(); return; }
+    const el = document.createElement('script');
+    el.src = src;
+    el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('Could not load calling'));
+    document.head.appendChild(el);
+  });
+}
+
 function latestMessage(ws, contactId) {
   return (ws.messages || []).find((m) => m.contactId === contactId && m.channel === 'email') || null;
 }
@@ -488,7 +516,7 @@ function dueLabel(task) {
 }
 
 (async () => {
-  const app = new App({ name: 'jargon-outbound', version: '1.6.0' }, {}, { autoResize: true });
+  const app = new App({ name: 'jargon-outbound', version: '1.7.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let tab = 'contacts';
   let seqPane = 'flow';
@@ -505,7 +533,6 @@ function dueLabel(task) {
   let peopleStep = 0;
   let draftSteps = [];
   let actionPane = 'email';
-  let callTimer = 0;
   let taskFilter = 'open';
   let selectedTaskId = null;
   let dialState = 'idle';
@@ -515,7 +542,10 @@ function dueLabel(task) {
   let dialMuted = false;
   let dialTicker = 0;
   let dialConnect = 0;
-  let researchAsked = false;
+  let callPoll = 0;
+  let plivoSdk = null;
+  let plivoUser = null;
+  let plivoActive = null;
 
   function surface() {
     if (!ws) return 'sequence';
@@ -702,7 +732,8 @@ function dueLabel(task) {
       }
       busy = false;
       const parsed = parseToolResult(result);
-      if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+      const failed = sendError(parsed);
+      if (failed) { setNotice(failed, 'err'); return; }
       await reload();
       if (listSurface()) {
         const next = (ws.contacts || []).find((c) => c.id === contact.id);
@@ -816,7 +847,7 @@ function dueLabel(task) {
     const people = (ws.contacts || []).map((c) =>
       `- ${c.id} · ${c.name}${c.company ? ` · ${c.company}` : ''}${c.title ? ` · ${c.title}` : ''}`
     ).join('\n');
-    const research = `Research each contact and their company. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_research once with a JSON array. Use channel "call" for talk tracks, "email" for emails, "linkedin" for LinkedIn notes. Pass stepId for follow-ups. Include short context bullets when you have signals.`;
+    const research = `Research each contact and their company. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_research once with a JSON array as the tool argument only — never paste the JSON into chat. Use channel "call" for talk tracks, "email" for emails, "linkedin" for LinkedIn notes. Pass stepId for follow-ups. Include short context bullets when you have signals.`;
     await app.sendMessage({
       role: 'user',
       content: [{
@@ -828,35 +859,198 @@ function dueLabel(task) {
     });
   }
 
-  function maybeAskResearch() {
-    if (researchAsked || !ws?.kickResearch || !ws.researchPending) return;
-    const key = `jargon-research-${ws.projectId}`;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
-    } catch (_) { /* ignore */ }
-    researchAsked = true;
-    void askClaudeToWrite().catch(() => undefined);
+  function plivoCtor() {
+    const Plivo = window.Plivo;
+    if (!Plivo) return null;
+    return Plivo.Client || Plivo;
+  }
+
+  function asPlivoClient(instance) {
+    if (instance?.client?.login) return instance;
+    if (instance?.login) return { client: instance };
+    return instance;
+  }
+
+  async function loadPlivoSdk() {
+    if (plivoCtor()) return;
+    await loadScript('https://cdn.plivo.com/sdk/browser/v2/plivo.min.js');
+    if (!plivoCtor()) throw new Error('Calling is not available in this app');
+  }
+
+  function bindPlivo(client) {
+    client.client.on('onCallAnswered', () => plivoActive?.onAccept());
+    client.client.on('onCallTerminated', () => {
+      const current = plivoActive;
+      plivoActive = null;
+      current?.onDisconnect();
+    });
+    client.client.on('onCallFailed', (reason) => {
+      const current = plivoActive;
+      plivoActive = null;
+      current?.onError(typeof reason === 'string' && reason.trim() ? reason : 'Call failed');
+    });
+  }
+
+  async function ensurePlivo(username, password) {
+    await loadPlivoSdk();
+    if (plivoSdk && plivoUser === username) return plivoSdk;
+    if (plivoSdk) {
+      try { plivoSdk.client.hangup(); plivoSdk.client.logout(); } catch (_) { /* already torn down */ }
+      plivoSdk = null;
+      plivoUser = null;
+    }
+    const Ctor = plivoCtor();
+    const next = asPlivoClient(new Ctor({ debug: 'ERROR', permOnClick: true, closeProtection: true, enableTracking: true }));
+    bindPlivo(next);
+    await new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('Plivo login timed out')), 15000);
+      next.client.on('onLogin', () => { window.clearTimeout(timer); resolve(); });
+      next.client.on('onLoginFailed', (reason) => {
+        window.clearTimeout(timer);
+        reject(new Error(typeof reason === 'string' && reason.trim() ? reason : 'Plivo login failed'));
+      });
+      if (!next.client.login(username, password)) {
+        window.clearTimeout(timer);
+        reject(new Error('Plivo login was rejected'));
+      }
+    });
+    plivoSdk = next;
+    plivoUser = username;
+    return next;
+  }
+
+  async function hangupPlivo() {
+    plivoActive = null;
+    try { plivoSdk?.client.hangup(); } catch (_) { /* already ended */ }
+  }
+
+  function stopCallPoll() {
+    clearInterval(callPoll);
+    callPoll = 0;
+  }
+
+  function startDialTicker() {
+    clearInterval(dialTicker);
+    dialTicker = setInterval(() => {
+      dialSeconds += 1;
+      const el = document.getElementById('dial-timer');
+      if (!el) { clearInterval(dialTicker); return; }
+      el.textContent = clockText(dialSeconds);
+    }, 1000);
+  }
+
+  function watchOpenCall() {
+    stopCallPoll();
+    callPoll = setInterval(() => {
+      const phase = ws?.openCall?.phase;
+      if (phase === 'connected' && dialState === 'dialing') {
+        dialState = 'connected';
+        startDialTicker();
+        render();
+      }
+      if (!phase || phase === 'completed' || phase === 'failed' || phase === 'connected') {
+        stopCallPoll();
+        return;
+      }
+      void reload();
+    }, 1200);
+  }
+
+  async function connectPlivo(opts) {
+    try { plivoSdk?.client.hangup(); } catch (_) { /* no active call */ }
+    const client = await ensurePlivo(opts.username, opts.password);
+    plivoActive = opts;
+    const started = client.client.call(opts.to, {
+      'X-PH-CallId': opts.callId,
+      'X-PH-To': opts.to,
+    });
+    if (!started) {
+      plivoActive = null;
+      throw new Error('Plivo could not start the call');
+    }
   }
 
   async function startCall(contact) {
+    if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+    const typed = seqPane === 'call' && dialDigits ? dialDigits : '';
+    const number = toE164(typed || contact.phone || '');
+    if (!number) { setNotice('This contact has no valid phone number.', 'err'); return; }
     busy = true; render();
-    const result = await app.callServerTool({
-      name: 'run_start_call',
-      arguments: { contactId: contact.id },
-    });
-    busy = false;
-    const parsed = parseToolResult(result);
-    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
-    await reload();
-    if (ws.openCall?.phase === 'dialing') {
-      clearTimeout(callTimer);
-      callTimer = setTimeout(() => reload(), 1300);
+    try {
+      await hangupPlivo();
+      const token = parseToolResult(await app.callServerTool({ name: 'run_voice_token', arguments: {} }));
+      if (token?.error) { setNotice(token.error, 'err'); return; }
+      if (token?.mode !== 'plivo' || !token.username || !token.password) {
+        setNotice('Open the workspace to place this call.', 'err');
+        if (ws?.dashboardUrl) await app.openLink({ url: ws.dashboardUrl });
+        return;
+      }
+      const started = parseToolResult(await app.callServerTool({
+        name: 'run_start_call',
+        arguments: { contactId: contact.id },
+      }));
+      if (started?.error) { setNotice(started.error, 'err'); return; }
+      const call = started.call;
+      if (!call?.id) { setNotice('Could not start call.', 'err'); return; }
+      dialContactId = contact.id;
+      dialState = 'dialing';
+      dialSeconds = 0;
+      await reload();
+      setNotice(`Calling ${contact.name}.`, 'ok');
+      try {
+        await connectPlivo({
+          username: token.username,
+          password: token.password,
+          to: number,
+          callId: call.id,
+          onAccept: () => {
+            void app.callServerTool({
+              name: 'run_report_call_progress',
+              arguments: { callId: call.id, phase: 'connected' },
+            }).then(() => reload());
+            dialState = 'connected';
+            startDialTicker();
+            setNotice(`Connected with ${contact.name}.`, 'ok');
+          },
+          onDisconnect: () => {
+            if (dialState === 'dialing' || dialState === 'connected') {
+              clearInterval(dialTicker);
+              dialState = dialSeconds ? 'ended' : 'idle';
+              render();
+            }
+          },
+          onError: (message) => {
+            void app.callServerTool({
+              name: 'run_report_call_progress',
+              arguments: { callId: call.id, phase: 'failed' },
+            }).catch(() => undefined);
+            setNotice(message, 'err');
+          },
+        });
+        watchOpenCall();
+      } catch (err) {
+        await hangupPlivo();
+        void app.callServerTool({
+          name: 'run_report_call_progress',
+          arguments: { callId: call.id, phase: 'failed' },
+        }).catch(() => undefined);
+        if (ws?.dashboardUrl) {
+          setNotice('Open the workspace to place this call.', 'err');
+          await app.openLink({ url: ws.dashboardUrl });
+        } else {
+          setNotice(err?.message || 'Could not start call.', 'err');
+        }
+      }
+    } catch (err) {
+      setNotice(err?.message || 'Could not start call.', 'err');
+    } finally {
+      busy = false;
+      render();
     }
-    setNotice(`Calling ${contact.name}.`, 'ok');
   }
 
   async function logCallOutcome(contact, status) {
+    await hangupPlivo();
     const call = ws.openCall && ws.openCall.contactId === contact.id ? ws.openCall : null;
     busy = true; render();
     const result = call && call.phase !== 'completed'
@@ -925,7 +1119,8 @@ function dueLabel(task) {
         });
     busy = false;
     const parsed = parseToolResult(result);
-    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    const failed = sendError(parsed);
+    if (failed) { setNotice(failed, 'err'); return; }
     await reload();
     const next = (ws.contacts || []).find((c) => c.id === contact.id);
     if (nextFor(next) && next) actionPane = nextFor(next);
@@ -995,7 +1190,7 @@ function dueLabel(task) {
     `;
   }
 
-  function stepCard(step, i, live) {
+  function stepCard(step, i) {
     const title = step.label || `${channelLabel(step.channel)} ${i + 1}`;
     const preview = oneLine(step.subject || step.body) || (step.channel === 'call' ? 'Talk track from the queue' : 'No copy yet');
     const ico = step.channel === 'call' ? ICO.phone : step.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
@@ -1003,6 +1198,11 @@ function dueLabel(task) {
     const counts = st && (st.sent || st.drafted || st.due)
       ? `${st.sent} sent${st.due ? ` · ${st.due} due` : st.drafted ? ` · ${st.drafted} drafted` : ''}`
       : '';
+    const live = !ws.sandbox && (
+      (step.channel === 'email' && ws.emailLive) ||
+      (step.channel === 'call' && ws.voiceLive) ||
+      (step.channel === 'linkedin' && ws.linkedinLive)
+    );
     return `
       <button class="node ${selectedStep === i && seqPane !== 'flow' ? 'on' : ''}" type="button" data-step="${i}">
         <div class="node-top">
@@ -1014,7 +1214,7 @@ function dueLabel(task) {
         </div>
         <div class="foot">
           <span class="mail-mini">${ico}</span>
-          ${counts ? `<span class="step-stat">${esc(counts)}</span>` : live && step.channel === 'email' ? `<span class="live"><span class="dot"></span>Live</span>` : `<span class="pill">${esc(channelLabel(step.channel))}</span>`}
+          ${counts ? `<span class="step-stat">${esc(counts)}</span>` : live ? `<span class="live"><span class="dot"></span>Live</span>` : `<span class="pill">${esc(channelLabel(step.channel))}</span>`}
         </div>
       </button>
     `;
@@ -1041,6 +1241,8 @@ function dueLabel(task) {
   }
 
   function resetDialer(contactId) {
+    stopCallPoll();
+    void hangupPlivo();
     clearTimeout(dialConnect);
     clearInterval(dialTicker);
     dialConnect = 0;
@@ -1053,28 +1255,14 @@ function dueLabel(task) {
   }
 
   function placeCall() {
-    if (!dialerNumber()) { setNotice('No number yet — use the keypad to enter one.', 'err'); return; }
-    clearTimeout(dialConnect);
-    clearInterval(dialTicker);
-    dialState = 'dialing';
-    dialSeconds = 0;
-    dialMuted = false;
-    notice = '';
-    render();
-    dialConnect = setTimeout(() => {
-      if (dialState !== 'dialing') return;
-      dialState = 'connected';
-      dialTicker = setInterval(() => {
-        dialSeconds += 1;
-        const el = document.getElementById('dial-timer');
-        if (!el) { clearInterval(dialTicker); return; }
-        el.textContent = clockText(dialSeconds);
-      }, 1000);
-      render();
-    }, 1600);
+    const contact = dialerContact();
+    if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+    void startCall(contact);
   }
 
   function hangUp() {
+    stopCallPoll();
+    void hangupPlivo();
     clearTimeout(dialConnect);
     clearInterval(dialTicker);
     dialState = dialSeconds ? 'ended' : 'idle';
@@ -1152,7 +1340,6 @@ function dueLabel(task) {
 
   function renderFlow() {
     const steps = visibleSteps();
-    const live = Boolean(ws.emailLive) && !ws.sandbox;
     let html = `<div class="canvas"><div class="flow">${triggerCard()}`;
     steps.forEach((step, i) => {
       const prev = i === 0 ? 0 : Number(steps[i - 1].day || 0);
@@ -1162,7 +1349,7 @@ function dueLabel(task) {
         html += waitCard(i, wait);
         html += connector();
       }
-      html += stepCard(step, i, live);
+      html += stepCard(step, i);
     });
     if (!steps.length) html += `${connector()}<p class="empty">No steps yet.</p>`;
     html += `</div></div>`;
@@ -1401,7 +1588,7 @@ function dueLabel(task) {
         ${track ? `<div class="talk-track"><label>Talk track</label><p>${esc(track)}</p></div>` : '<p class="sub">Talk track lands here after Claude researches this contact.</p>'}
         ${bullets.length && track !== bullets.join('\n') ? `<ul class="call-context">${bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
         <div class="row">
-          <button class="btn primary" id="start-call" ${busy || (phase && phase !== 'completed') ? 'disabled' : ''}>Start call</button>
+          <button class="btn primary" id="start-call" data-contact-id="${esc(contact.id)}" ${busy || (phase && phase !== 'completed') ? 'disabled' : ''}>Start call</button>
         </div>
         <label>Log outcome</label>
         <div class="row">
@@ -1669,27 +1856,33 @@ function dueLabel(task) {
       .filter((s) => s.status === 'connected')
       .map((s) => s.accountLabel || s.provider)
       .join(', ');
+    const live = [];
+    if (!ws.sandbox) {
+      if (ws.emailLive) live.push('Gmail');
+      if (ws.voiceLive) live.push('Plivo');
+      if (ws.linkedinLive) live.push('HeyReach');
+    }
+    const liveBit = live.length ? ` · ${live.join(' · ')}` : (ws.sandbox ? ' · sandbox' : '');
     if (tab === 'tasks') {
       const counts = taskCounts();
-      return `${counts.open} due now · ${counts.upcoming} upcoming · ${counts.done} done${sources ? ` · ${esc(sources)}` : ''}`;
+      return `${counts.open} due now · ${counts.upcoming} upcoming · ${counts.done} done${liveBit}${sources ? ` · ${esc(sources)}` : ''}`;
     }
     if (tab === 'contacts') {
       const enrolled = ws.taskStats?.enrolled || 0;
-      return `${ws.contactCount} contacts${enrolled ? ` · ${enrolled} enrolled` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}${sources ? ` · ${esc(sources)}` : ''}`;
+      return `${ws.contactCount} contacts${enrolled ? ` · ${enrolled} enrolled` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}${liveBit}${sources ? ` · ${esc(sources)}` : ''}`;
     }
     if (tab === 'sequence') {
       const n = (ws.steps || []).length;
       const enrolled = ws.taskStats?.enrolled || 0;
-      return `${n} steps${enrolled ? ` · ${enrolled} enrolled` : ' · not started'}${sources ? ` · ${esc(sources)}` : ''}`;
+      return `${n} steps${enrolled ? ` · ${enrolled} enrolled` : ' · not started'}${liveBit}${sources ? ` · ${esc(sources)}` : ''}`;
     }
     if (listSurface()) {
       const ch = workspaceChannels().map(channelLabel).join(' · ');
       const remaining = ws.stats?.remaining;
-      return `${ch} · ${ws.contactCount} contacts${remaining != null ? ` · ${remaining} remaining` : ''}${sources ? ` · ${esc(sources)}` : ''}`;
+      return `${ch} · ${ws.contactCount} contacts${remaining != null ? ` · ${remaining} remaining` : ''}${liveBit}${sources ? ` · ${esc(sources)}` : ''}`;
     }
-    const mail = ws.sandbox ? 'sandbox' : ws.emailLive ? 'Gmail live' : 'Gmail not configured';
     const kind = surfaceLabel();
-    return `${kind ? `${esc(kind)} · ` : ''}${ws.contactCount} contacts · ${esc(mail)}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}`;
+    return `${kind ? `${esc(kind)} · ` : ''}${ws.contactCount} contacts${liveBit}${sources ? ` · ${esc(sources)}` : ''}${ws.stats?.missingEmail ? ` · ${ws.stats.missingEmail} missing email` : ''}`;
   }
 
   function applyWorkspace(parsed) {
@@ -1728,7 +1921,7 @@ function dueLabel(task) {
           <button class="btn" id="open">Open workspace</button>
         </div>
       </header>
-      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ws.researchPending ? '<div class="banner">Researching this list — talk tracks and copy will land on each task.</div>' : ''}
+      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ws.researchPending ? '<div class="banner">Personalized copy is not saved yet — use Ask Claude to write drafts, or wait for save_research.</div>' : ''}
       ${renderTabs()}
       <div id="panel">${renderPanel()}</div>
     `;
@@ -1812,6 +2005,10 @@ function dueLabel(task) {
     root.querySelector('#dial-end')?.addEventListener('click', hangUp);
     root.querySelector('#dial-mute')?.addEventListener('click', () => {
       dialMuted = !dialMuted;
+      try {
+        if (dialMuted) plivoSdk?.client.mute?.();
+        else plivoSdk?.client.unmute?.();
+      } catch (_) { /* ignore */ }
       render();
     });
     root.querySelector('#dial-who')?.addEventListener('change', (e) => {
@@ -1882,7 +2079,12 @@ function dueLabel(task) {
       void sendNow(contact);
     });
     root.querySelector('#schedule')?.addEventListener('click', () => selected && schedule(selected));
-    root.querySelector('#start-call')?.addEventListener('click', () => selected && startCall(selected));
+    root.querySelector('#start-call')?.addEventListener('click', () => {
+      const id = root.querySelector('#start-call')?.getAttribute('data-contact-id') || selectedId;
+      const contact = (ws.contacts || []).find((c) => c.id === id);
+      if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+      void startCall(contact);
+    });
     root.querySelector('#send-li')?.addEventListener('click', () => {
       const id = root.querySelector('#send-li')?.getAttribute('data-contact-id') || selectedId;
       const contact = (ws.contacts || []).find((c) => c.id === id);
@@ -1902,7 +2104,6 @@ function dueLabel(task) {
     if (!parsed?.projectId) return;
     applyWorkspace(parsed);
     render();
-    maybeAskResearch();
   };
   app.onhostcontextchanged = themeFromHost;
   await app.connect();

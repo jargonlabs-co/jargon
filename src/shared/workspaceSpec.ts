@@ -124,7 +124,7 @@ export function inferMcpDefaultTab(input: {
   return 'contacts'
 }
 
-/** Cadences and dialers enroll on deploy. One-off sends and inbox views do not. */
+/** Cadences and dialers enroll when research saves (MCP) or on API/CLI deploy by default. One-off sends and inbox views do not. */
 export function shouldAutoStartSequence(input: {
   prompt: string
   primarySurface?: PrimarySurface

@@ -26,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=send1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=plivo1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -42,6 +42,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=liopen1',
   'ui://jargon/email-workspace.html?v=copy1',
   'ui://jargon/email-workspace.html?v=flow1',
+  'ui://jargon/email-workspace.html?v=send1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -98,8 +99,6 @@ export type EmailWorkspace = {
   researchPending: boolean
   /** Instruction the model should follow immediately. */
   nextAction?: string
-  /** When true, the in-chat UI asks Claude to research on first paint. */
-  kickResearch?: boolean
   stats: {
     drafts: number
     queued: number
@@ -146,7 +145,7 @@ export function getEmailWorkspace(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  opts?: { sandbox?: boolean; focus?: McpTab; kickResearch?: boolean }
+  opts?: { sandbox?: boolean; focus?: McpTab }
 ): EmailWorkspace | null {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return null
@@ -232,8 +231,8 @@ export function getEmailWorkspace(
   const researchPending = contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const nextAction = researchPending
     ? surface === 'one_off'
-      ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence.`
-      : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. Do not wait to be asked. Do not leave {{first_name}} placeholders as the send copy.`
+      ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
+      : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. That enrolls everyone and opens Tasks. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
     : undefined
   const view =
     surface === 'overflow' ? 'overflow' : surface === 'queue' || surface === 'tasks' ? 'queue' : 'email_workspace'
@@ -265,7 +264,6 @@ export function getEmailWorkspace(
     stepStats: stepStatsFor(steps, tasks, messages),
     researchPending,
     nextAction,
-    kickResearch: Boolean(opts?.kickResearch) && researchPending,
     stats: {
       drafts: messages.filter((m) => m.status === 'draft' && m.channel === 'email').length,
       queued: messages.filter((m) => m.status === 'queued' && m.channel === 'email').length,
@@ -650,14 +648,14 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts, builds the requested tool, sequences everyone, and opens Tasks. Claude researches people and companies and writes the send copy and talk tracks.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and builds the requested tool. Claude researches people and companies, writes send copy and talk tracks via save_research, then Tasks opens with personalized work.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 
 - User provides a list (connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
-- import_list / deploy_tool ingests the list, builds that tool, and enrolls every contact. Tasks appear immediately — one dated task per step per person.
-- Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
-- Immediately after deploy, research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Follow nextAction on the workspace payload. Do not wait to be asked.
+- import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
+- Immediately research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
+- save_research enrolls everyone and opens Tasks with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.
 - One-off / a handful / just send these → Contacts with a composer. save_research or save_draft then send_draft. Do not enroll unless they asked for a cadence.
@@ -665,7 +663,7 @@ One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Task
 
 Path:
 1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. After they click Allow, Jargon sequences everyone and Tasks appears.
-3. Research each company/prospect now and save_research the copy. Re-open with show_tasks. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
+2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV.
+3. Research each company/prospect now and save_research the copy. Tasks opens only after that. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

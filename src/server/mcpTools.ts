@@ -25,6 +25,7 @@ import {
   listPublicProspects,
   nextQueueContact,
   patchPublicMessage,
+  reportPublicCallProgress,
   sendPublicMessage,
   startPublicCall,
   toPublicContact,
@@ -41,7 +42,8 @@ import {
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { claudeConnectorStatus } from './mcpOauth'
-import { voiceIsLive } from './providers/voice'
+import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
+import { toE164 } from './providers/twilio'
 import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
@@ -104,13 +106,11 @@ function workspaceOk(
   orgId: string,
   projectId: string,
   sandbox: boolean,
-  focus?: McpTab,
-  extra?: { kickResearch?: boolean }
+  focus?: McpTab
 ) {
   const ws = getEmailWorkspace(store, config, orgId, projectId, {
     sandbox,
-    focus,
-    kickResearch: extra?.kickResearch
+    focus
   })
   if (!ws) return fail('Project not found')
   return {
@@ -152,7 +152,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Jargon ingests the list, builds the sequencer or dialer, sequences everyone into Tasks, then you research each person and save_research talk tracks / email / LinkedIn copy. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
+        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Jargon ingests the list and builds the sequencer or dialer. Then research each person and save_research talk tracks / email / LinkedIn copy — that enrolls everyone and opens Tasks. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
       })
     }
   )
@@ -342,11 +342,17 @@ export function registerJargonTools(
   async function execDeploy(prompt: string, contacts: unknown, spec: unknown) {
     const parsed = parseDeployContacts(contacts)
     if (!parsed.ok) return fail(parsed.error)
-    const result = await deployPublicTool(store, config, actor.orgId, prompt, parsed.contacts, spec)
+    const result = await deployPublicTool(
+      store,
+      config,
+      actor.orgId,
+      prompt,
+      parsed.contacts,
+      spec,
+      { enroll: false }
+    )
     if (!result.ok) return fail(result.body.error)
-    return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox, undefined, {
-      kickResearch: true
-    })
+    return ok(result.body)
   }
 
   async function execImportList(workspace: string) {
@@ -380,8 +386,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and open Contacts / Sequence / Tasks. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. Describe the cadence (days, channels) in the same text. Jargon sequences everyone into Tasks. Then research each company/prospect and save_research personalized talk tracks, email copy, and LinkedIn notes in one call.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. Describe the cadence (days, channels) in the same text. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens Tasks with personalized copy.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)
@@ -403,8 +408,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels, goal). Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Jargon builds the tool, sequences everyone into Tasks, then you research each contact and save_research talk tracks / email / LinkedIn copy. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels, goal). Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -564,6 +568,11 @@ export function registerJargonTools(
   async function execStartCall(contactId: string) {
     const contact = findOrgContact(store, actor.orgId, contactId)
     if (!contact) return fail('Contact not found')
+    if (!toE164(contact.phone ?? '')) return fail('This contact has no valid phone number.')
+    if (!sandbox) {
+      const live = inspectLiveVoice(config)
+      if (!live.ok) return fail(live.error)
+    }
     const charge = await chargeIfLive(billing, {
       orgId: actor.orgId,
       sandbox,
@@ -576,6 +585,24 @@ export function registerJargonTools(
       creditsUsed: charge.creditsUsed,
       creditsRemaining: charge.remaining
     })
+  }
+
+  async function execVoiceToken() {
+    if (sandbox) return fail('Calling is not available for this session.')
+    const identity = `user_${actor.userId}`.replace(/[^A-Za-z0-9_-]/g, '_')
+    try {
+      return ok(createVoiceToken(config, identity))
+    } catch (err) {
+      return fail(err)
+    }
+  }
+
+  async function execReportCallProgress(callId: string, phase: 'ringing' | 'connected' | 'failed') {
+    const call = findOrgCall(store, actor.orgId, callId)
+    if (!call) return fail('Call not found')
+    const next = reportPublicCallProgress(store, actor.orgId, callId, phase)
+    if (!next) return fail('Call not found')
+    return ok({ call: next })
   }
 
   server.registerTool(
@@ -605,7 +632,7 @@ export function registerJargonTools(
     {
       ...display('Start a call', HINTS.send),
       description:
-        'Start a dial session. summary is the sentence on Claude\'s Allow card. Live login can place real calls and spends credits.',
+        'Start a Plivo dial session. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits.',
       inputSchema: StartCallInput
     },
     async ({ contactId }) => execStartCall(contactId)
@@ -620,6 +647,31 @@ export function registerJargonTools(
       inputSchema: StartCallInput.omit({ summary: true })
     },
     async ({ contactId }) => execStartCall(contactId)
+  )
+
+  server.registerTool(
+    'run_voice_token',
+    {
+      ...display('Issue calling credentials', HINTS.read),
+      description: 'Issue Plivo softphone credentials for the in-chat dialer. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({})
+    },
+    async () => execVoiceToken()
+  )
+
+  server.registerTool(
+    'run_report_call_progress',
+    {
+      ...display('Update call progress', HINTS.write),
+      description: 'Update an open call phase from the in-chat dialer. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({
+        callId: z.string(),
+        phase: z.enum(['ringing', 'connected', 'failed'])
+      })
+    },
+    async ({ callId, phase }) => execReportCallProgress(callId, phase)
   )
 
   server.registerTool(
@@ -1045,7 +1097,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. Deploy already enrolls cadences and dialers — use this to re-enroll or enroll a subset. Keeps copy already saved with save_draft / save_research. Pass contactIds to enroll a subset.',
+        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. Prefer save_research after deploy — that enrolls with personalized copy. Use start_sequence to re-enroll, enroll a subset, or force-enroll without research. Keeps copy already saved with save_draft / save_research. Pass contactIds to enroll a subset.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: StartSequenceInput
     },
@@ -1112,7 +1164,7 @@ export function registerJargonTools(
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow, then open Tasks. summary is the sentence on Claude\'s Allow card. research is a JSON array — not nested objects on the card. Call this immediately after import_list / deploy_tool. Do not leave {{first_name}} placeholders as the send copy.',
+        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens Tasks. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: SaveResearchInput
     },

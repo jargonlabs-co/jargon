@@ -212,7 +212,7 @@ function createServer(): McpServer {
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and create an outbound workspace. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. Jargon sequences everyone into Tasks. Then research each contact and save_research talk tracks / email / LinkedIn copy. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. Does not open Tasks — research each contact next, then save_research (enrolls + opens Tasks). After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -225,7 +225,9 @@ function createServer(): McpServer {
     },
     async ({ workspace }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace } }))
+        return toolResult(
+          await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace, enroll: false } })
+        )
       } catch (err) {
         return toolError(err)
       }
@@ -237,7 +239,7 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace. summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels). Jargon builds the tool and sequences everyone into Tasks. Then research each company/prospect and save_research personalized copy — do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels). Does not open Tasks — research each company/prospect, then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -250,7 +252,9 @@ function createServer(): McpServer {
     },
     async ({ workspace }) => {
       try {
-        return toolResult(await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace } }))
+        return toolResult(
+          await jargonFetch('POST', '/tools/deploy', { body: { prompt: workspace, enroll: false } })
+        )
       } catch (err) {
         return toolError(err)
       }
@@ -472,7 +476,7 @@ function createServer(): McpServer {
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the cadence. Deploy already enrolls cadences and dialers. Keeps copy already saved with save_draft / save_research.',
+        'Enroll contacts into the cadence. Prefer save_research after deploy — that enrolls with personalized copy. Use this to re-enroll, enroll a subset, or force-enroll without research. Keeps copy already saved with save_draft / save_research.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -528,7 +532,7 @@ function createServer(): McpServer {
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow, then Tasks is ready. research is a JSON array of {contactId, channel, body, subject?, stepId?, context?}. Call this immediately after import_list / deploy_tool.',
+        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens Tasks. research is a JSON array of {contactId, channel, body, subject?, stepId?, context?} — pass it only as the tool argument, never paste into chat.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),

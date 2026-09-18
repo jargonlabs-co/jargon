@@ -1,5 +1,6 @@
 import type { DataStore } from './store'
 import type {
+  CallPhase,
   CallSession,
   Channel,
   Contact,
@@ -301,7 +302,8 @@ export async function deployPublicTool(
   orgId: string,
   prompt: string,
   contacts?: DeployContactInput[],
-  specOverride?: unknown
+  specOverride?: unknown,
+  opts?: { enroll?: boolean }
 ): Promise<
   | {
       ok: true
@@ -312,6 +314,17 @@ export async function deployPublicTool(
         dashboardPath: string
         dashboardUrl: string
         project: PublicProject
+        researchPending?: boolean
+        nextAction?: string
+        steps?: Array<{ id: string; day: number; channel: string; label: string }>
+        people?: Array<{
+          id: string
+          name: string
+          company?: string
+          title?: string
+          email?: string
+          linkedinUrl?: string
+        }>
       }
     }
   | { ok: false; status: 400; body: { error: string } }
@@ -346,27 +359,76 @@ export async function deployPublicTool(
     if (!project) {
       return { ok: false, status: 502, body: { error: 'Project created but could not be loaded' } }
     }
-    if (
+    const shouldEnroll =
+      opts?.enroll !== false &&
       shouldAutoStartSequence({
         prompt,
         primarySurface: project.spec?.primarySurface,
         channels: project.spec?.channels,
         steps: project.spec?.steps
       })
-    ) {
+    if (shouldEnroll) {
       await enrollPublicSequence(store, config, orgId, projectId)
     }
     const publicProject = toPublicProject(store.db.contacts, project, config.appUrl)
+    const body: {
+      projectId: string
+      contactCount: number
+      dashboardPath: string
+      dashboardUrl: string
+      project: PublicProject
+      researchPending?: boolean
+      nextAction?: string
+      steps?: Array<{ id: string; day: number; channel: string; label: string }>
+      people?: Array<{
+        id: string
+        name: string
+        company?: string
+        title?: string
+        email?: string
+        linkedinUrl?: string
+      }>
+    } = {
+      projectId,
+      contactCount: publicProject.contactCount,
+      dashboardPath: publicProject.dashboardPath,
+      dashboardUrl: publicProject.dashboardUrl,
+      project: publicProject
+    }
+    if (opts?.enroll === false && publicProject.contactCount > 0) {
+      const sequence = getPublicSequence(store, orgId, projectId)
+      const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
+      const willEnrollLater = shouldAutoStartSequence({
+        prompt,
+        primarySurface: project.spec?.primarySurface,
+        channels: project.spec?.channels,
+        steps: project.spec?.steps
+      })
+      body.researchPending = true
+      body.steps = (sequence?.steps ?? [])
+        .filter((step): step is PublicStep => Boolean(step))
+        .map((step) => ({
+          id: step.id,
+          day: step.day,
+          channel: step.channel,
+          label: step.label || step.channel
+        }))
+      body.people = listed.contacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        company: c.company || undefined,
+        title: c.title || undefined,
+        email: c.email || undefined,
+        linkedinUrl: c.linkedinUrl || undefined
+      }))
+      body.nextAction = willEnrollLater
+        ? `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${projectId} with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step (pass stepId). Do not paste the JSON into chat — save_research enrolls everyone and opens Tasks. Do not leave {{first_name}} placeholders as the send copy.`
+        : `Research each contact and save_research personalized email copy for project ${projectId}. Do not start a sequence.`
+    }
     return {
       ok: true,
       status: 201,
-      body: {
-        projectId,
-        contactCount: publicProject.contactCount,
-        dashboardPath: publicProject.dashboardPath,
-        dashboardUrl: publicProject.dashboardUrl,
-        project: publicProject
-      }
+      body
     }
   } catch (err) {
     return {
@@ -644,6 +706,25 @@ export function startPublicCall(
   }
 
   return toPublicCall(store.db.calls.find((c) => c.id === callId)!)
+}
+
+export function reportPublicCallProgress(
+  store: DataStore,
+  orgId: string,
+  callId: string,
+  phase: Extract<CallPhase, 'ringing' | 'connected' | 'failed'>
+): PublicCall | null {
+  const existing = store.db.calls.find((c) => c.id === callId && c.orgId === orgId)
+  if (!existing) return null
+  const now = Date.now()
+  store.update((db) => {
+    const call = db.calls.find((c) => c.id === callId)
+    if (!call || call.phase === 'completed') return
+    call.phase = phase
+    if (phase === 'connected') call.connectedAt = call.connectedAt ?? now
+  })
+  const call = store.db.calls.find((c) => c.id === callId)
+  return call ? toPublicCall(call) : null
 }
 
 export function completePublicCall(

@@ -6,12 +6,7 @@ import {
   inspectPlivoVoice,
   syncPlivoApplication
 } from './plivo'
-import {
-  createTwilioVoiceToken,
-  hangupTwilioPstn,
-  inspectTwilioVoice,
-  syncTwilioTwimlApp
-} from './twilio'
+import { hangupTwilioPstn, inspectTwilioVoice, syncTwilioTwimlApp } from './twilio'
 
 export type LiveVoiceProvider = 'plivo' | 'twilio'
 
@@ -28,12 +23,7 @@ export function inspectLiveVoice(
 ): { ok: true; provider: LiveVoiceProvider } | { ok: false; error: string } {
   const plivo = inspectPlivoVoice(config)
   if (plivo.ok) return { ok: true, provider: 'plivo' }
-  const twilio = inspectTwilioVoice(config)
-  if (twilio.ok) return { ok: true, provider: 'twilio' }
-  return {
-    ok: false,
-    error: plivo.error !== 'Plivo is not configured' ? plivo.error : twilio.error
-  }
+  return { ok: false, error: plivo.error }
 }
 
 export function voiceIsLive(config: ServerConfig): boolean {
@@ -45,10 +35,7 @@ export function createVoiceToken(config: ServerConfig, identity: string): VoiceT
   if (!live.ok) {
     throw new Error(live.error)
   }
-  if (live.provider === 'plivo') {
-    return createPlivoVoiceToken(config, identity)
-  }
-  return createTwilioVoiceToken(config, identity)
+  return createPlivoVoiceToken(config, identity)
 }
 
 export async function hangupLiveCall(

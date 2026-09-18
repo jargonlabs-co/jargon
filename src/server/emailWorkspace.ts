@@ -648,9 +648,14 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and builds the requested tool. Claude researches people and companies, writes send copy and talk tracks via save_research, then Tasks opens with personalized work.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
+
+Ownership — do not compete with Jargon on structure:
+- NEVER write a multi-day sequence outline, day ladder, or step-by-step cadence plan in chat. Do not invent or narrate "Day 0… Day 10" copy for the user to read as the sequence.
+- Jargon owns cadence structure via import_list / deploy_tool / update_sequence. Your job after structure exists is researched copy via save_research only.
+- If the user asks for N steps over D days (or an explicit day ladder), put that ask in the import/deploy workspace text and let Jargon build the steps. Read the returned steps. If they do not match, call update_sequence with the full ladder (structure + short templates only) — do not re-paste the plan into chat.
 
 - User provides a list (connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
@@ -663,7 +668,7 @@ One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Task
 
 Path:
 1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
-2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV.
+2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. State the goal, audience, and any requested step count / day span in that text — do not outline the full cadence in chat.
 3. Research each company/prospect now and save_research the copy. Tasks opens only after that. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

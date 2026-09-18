@@ -1,6 +1,7 @@
 import { uid } from './crypto'
 import type { Contact } from './types'
 import { extraAttrs } from '../shared/fieldCatalog'
+import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
 
 export type DeployContactInput = {
   name: string
@@ -55,7 +56,9 @@ function normalizeContactRow(
     email: pick(record, ['email', 'emailAddress', 'email_address', 'workEmail']),
     phone: pick(record, ['phone', 'phoneNumber', 'phone_number', 'mobile', 'directDial']),
     city: pick(record, ['city', 'location']),
-    linkedinUrl: pick(record, ['linkedinUrl', 'linkedin_url', 'linkedin', 'profileUrl', 'profile_url']),
+    linkedinUrl: normalizeLinkedInUrl(
+      pick(record, ['linkedinUrl', 'linkedin_url', 'linkedin', 'profileUrl', 'profile_url'])
+    ),
     accountName: pick(record, ['accountName', 'account_name', 'company']),
     notes: pick(record, ['notes', 'note', 'reason', 'signal']),
     context: asStringList(record.context),
@@ -164,9 +167,9 @@ function headerField(cell: string): string | null {
 }
 
 function cellUrl(cell: string): string | undefined {
-  const md = cell.match(/\]\((https?:\/\/[^)\s]+)\)/)
+  const md = cell.match(/\]\((https?:\/\/[^)\s]+|(?:www\.)?linkedin\.com\/[^)\s]+)\)/i)
   if (md?.[1]) return md[1]
-  const raw = cell.match(/https?:\/\/[^\s)|]+/)
+  const raw = cell.match(/https?:\/\/[^\s)|]+|(?:www\.)?linkedin\.com\/[^\s)|]+/i)
   return raw?.[0]
 }
 
@@ -191,7 +194,7 @@ function extractMarkdownTableContacts(prompt: string): DeployContactInput[] | un
       headers.forEach((field, idx) => {
         if (!field) return
         const raw = cells[idx] ?? ''
-        if (field === 'linkedinUrl') record.linkedinUrl = cellUrl(raw)
+        if (field === 'linkedinUrl') record.linkedinUrl = cellUrl(raw) ?? asTrimmed(raw)
         else if (field === 'email') record.email = cellEmail(raw)
         else record[field] = asTrimmed(raw)
       })
@@ -304,7 +307,7 @@ export function toManualContacts(
       notes: p.notes ?? '',
       source: 'manual' as const,
       accountName: p.accountName ?? company,
-      linkedinUrl: p.linkedinUrl,
+      linkedinUrl: normalizeLinkedInUrl(p.linkedinUrl),
       companyDomain: p.companyDomain,
       context: p.context,
       attrs: p.attrs && Object.keys(p.attrs).length ? p.attrs : {},

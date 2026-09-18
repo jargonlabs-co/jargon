@@ -18,10 +18,11 @@ import { uid } from './crypto'
 import { sendPlatformGmail } from './providers/gmail'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
-import { inferDeployParams } from './deploy'
+import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
+import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
   extractContactsFromPrompt,
@@ -169,7 +170,7 @@ export function toPublicContact(contact: Contact): PublicContact {
     status: contact.status,
     stepIndex: contact.stepIndex,
     notes: contact.notes,
-    linkedinUrl: contact.linkedinUrl,
+    linkedinUrl: normalizeLinkedInUrl(contact.linkedinUrl) ?? contact.linkedinUrl,
     accountName: contact.accountName,
     context: contact.context,
     attrs: contact.attrs && Object.keys(contact.attrs).length ? contact.attrs : undefined,
@@ -345,7 +346,7 @@ export async function deployPublicTool(
   if (!parsedSpec.ok) {
     return { ok: false, status: 400, body: { error: parsedSpec.error } }
   }
-  const inferred = inferDeployParams(prompt, parsedSpec.spec)
+  const inferred = await inferDeployParamsAsync(prompt, parsedSpec.spec, config)
   try {
     const projectId = await createProjectRecord(store, config, {
       orgId,

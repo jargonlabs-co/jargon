@@ -3,6 +3,7 @@ import { uid } from '../crypto'
 import type { DataStore } from '../store'
 import { buildProspectContext, prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
+import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
 import { setProjectCatalog } from '../fieldCatalogSync'
 
 const { Pool } = pg
@@ -118,12 +119,9 @@ function mapRow(
   const email = pickString(row, [cols.email, 'work_email', 'business_email'])
   const phone = pickString(row, [cols.phone, 'phone_number', 'mobile'])
   const city = pickString(row, [cols.city, 'location', 'city_state'])
-  const linkedinUrl = pickString(row, [
-    cols.linkedinUrl,
-    'linkedin',
-    'profile_url',
-    'linkedin_profile_url'
-  ])
+  const linkedinUrl = normalizeLinkedInUrl(
+    pickString(row, [cols.linkedinUrl, 'linkedin', 'profile_url', 'linkedin_profile_url'])
+  )
   const companyDomain = pickString(row, [cols.companyDomain, 'domain', 'website'])
   const companyIndustry = pickString(row, [cols.companyIndustry, 'industry'])
   const companySize = pickString(row, [cols.companySize, 'employee_count', 'headcount'])

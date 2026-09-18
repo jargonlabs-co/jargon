@@ -90,7 +90,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
       setCall(next)
       setToast(`Dialing ${selected.name}`)
       await onRefresh()
-      if (token.mode === 'twilio' || token.mode === 'plivo') {
+      if (token.mode === 'plivo') {
         if (!voice) {
           setToast('Calling is not available in this app')
           return
@@ -122,6 +122,9 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
             void api.reportCallProgress(next.id, 'failed').catch(() => undefined)
           }
         })
+      } else {
+        setToast('Calling requires Plivo')
+        await voice?.hangup()
       }
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Could not start call')

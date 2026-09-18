@@ -152,7 +152,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Jargon ingests the list and builds the sequencer or dialer. Then research each person and save_research talk tracks / email / LinkedIn copy — that enrolls everyone and opens Tasks. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
+        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). State goal and any step count / day span — Jargon builds the cadence; do not write Day 0…N in chat. summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Then research each person and save_research talk tracks / email / LinkedIn copy — that enrolls everyone and opens Tasks. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
       })
     }
   )
@@ -386,7 +386,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. Describe the cadence (days, channels) in the same text. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens Tasks with personalized copy.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens Tasks with personalized copy.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)
@@ -408,7 +408,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. Describe the cadence in workspace (days, channels, goal). Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -1075,7 +1075,7 @@ export function registerJargonTools(
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Change cadence structure (days, channels, labels) without redeploying. summary is the sentence on Claude\'s Allow card. Shared fallback templates may use {{first_name}} and catalog keys. Do not put per-person researched copy here — use save_draft so start_sequence cannot overwrite it.',
+        'Change cadence structure (days, channels, labels) without redeploying. Use when returned steps do not match what the user asked (e.g. wrong step count or timing). summary is the sentence on Claude\'s Allow card. Shared fallback templates may use {{first_name}} and catalog keys. Do not put per-person researched copy here — use save_draft so start_sequence cannot overwrite it. Do not re-narrate the ladder in chat after updating.',
       inputSchema: UpdateSequenceInput
     },
     async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)

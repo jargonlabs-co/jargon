@@ -7,6 +7,7 @@ import {
   type ProviderSecrets
 } from '../connections'
 import type { DataStore } from '../store'
+import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
 
 const HEYREACH_BASE = 'https://api.heyreach.io/api/public'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -400,7 +401,7 @@ export async function sendHeyReachLinkedInMessage(input: {
     return { id: `demo_li_${Date.now()}`, mode: 'demo', delivery: 'demo' }
   }
 
-  const linkedinUrl = input.linkedinUrl.trim()
+  const linkedinUrl = normalizeLinkedInUrl(input.linkedinUrl)?.trim() ?? ''
   if (!linkedinUrl) {
     throw new HeyReachError('LinkedIn profile URL required to send via HeyReach')
   }

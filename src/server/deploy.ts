@@ -1,3 +1,5 @@
+import type { ServerConfig } from './config'
+import { compilePromptWithLlm, mergeDeploySpec } from './compilePrompt'
 import type { DeploySpecInput, ProjectKind, WorkspaceSpec } from './types'
 import { compileWorkspaceSpec, specToAnswers } from '../shared/workspaceSpec'
 
@@ -15,4 +17,18 @@ export function inferDeployParams(prompt: string, override?: DeploySpecInput): D
     answers: specToAnswers(spec),
     spec
   }
+}
+
+/**
+ * LLM interprets free-form prompts into a DeploySpec, then the deterministic compiler
+ * validates and fills gaps. Falls back to regex-only when LLM is off or fails.
+ */
+export async function inferDeployParamsAsync(
+  prompt: string,
+  override: DeploySpecInput | undefined,
+  config: ServerConfig
+): Promise<DeployParams> {
+  const llmSpec = await compilePromptWithLlm(prompt, config, override)
+  const merged = mergeDeploySpec(override, llmSpec)
+  return inferDeployParams(prompt, merged)
 }

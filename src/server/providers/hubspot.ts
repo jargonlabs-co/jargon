@@ -4,6 +4,7 @@ import { createOAuthState, oauthRedirectUri, type ProviderSecrets } from '../con
 import type { DataStore } from '../store'
 import { prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
+import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
 import { setProjectCatalog } from '../fieldCatalogSync'
 
 const HUBSPOT_TOKEN = 'https://api.hubapi.com/oauth/v1/token'
@@ -142,11 +143,7 @@ function contactFromHubSpot(
   const last = (p.lastname ?? '').trim()
   const name = `${first} ${last}`.trim() || p.email || `HubSpot contact ${index + 1}`
   const company = (p.company ?? '').trim() || 'Unknown company'
-  const linkedinRaw = (p.hs_linkedin_url ?? p.hs_linkedinid ?? '').trim()
-  const linkedin =
-    linkedinRaw && !linkedinRaw.startsWith('http')
-      ? `https://www.linkedin.com/in/${linkedinRaw}`
-      : linkedinRaw || undefined
+  const linkedin = normalizeLinkedInUrl(p.hs_linkedin_url ?? p.hs_linkedinid)
   const industry = (p.industry ?? '').trim()
   const size = (p.numberofemployees ?? '').trim()
   const attrs = extraAttrs(p as Record<string, unknown>, [

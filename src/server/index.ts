@@ -69,7 +69,7 @@ import {
 } from './providers/railway'
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeys'
 import { listPortalBuilds } from './portal'
-import { inferDeployParams } from './deploy'
+import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord } from './projectCreate'
 import { parseDeploySpec } from '../shared/workspaceSpec'
 import { createV1Router } from './v1'
@@ -885,10 +885,14 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: parsedSpec.error })
       return
     }
-    const inferred = inferDeployParams(prompt.trim(), {
-      ...parsedSpec.spec,
-      kind: kind ?? parsedSpec.spec?.kind
-    })
+    const inferred = await inferDeployParamsAsync(
+      prompt.trim(),
+      {
+        ...parsedSpec.spec,
+        kind: kind ?? parsedSpec.spec?.kind
+      },
+      config
+    )
     const orgId = req.auth!.org.id
     try {
       const projectId = await createProjectRecord(store, config, {

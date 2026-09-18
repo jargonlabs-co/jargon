@@ -6,6 +6,7 @@ import type {
   WorkspaceSpec,
   WorkspaceSpecStep
 } from '../server/types'
+import { matchOutboundIntent } from './outboundIntents'
 
 export type {
   Channel,
@@ -28,14 +29,15 @@ const KINDS: ProjectKind[] = ['dialer', 'sequencer', 'cadence', 'list', 'today',
 
 export function compileWorkspaceSpec(prompt: string, override?: DeploySpecInput): WorkspaceSpec {
   const t = prompt.toLowerCase()
-  const channels = uniqueChannels(override?.channels) ?? inferChannels(t, override?.kind)
-  const primarySurface = override?.primarySurface ?? inferPrimarySurface(t, channels)
-  const goal = override?.goal?.trim() || inferGoal(t, channels)
+  const intent = matchOutboundIntent(prompt, override?.kind)
+  const channels = uniqueChannels(override?.channels) ?? intent.channels
+  const primarySurface = override?.primarySurface ?? refinePrimarySurface(t, channels, intent.primarySurface)
+  const goal = override?.goal?.trim() || intent.goal
   const segment = override?.segment?.trim() || inferSegment(prompt)
   const steps = override?.steps?.length
     ? normalizeSteps(override.steps, goal)
     : buildSteps(channels, goal, prompt)
-  const kind = override?.kind ?? inferKind(t, channels, primarySurface)
+  const kind = override?.kind ?? refineKind(t, channels, primarySurface, intent.kind)
   return { goal, segment, primarySurface, channels, steps, kind }
 }
 
@@ -247,81 +249,41 @@ export function parseDeploySpec(
   return { ok: true, spec: Object.keys(spec).length ? spec : undefined }
 }
 
-function inferChannels(t: string, kind?: ProjectKind): Channel[] {
-  const exclusive = /\b(only|just|exclusively)\b/.test(t)
-  const linkedin = /\blinkedin\b|\binmail\b|connection request/.test(t)
-  const call = /\b(dialer|power[ -]?dial|softphone|phone|voice)\b|\bcalls?\b/.test(t)
-  const email = /\bemails?\b|\binbox\b|\bmailer\b/.test(t)
-  const sequencer = /\bsequenc/.test(t)
-
-  const found: Channel[] = []
-  if (email) found.push('email')
-  if (call) found.push('call')
-  if (linkedin) found.push('linkedin')
-
-  if (linkedin && sequencer && !email && !call) return ['linkedin']
-  if (exclusive) {
-    if (linkedin && !email && !call) return ['linkedin']
-    if (email && !call && !linkedin) return ['email']
-    if (call && !email && !linkedin) return ['call']
-    if (found.length === 1) return found
-  }
-
-  if (found.length) {
-    if (/\bdialer|power[ -]?dial/.test(t) && !exclusive && !found.includes('email')) {
-      found.push('email')
-    }
-    return orderByMention(t, found)
-  }
-
-  if (
-    /\bcadence\b|multi[ -]?channel|\boutbound\b|\btoday\b|daily (tasks?|queue)|work the (list|queue)/.test(
-      t
-    )
-  ) {
-    return ['email', 'call', 'linkedin']
-  }
-  if (sequencer) return ['email']
-  if (/\bdialer|power[ -]?dial/.test(t)) return exclusive ? ['call'] : ['call', 'email']
-  if (kind === 'dialer') return ['call', 'email']
-  if (kind === 'sequencer' || kind === 'list') return ['email']
-  if (kind === 'cadence' || kind === 'today') return ['email', 'call', 'linkedin']
-  return ['email', 'call', 'linkedin']
-}
-
-function inferPrimarySurface(t: string, channels: Channel[]): PrimarySurface {
+/** Refine catalog surface with prompt cues that don't change the tool identity. */
+function refinePrimarySurface(
+  t: string,
+  channels: Channel[],
+  fromIntent: PrimarySurface
+): PrimarySurface {
   if (/\bdialer|power[ -]?dial/.test(t) && channels.includes('call')) return 'dial'
   if (/\btoday|daily (tasks?|queue)|work the (list|queue)/.test(t) || MCP_TASKS_RE.test(t)) return 'queue'
   if (MCP_INBOX_RE.test(t) && channels.includes('email')) return 'inbox'
   if (MCP_ONE_OFF_RE.test(t) && channels.includes('email')) return 'inbox'
-  if (/\bsequenc|\bcadence/.test(t) && !/\btoday|daily/.test(t)) return 'sequence'
   if (channels.length === 1) {
     if (channels[0] === 'call') return 'dial'
     if (channels[0] === 'linkedin') return 'linkedin'
-    return 'sequence'
+    if (/\bsequenc|\bcadence|\bdrip\b/.test(t)) return 'sequence'
+    return fromIntent === 'inbox' ? 'inbox' : 'sequence'
   }
+  if (/\bsequenc|\bcadence/.test(t) && !/\btoday|daily/.test(t)) return 'sequence'
   if (channels[0] === 'call') return 'dial'
   if (channels[0] === 'linkedin') return 'queue'
-  return 'queue'
+  return fromIntent
 }
 
-function inferKind(t: string, channels: Channel[], primary: PrimarySurface): ProjectKind {
+function refineKind(
+  t: string,
+  channels: Channel[],
+  primary: PrimarySurface,
+  fromIntent: ProjectKind
+): ProjectKind {
   if (/\btoday|daily (tasks?|queue)/.test(t) || primary === 'queue') return 'today'
   if (channels.length === 1 && channels[0] === 'call') return 'dialer'
   if (primary === 'dial') return 'dialer'
   if (channels.length === 1 && channels[0] === 'email') return 'sequencer'
+  if (channels.length === 1 && channels[0] === 'linkedin') return fromIntent
   if (channels.includes('linkedin') || channels.length > 1) return 'cadence'
-  return 'today'
-}
-
-function inferGoal(t: string, channels: Channel[]): string {
-  if (/recruit|hire/.test(t)) return 'Book a recruiting conversation'
-  if (/renew|churn|retention/.test(t)) return 'Protect the account'
-  if (channels.length === 1 && channels[0] === 'call') return 'Dial accounts'
-  if (channels.length === 1 && channels[0] === 'linkedin') return 'Start a LinkedIn conversation'
-  if (/\bcadence/.test(t)) return 'Run a cadence'
-  if (/\btoday|daily/.test(t)) return 'Work the outbound sequence'
-  return 'Book a meeting'
+  return fromIntent
 }
 
 function inferSegment(prompt: string): string {
@@ -337,31 +299,23 @@ function inferSegment(prompt: string): string {
   return 'HubSpot contacts'
 }
 
-function orderByMention(t: string, channels: Channel[]): Channel[] {
-  if (/linkedin first|start with linkedin|linkedin[ -]then/.test(t)) {
-    return ['linkedin', ...channels.filter((c) => c !== 'linkedin')]
-  }
-  if (/call first|phone first|dial first/.test(t)) {
-    return ['call', ...channels.filter((c) => c !== 'call')]
-  }
-  if (/email first/.test(t)) {
-    return ['email', ...channels.filter((c) => c !== 'email')]
-  }
-  return [...channels].sort((a, b) => mentionIndex(t, a) - mentionIndex(t, b))
-}
-
-function mentionIndex(t: string, channel: Channel): number {
-  const patterns: Record<Channel, RegExp> = {
-    email: /\bemail/,
-    call: /\b(call|dialer|phone|voice)/,
-    linkedin: /\blinkedin/
-  }
-  const idx = t.search(patterns[channel])
-  return idx < 0 ? 999 : idx
-}
-
 function buildSteps(channels: Channel[], goal: string, prompt: string): WorkspaceSpecStep[] {
   const tone = /casual|friendly|warm/.test(prompt.toLowerCase()) ? 'Warm & brief' : 'Direct & concise'
+  const ladder = parseExplicitDayLadder(prompt)
+  if (ladder?.length) {
+    return ladder.slice(0, 8).map((step, i) => ({
+      day: step.day,
+      channel: step.channel,
+      label: defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
+      ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
+    }))
+  }
+
+  const span = parseStepSpan(prompt)
+  if (span) {
+    return expandStepSpan(channels, span.count, span.days, goal, tone)
+  }
+
   const steps: WorkspaceSpecStep[] = channels.map((channel, i) => {
     const role = i === 0 ? 'intro' : 'same-day'
     return {
@@ -380,6 +334,68 @@ function buildSteps(channels: Channel[], goal: string, prompt: string): Workspac
     })
   }
   return steps
+}
+
+/** Parse "day 0 email, day 3 call, day 7 linkedin" ladders from the prompt. */
+function parseExplicitDayLadder(prompt: string): Array<{ day: number; channel: Channel }> | undefined {
+  const re =
+    /\bday\s+(\d{1,2})\s*(?:[:\-–—,]|\s)\s*(email|e-?mail|call|phone|dial|linkedin|inmail)\b/gi
+  const out: Array<{ day: number; channel: Channel }> = []
+  for (const match of prompt.matchAll(re)) {
+    const day = Number(match[1])
+    const channel = channelFromWord(match[2])
+    if (!Number.isInteger(day) || day < 0 || day > 30 || !channel) continue
+    out.push({ day, channel })
+  }
+  return out.length >= 2 ? out.slice(0, 8) : undefined
+}
+
+/** Parse "7 steps over 10 days" / "7-step sequence across 10 days". */
+function parseStepSpan(prompt: string): { count: number; days: number } | undefined {
+  const t = prompt.toLowerCase()
+  const match =
+    t.match(
+      /(\d{1,2})\s*[- ]?\s*steps?[\s\w-]{0,48}?(?:over|across|in|spanning|through)\s+(\d{1,2})\s*days?/
+    ) ||
+    t.match(
+      /(?:sequence|cadence|drip)\s+(?:of\s+)?(\d{1,2})\s*steps?\s+(?:over|across|in|spanning|through)\s+(\d{1,2})\s*days?/
+    )
+  if (!match) return undefined
+  const count = Math.min(8, Math.max(1, Number(match[1])))
+  const days = Math.min(30, Math.max(0, Number(match[2])))
+  if (!Number.isFinite(count) || !Number.isFinite(days)) return undefined
+  return { count, days }
+}
+
+function expandStepSpan(
+  channels: Channel[],
+  count: number,
+  spanDays: number,
+  goal: string,
+  tone: string
+): WorkspaceSpecStep[] {
+  const n = Math.min(8, Math.max(1, count))
+  const days = Math.min(30, Math.max(0, spanDays))
+  const pool = channels.length ? channels : (['email'] as Channel[])
+  return Array.from({ length: n }, (_, i) => {
+    const channel = pool[i % pool.length]
+    const day = n === 1 ? 0 : Math.round((i / (n - 1)) * days)
+    const role = i === 0 ? 'intro' : 'followup'
+    return {
+      day,
+      channel,
+      label: defaultLabel(channel, role),
+      ...copyFor(channel, role, goal, tone)
+    }
+  })
+}
+
+function channelFromWord(word: string): Channel | undefined {
+  const t = word.toLowerCase()
+  if (/email|e-?mail/.test(t)) return 'email'
+  if (/call|phone|dial/.test(t)) return 'call'
+  if (/linkedin|inmail/.test(t)) return 'linkedin'
+  return undefined
 }
 
 function normalizeSteps(steps: WorkspaceSpecStep[], goal: string): WorkspaceSpecStep[] {

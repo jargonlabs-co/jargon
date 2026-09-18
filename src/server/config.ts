@@ -62,6 +62,15 @@ export interface ServerConfig {
     webhookSecret: string
     publishableKey: string
   }
+  /** Prompt → DeploySpec compile (OpenAI and/or Anthropic). */
+  llm: {
+    compileEnabled: boolean
+    openaiApiKey: string
+    openaiBaseUrl: string
+    openaiModel: string
+    anthropicApiKey: string
+    anthropicModel: string
+  }
 }
 
 let envFilesLoaded = false
@@ -98,9 +107,8 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
   loadEnvFiles()
   const port = Number(process.env.PORT ?? process.env.JARGON_API_PORT ?? 8787)
   const publicUrl = process.env.JARGON_PUBLIC_URL ?? `http://127.0.0.1:${port}`
-  const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
   const hasPlivo = Boolean(process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN)
-  const hasVoice = hasTwilio || hasPlivo
+  const hasVoice = hasPlivo
   const hasGoogle = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 
   return {
@@ -162,6 +170,19 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       secretKey: (process.env.STRIPE_SECRET_KEY ?? '').trim(),
       webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim(),
       publishableKey: (process.env.STRIPE_PUBLISHABLE_KEY ?? '').trim()
+    },
+    llm: {
+      // Opt-in only — rule catalog compiles by default (no token cost).
+      compileEnabled: process.env.JARGON_LLM_COMPILE === '1',
+      openaiApiKey: (process.env.OPENAI_API_KEY ?? '').trim(),
+      openaiBaseUrl: (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').trim(),
+      openaiModel: (process.env.JARGON_COMPILE_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-4o-mini').trim(),
+      anthropicApiKey: (process.env.ANTHROPIC_API_KEY ?? '').trim(),
+      anthropicModel: (
+        process.env.JARGON_COMPILE_ANTHROPIC_MODEL ??
+        process.env.ANTHROPIC_MODEL ??
+        'claude-haiku-4-5-20251001'
+      ).trim()
     },
     ...overrides
   }

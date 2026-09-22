@@ -1,13 +1,11 @@
 import type { ServerConfig } from '../config'
 import type { CallSession } from '../types'
 import type { DataStore } from '../store'
-import {
-  mintPlivoAccessToken,
-  resolveVoiceEndpointForOrg
-} from '../outboundPools'
+import { plivoSipUsername, resolveVoiceEndpointForOrg } from '../outboundPools'
 import {
   hangupPlivoCall,
   inspectPlivoVoice,
+  issuePlivoAccessToken,
   syncPlivoApplication
 } from './plivo'
 import { hangupTwilioPstn, inspectTwilioVoice, syncTwilioTwimlApp } from './twilio'
@@ -52,26 +50,25 @@ export function voiceIsLive(config: ServerConfig): boolean {
  * Mint a short-lived Plivo JWT for the org's exclusive DID/SIP endpoint.
  * Does not consume concurrent/daily call budgets — those apply at call-create.
  */
-export function createVoiceToken(
+export async function createVoiceToken(
   config: ServerConfig,
   identity: string,
   opts?: { store?: DataStore; orgId?: string }
-): VoiceToken {
+): Promise<VoiceToken> {
   const live = inspectLiveVoice(config)
   if (!live.ok) {
     throw new Error(live.error)
   }
   if (opts?.store && opts.orgId) {
     const endpoint = resolveVoiceEndpointForOrg(opts.store, config, opts.orgId)
-    const accessToken = mintPlivoAccessToken(config, endpoint.endpointUsername, {
-      lifetimeSec: 3600
-    })
+    const username = plivoSipUsername(endpoint.endpointUsername)
+    const accessToken = await issuePlivoAccessToken(config, username, { lifetimeSec: 3600 })
     return {
       token: `plivo-jwt:${endpoint.id}`,
       mode: 'plivo',
       identity,
       accessToken,
-      username: endpoint.endpointUsername,
+      username,
       fromNumber: endpoint.fromNumber,
       poolMemberId: endpoint.id
     }
@@ -80,13 +77,14 @@ export function createVoiceToken(
   if (!username) {
     throw new Error('PLIVO_ENDPOINT_USERNAME is missing')
   }
-  const accessToken = mintPlivoAccessToken(config, username, { lifetimeSec: 3600 })
+  const sipUser = plivoSipUsername(username)
+  const accessToken = await issuePlivoAccessToken(config, sipUser, { lifetimeSec: 3600 })
   return {
     token: `plivo-jwt:default`,
     mode: 'plivo',
     identity,
     accessToken,
-    username,
+    username: sipUser,
     fromNumber: config.plivo.fromNumber
   }
 }

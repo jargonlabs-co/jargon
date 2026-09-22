@@ -1,4 +1,5 @@
 import type { ServerConfig } from '../config'
+import { plivoSipUsername } from '../outboundPools'
 import { toE164 } from './twilio'
 
 export type PlivoVoiceReady = { ok: true } | { ok: false; error: string }
@@ -65,7 +66,63 @@ export function inspectPlivoVoice(config: ServerConfig): PlivoVoiceReady {
   return { ok: true }
 }
 
-/** @deprecated Prefer mintPlivoAccessToken — do not ship endpoint passwords to browsers. */
+/**
+ * Ask Plivo to sign a browser-SDK JWT. A locally signed token is rejected
+ * as INVALID_ACCESS_TOKEN; their registrar only accepts tokens from this API,
+ * and the SDK reads permissions from `per`, not `grants`.
+ */
+export async function issuePlivoAccessToken(
+  config: ServerConfig,
+  endpointUsername: string,
+  opts?: { lifetimeSec?: number }
+): Promise<string> {
+  const authId = config.plivo.authId.trim()
+  const username = plivoSipUsername(endpointUsername)
+  if (!authId || !config.plivo.authToken.trim() || !username) {
+    throw new Error('Plivo JWT mint requires authId, authToken, and endpoint username')
+  }
+  const lifetime = Math.min(86_400, Math.max(180, opts?.lifetimeSec ?? 3600))
+  const now = Math.floor(Date.now() / 1000)
+  const body: Record<string, unknown> = {
+    iss: authId,
+    sub: username,
+    nbf: now,
+    exp: now + lifetime,
+    per: {
+      voice: {
+        incoming_allow: false,
+        outgoing_allow: true
+      }
+    }
+  }
+  const appId = config.plivo.appId.trim()
+  if (appId) body.app = appId
+  const res = await fetch(plivoApi(config, '/JWT/Token/'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${plivoBasicAuth(config)}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+  const text = await res.text()
+  let json: PlivoJson = {}
+  try {
+    json = text ? (JSON.parse(text) as PlivoJson) : {}
+  } catch {
+    json = {}
+  }
+  if (!res.ok) {
+    throw new Error(`Plivo JWT failed (${res.status}): ${text.slice(0, 240)}`)
+  }
+  const token = String(json.token ?? json.jwt ?? '')
+  if (!token) {
+    throw new Error('Plivo JWT response did not include a token')
+  }
+  return token
+}
+
+/** @deprecated Prefer issuePlivoAccessToken — do not ship endpoint passwords to browsers. */
 export function createPlivoVoiceToken(
   config: ServerConfig,
   identity: string,

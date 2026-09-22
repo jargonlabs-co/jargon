@@ -1,4 +1,3 @@
-import { createHmac, randomUUID } from 'crypto'
 import { uid } from './crypto'
 import type { ServerConfig } from './config'
 import type { DataStore } from './store'
@@ -321,62 +320,6 @@ export function plivoSipUsername(endpointUsername: string): string {
     throw new Error('Plivo endpoint username is missing. Use the username Plivo shows on the endpoint, not the full SIP address.')
   }
   return user
-}
-
-/** Short-lived Plivo Browser SDK JWT — never ship endpoint passwords to the client. */
-export function mintPlivoAccessToken(
-  config: ServerConfig,
-  endpointUsername: string,
-  opts?: { lifetimeSec?: number; uid?: string }
-): string {
-  const authId = config.plivo.authId.trim()
-  const authToken = config.plivo.authToken.trim()
-  const username = plivoSipUsername(endpointUsername)
-  if (!authId || !authToken || !username) {
-    throw new Error('Plivo JWT mint requires authId, authToken, and endpoint username')
-  }
-  const lifetime = opts?.lifetimeSec ?? 3600
-  const now = Math.floor(Date.now() / 1000)
-  const header = {
-    typ: 'JWT',
-    alg: 'HS256',
-    cty: 'plivo;v=1'
-  }
-  const payload = {
-    jti: opts?.uid ?? `${username}-${randomUUID()}`,
-    iss: authId,
-    sub: username,
-    nbf: now,
-    exp: now + lifetime,
-    // Server verifies `grants`. The browser SDK only reads `per` and
-    // refuses to dial when outgoing_allow is missing.
-    grants: {
-      voice: {
-        incoming_allow: false,
-        outgoing_allow: true
-      }
-    },
-    per: {
-      voice: {
-        incoming_allow: false,
-        outgoing_allow: true
-      }
-    }
-  }
-  const enc = (value: object) =>
-    Buffer.from(JSON.stringify(value))
-      .toString('base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-  const data = `${enc(header)}.${enc(payload)}`
-  const sig = createHmac('sha256', authToken)
-    .update(data)
-    .digest('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-  return `${data}.${sig}`
 }
 
 export function poolHealth(

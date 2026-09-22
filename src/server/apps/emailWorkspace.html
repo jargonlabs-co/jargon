@@ -924,6 +924,7 @@ function dueLabel(task) {
         reject(new Error(accessToken ? 'Plivo JWT login rejected' : 'Plivo login was rejected'));
       }
     });
+    next.client.isOutgoingGrant = true;
     plivoSdk = next;
     plivoUser = sessionKey;
     return next;

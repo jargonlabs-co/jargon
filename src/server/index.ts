@@ -761,11 +761,11 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
   })
 
-  app.get('/voice/token', auth, (req, res) => {
+  app.get('/voice/token', auth, async (req, res) => {
     const identity = `user_${req.auth!.user.id}`.replace(/[^A-Za-z0-9_-]/g, '_')
     try {
       res.json(
-        createVoiceToken(config, identity, {
+        await createVoiceToken(config, identity, {
           store,
           orgId: req.auth!.org.id
         })

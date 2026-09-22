@@ -599,7 +599,7 @@ export function registerJargonTools(
     const identity = `user_${actor.userId}`.replace(/[^A-Za-z0-9_-]/g, '_')
     try {
       return ok(
-        createVoiceToken(config, identity, {
+        await createVoiceToken(config, identity, {
           store,
           orgId: actor.orgId
         })

@@ -349,7 +349,7 @@ export function registerJargonTools(
       prompt,
       parsed.contacts,
       spec,
-      { enroll: false }
+      { enroll: false, billing }
     )
     if (!result.ok) return fail(result.body.error)
     return ok(result.body)
@@ -580,18 +580,30 @@ export function registerJargonTools(
       projectId: contact.projectId
     })
     if (!charge.ok) return failCharge(charge)
-    return ok({
-      call: startPublicCall(store, config, contact, sandbox),
-      creditsUsed: charge.creditsUsed,
-      creditsRemaining: charge.remaining
-    })
+    try {
+      return ok({
+        call: startPublicCall(store, config, contact, sandbox),
+        creditsUsed: charge.creditsUsed,
+        creditsRemaining: charge.remaining
+      })
+    } catch (err) {
+      if (charge.creditsUsed > 0) {
+        await refundCredits(billing, actor.orgId, charge.creditsUsed, 'refund')
+      }
+      return fail(err)
+    }
   }
 
   async function execVoiceToken() {
     if (sandbox) return fail('Calling is not available for this session.')
     const identity = `user_${actor.userId}`.replace(/[^A-Za-z0-9_-]/g, '_')
     try {
-      return ok(createVoiceToken(config, identity))
+      return ok(
+        createVoiceToken(config, identity, {
+          store,
+          orgId: actor.orgId
+        })
+      )
     } catch (err) {
       return fail(err)
     }
@@ -632,7 +644,7 @@ export function registerJargonTools(
     {
       ...display('Start a call', HINTS.send),
       description:
-        'Start a Plivo dial session. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits.',
+        'Start a call in the in-chat dialer. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits. Do not send the user to dashboardUrl to dial.',
       inputSchema: StartCallInput
     },
     async ({ contactId }) => execStartCall(contactId)

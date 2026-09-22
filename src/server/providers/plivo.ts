@@ -21,8 +21,9 @@ function plivoApi(config: ServerConfig, path: string): string {
 }
 
 export function inspectPlivoVoice(config: ServerConfig): PlivoVoiceReady {
-  const { authId, authToken, fromNumber, endpointUsername, endpointPassword } = config.plivo
-  if (!authId && !authToken && !fromNumber && !endpointUsername) {
+  const { authId, authToken, fromNumber, endpointUsername } = config.plivo
+  const pool = config.outboundPools.voiceEndpoints
+  if (!authId && !authToken && !fromNumber && !endpointUsername && !pool.length) {
     return { ok: false, error: 'Plivo is not configured' }
   }
   if (!authId.trim()) {
@@ -30,6 +31,23 @@ export function inspectPlivoVoice(config: ServerConfig): PlivoVoiceReady {
   }
   if (!authToken.trim() || authToken.length < 16) {
     return { ok: false, error: 'PLIVO_AUTH_TOKEN is missing or looks invalid' }
+  }
+  if (pool.length > 0) {
+    for (const member of pool) {
+      if (!toE164(member.fromNumber)) {
+        return {
+          ok: false,
+          error: `Voice pool member ${member.id}: fromNumber must be a Plivo-rented E.164 DID`
+        }
+      }
+      if (!member.endpointUsername.trim()) {
+        return {
+          ok: false,
+          error: `Voice pool member ${member.id}: endpointUsername missing (use the username Plivo returns after create)`
+        }
+      }
+    }
+    return { ok: true }
   }
   if (!toE164(fromNumber)) {
     return {
@@ -41,32 +59,31 @@ export function inspectPlivoVoice(config: ServerConfig): PlivoVoiceReady {
     return {
       ok: false,
       error:
-        'PLIVO_ENDPOINT_USERNAME is missing. Create a SIP endpoint in the Plivo console and paste the full username.'
-    }
-  }
-  if (endpointPassword.trim().length < 5) {
-    return {
-      ok: false,
-      error: 'PLIVO_ENDPOINT_PASSWORD is missing. Use the SIP endpoint password from the Plivo console.'
+        'PLIVO_ENDPOINT_USERNAME is missing. Create a SIP endpoint in the Plivo console and paste the full returned username (Plivo appends a 12-digit suffix).'
     }
   }
   return { ok: true }
 }
 
+/** @deprecated Prefer mintPlivoAccessToken — do not ship endpoint passwords to browsers. */
 export function createPlivoVoiceToken(
   config: ServerConfig,
-  identity: string
-): { token: string; mode: 'plivo'; identity: string; username: string; password: string } {
-  const ready = inspectPlivoVoice(config)
-  if (!ready.ok) {
-    throw new Error(ready.error)
+  identity: string,
+  endpoint?: { endpointUsername: string }
+): { token: string; mode: 'plivo'; identity: string; username: string } {
+  const username = endpoint?.endpointUsername ?? config.plivo.endpointUsername
+  if (!config.plivo.authId || !config.plivo.authToken) {
+    throw new Error('Plivo is not configured')
+  }
+  if (!username.trim()) {
+    const ready = inspectPlivoVoice(config)
+    if (!ready.ok) throw new Error(ready.error)
   }
   return {
-    token: `plivo:${config.plivo.endpointUsername}`,
+    token: `plivo:${username}`,
     mode: 'plivo',
     identity,
-    username: config.plivo.endpointUsername,
-    password: config.plivo.endpointPassword
+    username
   }
 }
 

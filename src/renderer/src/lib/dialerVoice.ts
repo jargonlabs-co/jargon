@@ -11,7 +11,10 @@ export type DialerVoiceConnectOpts = {
   to: string
   callId: string
   mode?: 'plivo' | 'twilio'
+  /** Plivo Browser SDK JWT (preferred). */
+  accessToken?: string
   username?: string
+  /** @deprecated Prefer accessToken. */
   password?: string
   onAccept: () => void
   onDisconnect: () => void

@@ -19,24 +19,31 @@ export function LoginPanel({
   onModeChange
 }: Props) {
   const { refresh } = useAuth()
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode)
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode)
 
-  function switchMode(next: 'login' | 'register') {
+  function switchMode(next: 'login' | 'register' | 'forgot') {
     setMode(next)
-    onModeChange?.(next)
+    if (next === 'login' || next === 'register') onModeChange?.(next)
   }
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
+    setInfo(null)
     try {
+      if (mode === 'forgot') {
+        const result = await api.forgotPassword(email.trim())
+        setInfo(result.message)
+        return
+      }
       const payload =
         mode === 'login'
           ? await api.login(email.trim(), password)
@@ -48,6 +55,10 @@ export function LoginPanel({
             })
       setStoredToken(payload.token)
       await refresh()
+      if (mode === 'register') {
+        window.history.pushState({}, '', '/claude')
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Auth failed'
       if (/already registered/i.test(message) && mode === 'register') {
@@ -84,33 +95,40 @@ export function LoginPanel({
               {mode === 'login' ? (
                 <>
                   <h2>Welcome back</h2>
-                  <p>Sign in to connect your CRM and build tools.</p>
+                  <p>Sign in to connect Claude and run outbound.</p>
+                </>
+              ) : mode === 'forgot' ? (
+                <>
+                  <h2>Forgot password</h2>
+                  <p>We will email you a reset link.</p>
                 </>
               ) : (
                 <>
                   <h2>Create your account</h2>
-                  <p>Sign up to connect your data and deploy tools.</p>
+                  <p>Sign up, connect Claude, and bring your list.</p>
                 </>
               )}
             </div>
           </div>
         ) : null}
-        <div className="login-tabs">
-          <button
-            type="button"
-            className={mode === 'login' ? 'active' : ''}
-            onClick={() => switchMode('login')}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={mode === 'register' ? 'active' : ''}
-            onClick={() => switchMode('register')}
-          >
-            Create account
-          </button>
-        </div>
+        {mode !== 'forgot' ? (
+          <div className="login-tabs">
+            <button
+              type="button"
+              className={mode === 'login' ? 'active' : ''}
+              onClick={() => switchMode('login')}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={mode === 'register' ? 'active' : ''}
+              onClick={() => switchMode('register')}
+            >
+              Create account
+            </button>
+          </div>
+        ) : null}
         <form onSubmit={submit} className="login-form">
           {mode === 'register' ? (
             <>
@@ -138,20 +156,39 @@ export function LoginPanel({
               autoComplete="username"
             />
           </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
-          </label>
+          {mode !== 'forgot' ? (
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+            </label>
+          ) : null}
+          {mode === 'login' ? (
+            <button type="button" className="btn ghost btn-sm" onClick={() => switchMode('forgot')}>
+              Forgot password?
+            </button>
+          ) : null}
+          {mode === 'forgot' ? (
+            <button type="button" className="btn ghost btn-sm" onClick={() => switchMode('login')}>
+              Back to sign in
+            </button>
+          ) : null}
           {error ? <p className="form-error">{error}</p> : null}
+          {info ? <p className="section-lede">{info}</p> : null}
           <button type="submit" className="btn primary btn-full" disabled={busy}>
-            {busy ? 'Working…' : mode === 'login' ? 'Continue' : 'Create account'}
+            {busy
+              ? 'Working…'
+              : mode === 'login'
+                ? 'Continue'
+                : mode === 'forgot'
+                  ? 'Send reset link'
+                  : 'Create account'}
           </button>
         </form>
       </div>

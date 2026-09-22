@@ -17,3 +17,4 @@ data
 *.AppImage
 .supabase-local/
 .vercel
+mcp-pdl/.deploy-token

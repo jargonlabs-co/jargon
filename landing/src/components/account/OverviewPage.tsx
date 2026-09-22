@@ -1,25 +1,19 @@
-import { getClaudeConnectorInstallUrl, resolveMcpUrl, type AccountSnapshot, type ConnectionPublic, type PortalBuild } from '../../api'
-import { formatCredits, formatWhen, statusLabel } from './nav'
+import { getClaudeConnectorInstallUrl, resolveMcpUrl, type AccountSnapshot, type PortalBuild } from '../../api'
+import { formatCredits, formatWhen } from './nav'
 
 export function OverviewPage({
   snapshot,
-  connections,
   builds,
   onNavigate,
   onOpenTool
 }: {
   snapshot: AccountSnapshot
-  connections: ConnectionPublic[]
+  connections?: unknown
   builds: PortalBuild[]
   onNavigate: (path: string) => void
   onOpenTool: (id: string) => void
 }) {
   const { credits, usage, claude } = snapshot
-  const hubspot = connections.find((c) => c.provider === 'hubspot')
-  const railway = connections.find((c) => c.provider === 'railway')
-  const dataReady =
-    hubspot?.status === 'connected' ||
-    (railway?.status === 'connected' && railway.meta?.needsBind !== '1' && !!railway.meta?.projectId)
   const connectorUrl = getClaudeConnectorInstallUrl(resolveMcpUrl(claude?.mcpUrl))
   const claudeConnected = Boolean(claude?.connected)
 
@@ -29,8 +23,7 @@ export function OverviewPage({
         <p className="eyebrow">Account</p>
         <h1>Overview</h1>
         <p className="section-lede">
-          Deploy sales tools from Claude on top of your own data. Manage plan, credits, and usage
-          here.
+          Connect Claude, bring your list, and run outbound. Manage plan and credits here.
         </p>
       </div>
 
@@ -68,14 +61,15 @@ export function OverviewPage({
       <div className="account-split">
         <article className="context-card">
           <div className="context-card-top">
-            <span className="context-role">Claude connector</span>
+            <span className="context-role">First step</span>
             <span className={`context-status ${claudeConnected ? 'ok' : ''}`}>
-              {claudeConnected ? 'Connected' : 'Not connected'}
+              {claudeConnected ? 'Connected' : 'Required'}
             </span>
           </div>
-          <h3>Work from Claude</h3>
+          <h3>Connect Claude</h3>
           <p>
-            Add Jargon as a custom connector. Claude signs in with this account — no API key paste.
+            Add Jargon as a custom connector. Bring lists from your other Claude tools — no CRM OAuth
+            required inside Jargon.
           </p>
           <div className="key-actions">
             <a className="btn primary btn-sm" href={connectorUrl} target="_blank" rel="noreferrer">
@@ -88,17 +82,16 @@ export function OverviewPage({
         </article>
         <article className="context-card">
           <div className="context-card-top">
-            <span className="context-role">Data</span>
-            <span className={`context-status ${dataReady ? 'ok' : ''}`}>
-              {dataReady ? 'Ready' : 'Connect a source'}
-            </span>
+            <span className="context-role">Outbound</span>
+            <span className="context-status">Live</span>
           </div>
-          <h3>Your sources</h3>
+          <h3>How lists enter</h3>
           <p>
-            HubSpot: {statusLabel(hubspot)}. Railway: {statusLabel(railway)}.
+            In Claude, call import_list with a markdown table or CSV. Email, phone, and LinkedIn are
+            sent on Jargon&apos;s managed infrastructure — no outbound API keys to connect.
           </p>
-          <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/data')}>
-            Manage data
+          <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/claude')}>
+            Claude setup
           </button>
         </article>
       </div>

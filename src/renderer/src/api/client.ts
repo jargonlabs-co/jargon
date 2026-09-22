@@ -118,8 +118,11 @@ export const api = {
       token: string
       mode: 'demo' | 'plivo' | 'twilio'
       identity: string
+      accessToken?: string
       username?: string
       password?: string
+      fromNumber?: string
+      poolMemberId?: string
     }>('/voice/token'),
   syncHubSpot: (body: { projectId?: string; limit?: number } = {}) =>
     request<ProjectBundle | { count: number; source: string }>('/connections/hubspot/sync', {

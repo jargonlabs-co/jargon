@@ -891,16 +891,20 @@ function dueLabel(task) {
     });
   }
 
-  async function ensurePlivo(username, password) {
+  async function ensurePlivo(opts) {
     await loadPlivoSdk();
-    if (plivoSdk && plivoUser === username) return plivoSdk;
+    const accessToken = (opts.accessToken || '').trim();
+    const username = (opts.username || '').trim();
+    const password = opts.password || '';
+    const sessionKey = accessToken ? ('jwt:' + accessToken.slice(0, 24)) : ('pwd:' + username);
+    if (plivoSdk && plivoUser === sessionKey) return plivoSdk;
     if (plivoSdk) {
       try { plivoSdk.client.hangup(); plivoSdk.client.logout(); } catch (_) { /* already torn down */ }
       plivoSdk = null;
       plivoUser = null;
     }
     const Ctor = plivoCtor();
-    const next = asPlivoClient(new Ctor({ debug: 'ERROR', permOnClick: true, closeProtection: true, enableTracking: true }));
+    const next = asPlivoClient(new Ctor({ debug: 'ERROR', permOnClick: true, closeProtection: true, enableTracking: false }));
     bindPlivo(next);
     await new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => reject(new Error('Plivo login timed out')), 15000);
@@ -909,13 +913,19 @@ function dueLabel(task) {
         window.clearTimeout(timer);
         reject(new Error(typeof reason === 'string' && reason.trim() ? reason : 'Plivo login failed'));
       });
-      if (!next.client.login(username, password)) {
+      let started = false;
+      if (accessToken && typeof next.client.loginWithAccessToken === 'function') {
+        started = next.client.loginWithAccessToken(accessToken);
+      } else if (username && password) {
+        started = next.client.login(username, password);
+      }
+      if (!started) {
         window.clearTimeout(timer);
-        reject(new Error('Plivo login was rejected'));
+        reject(new Error(accessToken ? 'Plivo JWT login rejected' : 'Plivo login was rejected'));
       }
     });
     plivoSdk = next;
-    plivoUser = username;
+    plivoUser = sessionKey;
     return next;
   }
 
@@ -958,7 +968,7 @@ function dueLabel(task) {
 
   async function connectPlivo(opts) {
     try { plivoSdk?.client.hangup(); } catch (_) { /* no active call */ }
-    const client = await ensurePlivo(opts.username, opts.password);
+    const client = await ensurePlivo(opts);
     plivoActive = opts;
     const started = client.client.call(opts.to, {
       'X-PH-CallId': opts.callId,
@@ -980,9 +990,8 @@ function dueLabel(task) {
       await hangupPlivo();
       const token = parseToolResult(await app.callServerTool({ name: 'run_voice_token', arguments: {} }));
       if (token?.error) { setNotice(token.error, 'err'); return; }
-      if (token?.mode !== 'plivo' || !token.username || !token.password) {
-        setNotice('Open the workspace to place this call.', 'err');
-        if (ws?.dashboardUrl) await app.openLink({ url: ws.dashboardUrl });
+      if (token?.mode !== 'plivo' || !token.accessToken) {
+        setNotice(token?.error || 'Calling is not available for this account.', 'err');
         return;
       }
       const started = parseToolResult(await app.callServerTool({
@@ -999,6 +1008,7 @@ function dueLabel(task) {
       setNotice(`Calling ${contact.name}.`, 'ok');
       try {
         await connectPlivo({
+          accessToken: token.accessToken,
           username: token.username,
           password: token.password,
           to: number,
@@ -1034,12 +1044,7 @@ function dueLabel(task) {
           name: 'run_report_call_progress',
           arguments: { callId: call.id, phase: 'failed' },
         }).catch(() => undefined);
-        if (ws?.dashboardUrl) {
-          setNotice('Open the workspace to place this call.', 'err');
-          await app.openLink({ url: ws.dashboardUrl });
-        } else {
-          setNotice(err?.message || 'Could not start call.', 'err');
-        }
+        setNotice(err?.message || 'Could not start call.', 'err');
       }
     } catch (err) {
       setNotice(err?.message || 'Could not start call.', 'err');

@@ -141,9 +141,20 @@ export interface IdempotencyRecord {
 export interface RateWindow {
   id: string
   orgId: string
-  action: 'message' | 'call'
+  action: 'message' | 'call' | 'pool_email' | 'pool_linkedin' | 'pool_voice'
   windowStart: number
   count: number
+}
+
+export type PoolChannel = 'email' | 'voice' | 'linkedin'
+
+/** Sticky org → managed outbound resource (mailbox, SIP endpoint, or LI seat). */
+export interface PoolAssignment {
+  id: string
+  orgId: string
+  channel: PoolChannel
+  memberId: string
+  createdAt: number
 }
 
 export interface Connection {
@@ -267,6 +278,10 @@ export interface CallSession {
   disposition?: ContactStatus
   providerCallSid?: string
   mode: CallMode
+  /** Managed voice pool member (exclusive DID). */
+  poolMemberId?: string
+  /** Plivo-rented caller ID used on Dial XML (attestation A). */
+  fromNumber?: string
   startedAt: number
   connectedAt?: number
   endedAt?: number
@@ -474,6 +489,7 @@ export interface Database {
   previewComments: PreviewComment[]
   idempotencyRecords: IdempotencyRecord[]
   rateWindows: RateWindow[]
+  poolAssignments: PoolAssignment[]
   mcpOAuthClients: McpOAuthClient[]
   mcpAuthCodes: McpAuthCode[]
   mcpAccessTokens: McpAccessToken[]

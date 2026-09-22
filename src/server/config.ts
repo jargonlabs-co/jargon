@@ -47,6 +47,21 @@ export interface ServerConfig {
     /** Campaign used for cold outreach when no conversation exists yet */
     campaignId: string
   }
+  /** Managed outbound capacity — customers never bring send credentials. */
+  outboundPools: {
+    emailMailboxes: Array<{ id: string; refreshToken: string; label: string }>
+    /** Plivo-rented DIDs + SIP endpoint usernames (returned username with suffix). No passwords — JWT mint. */
+    voiceEndpoints: Array<{
+      id: string
+      fromNumber: string
+      endpointUsername: string
+    }>
+    linkedinSeats: Array<{ id: string; accountId: string }>
+    emailDailyPerOrg: number
+    linkedinDailyPerOrg: number
+    voiceDailyPerOrg: number
+    concurrentCallsPerOrg: number
+  }
   supabase: {
     url: string
     anonKey: string
@@ -103,6 +118,86 @@ function loadEnvFiles(): void {
   }
 }
 
+function parseJsonArray<T>(raw: string | undefined): T[] {
+  const text = (raw ?? '').trim()
+  if (!text) return []
+  try {
+    const parsed = JSON.parse(text) as unknown
+    return Array.isArray(parsed) ? (parsed as T[]) : []
+  } catch {
+    return []
+  }
+}
+
+function loadOutboundPools(env: NodeJS.ProcessEnv, base: {
+  gmailRefresh: string
+  plivoFrom: string
+  plivoUser: string
+  heyreachSender: string
+}): ServerConfig['outboundPools'] {
+  const emailFromJson = parseJsonArray<{
+    id?: string
+    refreshToken?: string
+    label?: string
+  }>(env.GMAIL_POOL_JSON)
+  const emailMailboxes =
+    emailFromJson
+      .filter((m) => m.refreshToken?.trim())
+      .map((m, i) => ({
+        id: (m.id ?? `mailbox_${i + 1}`).trim(),
+        refreshToken: m.refreshToken!.trim(),
+        label: (m.label ?? m.id ?? `mailbox_${i + 1}`).trim()
+      }))
+  if (!emailMailboxes.length && base.gmailRefresh) {
+    emailMailboxes.push({
+      id: 'default',
+      refreshToken: base.gmailRefresh,
+      label: 'platform'
+    })
+  }
+
+  const voiceFromJson = parseJsonArray<{
+    id?: string
+    fromNumber?: string
+    endpointUsername?: string
+  }>(env.PLIVO_POOL_JSON)
+  const voiceEndpoints =
+    voiceFromJson
+      .filter((v) => v.fromNumber?.trim() && v.endpointUsername?.trim())
+      .map((v, i) => ({
+        id: (v.id ?? `voice_${i + 1}`).trim(),
+        fromNumber: v.fromNumber!.trim(),
+        // Must be the username Plivo returns after create (appends 12-digit suffix).
+        endpointUsername: v.endpointUsername!.trim()
+      }))
+  if (!voiceEndpoints.length && base.plivoFrom && base.plivoUser) {
+    voiceEndpoints.push({
+      id: 'default',
+      fromNumber: base.plivoFrom,
+      endpointUsername: base.plivoUser
+    })
+  }
+
+  const seatIds = (env.HEYREACH_SENDER_ACCOUNT_IDS ?? base.heyreachSender)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const linkedinSeats = seatIds.map((accountId, i) => ({
+    id: `li_${accountId || i + 1}`,
+    accountId
+  }))
+
+  return {
+    emailMailboxes,
+    voiceEndpoints,
+    linkedinSeats,
+    emailDailyPerOrg: Math.max(0, Number(env.JARGON_EMAIL_DAILY_PER_ORG ?? 50) || 50),
+    linkedinDailyPerOrg: Math.max(0, Number(env.JARGON_LINKEDIN_DAILY_PER_ORG ?? 20) || 20),
+    voiceDailyPerOrg: Math.max(0, Number(env.JARGON_VOICE_DAILY_PER_ORG ?? 100) || 100),
+    concurrentCallsPerOrg: Math.max(1, Number(env.JARGON_CONCURRENT_CALLS_PER_ORG ?? 1) || 1)
+  }
+}
+
 export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
   loadEnvFiles()
   const port = Number(process.env.PORT ?? process.env.JARGON_API_PORT ?? 8787)
@@ -110,6 +205,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
   const hasPlivo = Boolean(process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN)
   const hasVoice = hasPlivo
   const hasGoogle = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+  const gmailRefresh = (process.env.GMAIL_REFRESH_TOKEN ?? process.env.GOOGLE_REFRESH_TOKEN ?? '').trim()
+  const plivoFrom = (process.env.PLIVO_FROM_NUMBER ?? '').trim()
+  const plivoUser = (process.env.PLIVO_ENDPOINT_USERNAME ?? '').trim()
+  const heyreachSender = (process.env.HEYREACH_SENDER_ACCOUNT_ID ?? '').trim()
 
   return {
     publicUrl,
@@ -124,7 +223,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       scopes:
         process.env.GOOGLE_SCOPES ??
         'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
-      refreshToken: (process.env.GMAIL_REFRESH_TOKEN ?? process.env.GOOGLE_REFRESH_TOKEN ?? '').trim()
+      refreshToken: gmailRefresh
     },
     hubspot: {
       clientId: process.env.HUBSPOT_CLIENT_ID ?? '',
@@ -144,16 +243,22 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     plivo: {
       authId: (process.env.PLIVO_AUTH_ID ?? '').trim(),
       authToken: (process.env.PLIVO_AUTH_TOKEN ?? '').trim(),
-      fromNumber: (process.env.PLIVO_FROM_NUMBER ?? '').trim(),
+      fromNumber: plivoFrom,
       appId: (process.env.PLIVO_APP_ID ?? '').trim(),
-      endpointUsername: (process.env.PLIVO_ENDPOINT_USERNAME ?? '').trim(),
+      endpointUsername: plivoUser,
       endpointPassword: (process.env.PLIVO_ENDPOINT_PASSWORD ?? '').trim()
     },
     heyreach: {
       apiKey: (process.env.HEYREACH_API_KEY ?? '').trim(),
-      senderAccountId: (process.env.HEYREACH_SENDER_ACCOUNT_ID ?? '').trim(),
+      senderAccountId: heyreachSender,
       campaignId: (process.env.HEYREACH_CAMPAIGN_ID ?? '').trim()
     },
+    outboundPools: loadOutboundPools(process.env, {
+      gmailRefresh,
+      plivoFrom,
+      plivoUser,
+      heyreachSender
+    }),
     supabase: {
       url: (process.env.SUPABASE_URL ?? '').trim().replace(/\/$/, ''),
       anonKey: (process.env.SUPABASE_ANON_KEY ?? '').trim(),
@@ -187,3 +292,4 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     ...overrides
   }
 }
+

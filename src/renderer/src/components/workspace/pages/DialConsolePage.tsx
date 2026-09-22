@@ -100,6 +100,7 @@ export function DialConsolePage({ bundle, onRefresh, initialContactId, voice }: 
           to: phone,
           callId: next.id,
           mode: token.mode,
+          accessToken: token.accessToken,
           username: token.username,
           password: token.password,
           onAccept: () => {

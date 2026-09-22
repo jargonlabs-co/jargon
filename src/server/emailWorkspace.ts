@@ -26,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=plivo1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=call2'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -43,6 +43,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=copy1',
   'ui://jargon/email-workspace.html?v=flow1',
   'ui://jargon/email-workspace.html?v=send1',
+  'ui://jargon/email-workspace.html?v=plivo1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -648,7 +649,9 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
-export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email (platform Gmail), phone, and LinkedIn. Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
+export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account on managed infrastructure: email, phone, and LinkedIn are sent by Jargon (customers do not bring API keys). Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
+
+Bring your own data through Claude. Users connect their CRM/warehouse/files to Claude themselves. Put people into Jargon with import_list / deploy_tool as a markdown table or CSV in the workspace argument — do not assume HubSpot or Railway is connected inside Jargon.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 
@@ -657,18 +660,19 @@ Ownership — do not compete with Jargon on structure:
 - Jargon owns cadence structure via import_list / deploy_tool / update_sequence. Your job after structure exists is researched copy via save_research only.
 - If the user asks for N steps over D days (or an explicit day ladder), put that ask in the import/deploy workspace text and let Jargon build the steps. Read the returned steps. If they do not match, call update_sequence with the full ladder (structure + short templates only) — do not re-paste the plan into chat.
 
-- User provides a list (connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
+- User provides a list (another Claude connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
 - Immediately research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens Tasks with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
+- Phone calls stay in the in-chat dialer. Do not send the user to dashboardUrl to place a call.
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.
 - One-off / a handful / just send these → Contacts with a composer. save_research or save_draft then send_draft. Do not enroll unless they asked for a cadence.
 - Inbox / mailbox / replies / what's been sent → the message log. Not the send path for a cadence.
 
 Path:
-1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table) or deploy_tool without contacts to hydrate HubSpot/Railway.
+1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table). Prefer that over deploy_tool without contacts.
 2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. State the goal, audience, and any requested step count / day span in that text — do not outline the full cadence in chat.
-3. Research each company/prospect now and save_research the copy. Tasks opens only after that. dashboardUrl is the full web tool (billing, CRM connect, huge lists).
+3. Research each company/prospect now and save_research the copy. Tasks opens only after that. dashboardUrl is the full web tool (billing, Connect Claude, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

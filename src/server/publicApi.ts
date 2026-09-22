@@ -17,9 +17,10 @@ import type { ServerConfig } from './config'
 import { uid } from './crypto'
 import { sendPlatformGmail } from './providers/gmail'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
+import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
-import { createProjectRecord } from './projectCreate'
+import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
@@ -304,7 +305,7 @@ export async function deployPublicTool(
   prompt: string,
   contacts?: DeployContactInput[],
   specOverride?: unknown,
-  opts?: { enroll?: boolean }
+  opts?: { enroll?: boolean; billing?: import('./billing/types').BillingService }
 ): Promise<
   | {
       ok: true
@@ -329,6 +330,7 @@ export async function deployPublicTool(
       }
     }
   | { ok: false; status: 400; body: { error: string } }
+  | { ok: false; status: 403; body: { error: string; code: string } }
   | { ok: false; status: 502; body: { error: string } }
 > {
   const resolved =
@@ -354,7 +356,8 @@ export async function deployPublicTool(
       kind: inferred.kind,
       answers: inferred.answers,
       spec: inferred.spec,
-      contacts: resolved
+      contacts: resolved,
+      billing: opts?.billing
     })
     const project = store.db.projects.find((p) => p.id === projectId)
     if (!project) {
@@ -432,6 +435,13 @@ export async function deployPublicTool(
       body
     }
   } catch (err) {
+    if (err instanceof PlanLimitError) {
+      return {
+        ok: false,
+        status: 403,
+        body: { error: err.message, code: err.code }
+      }
+    }
     return {
       ok: false,
       status: 502,
@@ -653,6 +663,13 @@ export function startPublicCall(
   const callId = uid('call')
   const live = inspectLiveVoice(config)
   const mode = sandbox || !live.ok ? 'demo' : live.provider
+  let poolMemberId: string | undefined
+  let fromNumber: string | undefined
+  if (mode === 'plivo') {
+    const endpoint = beginManagedVoiceCall(store, config, contact.orgId)
+    poolMemberId = endpoint.id
+    fromNumber = endpoint.fromNumber
+  }
   store.update((db) => {
     db.contacts.forEach((c) => {
       if (c.projectId !== contact.projectId) return
@@ -671,6 +688,8 @@ export function startPublicCall(
       contactId: contact.id,
       phase: 'dialing',
       mode,
+      poolMemberId,
+      fromNumber,
       startedAt: now
     })
     db.activities.unshift({
@@ -723,6 +742,7 @@ export function reportPublicCallProgress(
     if (!call || call.phase === 'completed') return
     call.phase = phase
     if (phase === 'connected') call.connectedAt = call.connectedAt ?? now
+    if (phase === 'failed') call.endedAt = call.endedAt ?? now
   })
   const call = store.db.calls.find((c) => c.id === callId)
   return call ? toPublicCall(call) : null
@@ -848,10 +868,12 @@ export async function sendPublicMessage(
       console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
+        const mailbox = allocateEmailMailbox(store, config, contact.orgId)
         const result = await sendPlatformGmail(config, {
           to: contact.email,
           subject,
-          body
+          body,
+          refreshToken: mailbox.refreshToken
         })
         mode = result.mode
         providerMessageId = result.id
@@ -1160,10 +1182,12 @@ export async function deliverPublicMessage(
       console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
+        const mailbox = allocateEmailMailbox(store, config, contact.orgId)
         const result = await sendPlatformGmail(config, {
           to: contact.email,
           subject: message.subject,
-          body: message.body
+          body: message.body,
+          refreshToken: mailbox.refreshToken
         })
         mode = result.mode
         providerMessageId = result.id

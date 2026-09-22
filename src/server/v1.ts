@@ -238,7 +238,10 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       prompt,
       parsed.contacts,
       req.body?.spec,
-      enroll === undefined ? undefined : { enroll }
+      {
+        ...(enroll === undefined ? {} : { enroll }),
+        billing
+      }
     )
     res.status(result.status).json(result.body)
   })
@@ -484,12 +487,26 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       })
       return
     }
-    const call = startPublicCall(store, config, contact, sandbox)
-    const body = { call, creditsUsed: charge.creditsUsed, creditsRemaining: charge.remaining }
-    res.setHeader('X-Credits-Used', String(charge.creditsUsed))
-    res.setHeader('X-Credits-Remaining', String(charge.remaining))
-    writeIdempotency(store, req.auth!.org.id, idemKey, 'POST', path, 201, body)
-    res.status(201).json(body)
+    try {
+      const call = startPublicCall(store, config, contact, sandbox)
+      const body = { call, creditsUsed: charge.creditsUsed, creditsRemaining: charge.remaining }
+      res.setHeader('X-Credits-Used', String(charge.creditsUsed))
+      res.setHeader('X-Credits-Remaining', String(charge.remaining))
+      writeIdempotency(store, req.auth!.org.id, idemKey, 'POST', path, 201, body)
+      res.status(201).json(body)
+    } catch (err) {
+      if (charge.creditsUsed > 0) {
+        await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+      }
+      const status =
+        err && typeof err === 'object' && 'status' in err
+          ? Number((err as { status: number }).status)
+          : 503
+      res.status(status || 503).json({
+        error: err instanceof Error ? err.message : 'Call failed',
+        code: err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : undefined
+      })
+    }
   })
 
   router.post('/calls/:id/complete', auth, (req, res) => {

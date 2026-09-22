@@ -82,7 +82,7 @@ export async function refreshGmailAccessToken(
   secrets: ProviderSecrets
 ): Promise<ProviderSecrets> {
   if (!secrets.refreshToken) {
-    throw new Error('Gmail authorization expired. Reconnect Gmail under Connections.')
+    throw new Error('Gmail authorization expired.')
   }
 
   const body = new URLSearchParams({
@@ -152,25 +152,33 @@ export async function sendGmailMessage(input: {
 }
 
 export function platformGmailReady(config: ServerConfig): boolean {
-  return Boolean(config.google.clientId && config.google.clientSecret && config.google.refreshToken)
+  return Boolean(
+    config.google.clientId &&
+      config.google.clientSecret &&
+      (config.google.refreshToken || config.outboundPools.emailMailboxes.length > 0)
+  )
 }
 
-/** Send from Jargon's mailbox (env refresh token). Customers do not connect Gmail. */
+/** Send from Jargon's managed mailbox pool (never customer OAuth). */
 export async function sendPlatformGmail(
   config: ServerConfig,
-  input: { to: string; subject: string; body: string }
+  input: { to: string; subject: string; body: string; refreshToken?: string }
 ): Promise<{ id: string; mode: 'gmail' }> {
   const to = input.to.trim()
   if (!to || !to.includes('@')) {
     throw new Error('This contact has no email address.')
   }
-  if (!platformGmailReady(config)) {
+  const refreshToken =
+    input.refreshToken?.trim() ||
+    config.outboundPools.emailMailboxes[0]?.refreshToken ||
+    config.google.refreshToken
+  if (!config.google.clientId || !config.google.clientSecret || !refreshToken) {
     throw new Error('Gmail is not configured on this Jargon server.')
   }
   try {
     const secrets = await refreshGmailAccessToken(config, {
       accessToken: 'pending',
-      refreshToken: config.google.refreshToken
+      refreshToken
     })
     const result = await sendGmailMessage({
       accessToken: secrets.accessToken,

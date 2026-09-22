@@ -4,6 +4,8 @@ import { seedProject } from './seed'
 import type { DataStore } from './store'
 import type { DeploySpecInput, ProjectKind } from './types'
 import { compileWorkspaceSpec } from '../shared/workspaceSpec'
+import type { BillingService } from './billing/types'
+import { assertCanCreateTool, PlanLimitError } from './planLimits'
 import {
   fetchHubSpotContacts,
   writeDemoContactsToProject,
@@ -21,6 +23,8 @@ import {
   type DeployContactInput
 } from './deployContacts'
 
+export { PlanLimitError }
+
 export async function createProjectRecord(
   store: DataStore,
   config: ServerConfig,
@@ -31,9 +35,13 @@ export async function createProjectRecord(
     answers?: Record<string, string>
     contacts?: DeployContactInput[]
     spec?: DeploySpecInput
+    billing?: BillingService
   }
 ): Promise<string> {
   const { orgId, prompt } = input
+  if (input.billing) {
+    await assertCanCreateTool(input.billing, store, orgId)
+  }
   const provided = input.contacts?.length ? input.contacts : undefined
   const listSegment = provided
     ? input.answers?.segment && input.answers.segment !== 'HubSpot contacts'

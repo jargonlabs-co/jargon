@@ -2,7 +2,7 @@ import type { DialerVoice } from '../../../src/renderer/src/lib/dialerVoice'
 import { plivoVoice } from './plivoVoice'
 
 async function connect(opts: Parameters<DialerVoice['connect']>[0]): Promise<void> {
-  if (opts.mode === 'plivo' || opts.username) {
+  if (opts.mode === 'plivo' || opts.accessToken || opts.username) {
     await plivoVoice.connect(opts)
     return
   }

@@ -4,7 +4,7 @@ import type { ApiKeyEnvironment, RateWindow } from './types'
 
 const WINDOW_MS = 15 * 60 * 1000
 
-const LIMITS: Record<ApiKeyEnvironment, Record<RateWindow['action'], number>> = {
+const LIMITS: Record<ApiKeyEnvironment, Record<'message' | 'call', number>> = {
   live: { message: 60, call: 30 },
   sandbox: { message: 120, call: 60 }
 }
@@ -12,7 +12,7 @@ const LIMITS: Record<ApiKeyEnvironment, Record<RateWindow['action'], number>> = 
 export function consumeRateLimit(
   store: DataStore,
   orgId: string,
-  action: RateWindow['action'],
+  action: 'message' | 'call',
   environment: ApiKeyEnvironment
 ): { ok: true } | { ok: false; retryAfterSec: number; limit: number } {
   const now = Date.now()

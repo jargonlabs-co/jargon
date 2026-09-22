@@ -5,8 +5,14 @@
 CREATE TABLE IF NOT EXISTS jargon_state (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL,
+  version BIGINT NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE jargon_state ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0;
+
+-- Writes take pg_advisory_xact_lock + bump version (see src/server/pgStore.ts).
+-- Prefer a single API replica until per-org rows land.
 
 -- Optional: inspect registered users
 -- SELECT u->>'email' AS email, u->>'name' AS name

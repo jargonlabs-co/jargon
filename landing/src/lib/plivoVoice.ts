@@ -4,6 +4,7 @@ type PlivoClient = {
   client: {
     on: (event: string, cb: (...args: unknown[]) => void) => void
     login: (username: string, password: string) => boolean
+    loginWithAccessToken?: (accessToken: string) => boolean
     logout: () => boolean
     call: (phoneNumber: string, extraHeaders?: Record<string, string>) => boolean
     hangup: () => boolean
@@ -11,7 +12,7 @@ type PlivoClient = {
 }
 
 let sdk: PlivoClient | null = null
-let loggedInUser: string | null = null
+let loggedInKey: string | null = null
 let active: DialerVoiceConnectOpts | null = null
 
 function errorMessage(reason: unknown, fallback: string): string {
@@ -39,8 +40,16 @@ function bindClient(client: PlivoClient): void {
   })
 }
 
-async function ensureClient(username: string, password: string): Promise<PlivoClient> {
-  if (sdk && loggedInUser === username) return sdk
+async function ensureClient(opts: {
+  accessToken?: string
+  username?: string
+  password?: string
+}): Promise<PlivoClient> {
+  const accessToken = opts.accessToken?.trim()
+  const username = opts.username?.trim()
+  const password = opts.password ?? ''
+  const sessionKey = accessToken ? `jwt:${accessToken.slice(0, 24)}` : `pwd:${username}`
+  if (sdk && loggedInKey === sessionKey) return sdk
   if (sdk) {
     try {
       sdk.client.hangup()
@@ -49,7 +58,7 @@ async function ensureClient(username: string, password: string): Promise<PlivoCl
       /* already torn down */
     }
     sdk = null
-    loggedInUser = null
+    loggedInKey = null
   }
   const mod = (await import('plivo-browser-sdk')) as { default?: unknown }
   const PlivoCtor = (mod.default ?? mod) as new (options: Record<string, unknown>) => PlivoClient
@@ -70,28 +79,41 @@ async function ensureClient(username: string, password: string): Promise<PlivoCl
       window.clearTimeout(timer)
       reject(new Error(errorMessage(reason, 'Plivo login failed')))
     })
-    if (!next.client.login(username, password)) {
+    let started = false
+    if (accessToken && typeof next.client.loginWithAccessToken === 'function') {
+      started = next.client.loginWithAccessToken(accessToken)
+    } else if (username && password) {
+      started = next.client.login(username, password)
+    }
+    if (!started) {
       window.clearTimeout(timer)
-      reject(new Error('Plivo login was rejected'))
+      reject(
+        new Error(
+          accessToken
+            ? 'Plivo JWT login was rejected (upgrade plivo-browser-sdk for loginWithAccessToken)'
+            : 'Plivo login was rejected'
+        )
+      )
     }
   })
   sdk = next
-  loggedInUser = username
+  loggedInKey = sessionKey
   return next
 }
 
 async function connect(opts: DialerVoiceConnectOpts): Promise<void> {
+  const accessToken = opts.accessToken?.trim()
   const username = opts.username?.trim()
   const password = opts.password ?? ''
-  if (!username || !password) {
-    throw new Error('Plivo endpoint credentials are missing')
+  if (!accessToken && (!username || !password)) {
+    throw new Error('Plivo access token is missing')
   }
   try {
     sdk?.client.hangup()
   } catch {
     /* no active call */
   }
-  const client = await ensureClient(username, password)
+  const client = await ensureClient({ accessToken, username, password })
   active = opts
   const started = client.client.call(opts.to, {
     'X-PH-CallId': opts.callId,

@@ -8,6 +8,7 @@ import {
 } from '../connections'
 import type { DataStore } from '../store'
 import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
+import { allocateLinkedInSeat } from '../outboundPools'
 
 const HEYREACH_BASE = 'https://api.heyreach.io/api/public'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -71,6 +72,10 @@ async function heyreachRequest<T>(
 /** HeyReach paginates list endpoints as POST { offset, limit } -> { totalCount, items }. */
 type Paged<T> = { totalCount?: number; items?: T[] }
 
+/**
+ * Ensure the platform HeyReach key is attached as an org connection (managed outbound).
+ * Customers never bring their own HeyReach API key.
+ */
 export function ensureHeyReachConnection(
   store: DataStore,
   orgId: string,
@@ -99,6 +104,7 @@ export function ensureHeyReachConnection(
   })
 }
 
+/** Resolve the managed HeyReach API key (platform only). */
 export function resolveHeyReachApiKey(
   store: DataStore,
   orgId: string,
@@ -191,6 +197,19 @@ export async function resolveHeyReachSenderAccount(input: {
   config: ServerConfig
   apiKey: string
 }): Promise<HeyReachAccount> {
+  const seat = allocateLinkedInSeat(input.store, input.config, input.orgId)
+  if (seat) {
+    const id = Number(seat.accountId)
+    if (Number.isFinite(id) && id > 0) {
+      setConnectionMeta(input.store, input.orgId, 'heyreach', {
+        senderAccountId: String(id),
+        senderAccountName: `Seat ${seat.id}`,
+        poolMemberId: seat.id
+      })
+      return { id, name: `Seat ${seat.id}` }
+    }
+  }
+
   const configured = Number(input.config.heyreach.senderAccountId)
   if (Number.isFinite(configured) && configured > 0) {
     return { id: configured, name: `Account ${configured}` }

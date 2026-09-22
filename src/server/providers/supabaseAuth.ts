@@ -53,9 +53,15 @@ export async function findAuthUserByEmail(
     const { data, error } = await anyAdmin.getUserByEmail(normalized)
     if (!error && data?.user) return data.user
   }
-  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
-  if (error) throw new Error(error.message)
-  return data.users.find((u) => u.email?.toLowerCase() === normalized) ?? null
+  // Paginate — listUsers is capped per page (do not stop at 200).
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) throw new Error(error.message)
+    const match = data.users.find((u) => u.email?.toLowerCase() === normalized)
+    if (match) return match
+    if (data.users.length < 200) break
+  }
+  return null
 }
 
 /**
@@ -102,6 +108,33 @@ export async function signInWithPassword(
   if (error) throw new Error(error.message)
   if (!data.session?.access_token || !data.user) throw new Error('Invalid credentials')
   return { accessToken: data.session.access_token, supabaseUser: data.user }
+}
+
+/** Send a password-reset email. Always succeeds from the caller's POV (no email enumeration). */
+export async function requestPasswordReset(
+  config: ServerConfig,
+  email: string,
+  redirectTo: string
+): Promise<void> {
+  const client = getSupabaseAnon(config)
+  const { error } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** Set a new password using a recovery access token from the reset email link. */
+export async function updatePasswordWithAccessToken(
+  config: ServerConfig,
+  accessToken: string,
+  password: string
+): Promise<void> {
+  if (password.length < 6) throw new Error('Password must be at least 6 characters')
+  const user = await getSupabaseUserFromToken(config, accessToken)
+  if (!user) throw new Error('Reset link is invalid or expired. Request a new one.')
+  const admin = getSupabaseAdmin(config)
+  const { error } = await admin.auth.admin.updateUserById(user.id, { password })
+  if (error) throw new Error(error.message)
 }
 
 export async function getSupabaseUserFromToken(

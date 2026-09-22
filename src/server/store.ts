@@ -7,6 +7,8 @@ export interface DataStore {
   get db(): Database
   persist(next?: Database): void
   update(mutator: (db: Database) => void): Database
+  /** Wait for pending durable writes (Postgres). No-op for JsonStore. */
+  flush?(): Promise<void>
 }
 
 const EMPTY: Database = {
@@ -35,6 +37,7 @@ const EMPTY: Database = {
   previewComments: [],
   idempotencyRecords: [],
   rateWindows: [],
+  poolAssignments: [],
   mcpOAuthClients: [],
   mcpAuthCodes: [],
   mcpAccessTokens: []
@@ -53,6 +56,7 @@ function migrateDb(raw: Partial<Database>): Database {
   if (!db.usageDaily) db.usageDaily = []
   if (!db.idempotencyRecords) db.idempotencyRecords = []
   if (!db.rateWindows) db.rateWindows = []
+  if (!db.poolAssignments) db.poolAssignments = []
   if (!db.mcpOAuthClients) db.mcpOAuthClients = []
   if (!db.mcpAuthCodes) db.mcpAuthCodes = []
   if (!db.mcpAccessTokens) db.mcpAccessTokens = []
@@ -139,6 +143,10 @@ export class JsonStore implements DataStore {
     mutator(this.data)
     this.persist()
     return this.data
+  }
+
+  async flush(): Promise<void> {
+    /* sync write already completed in persist/update */
   }
 }
 

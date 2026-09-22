@@ -32,6 +32,27 @@ export function emailWorkspaceHtml(): string {
   return cachedHtml
 }
 
+/**
+ * Claude sandboxes MCP apps with an empty connect-src / script-src and no
+ * microphone until the resource declares them. Without this, the Plivo SDK
+ * never loads and the dialer used to open the web workspace instead.
+ */
+export const EMAIL_WORKSPACE_UI_META = {
+  csp: {
+    resourceDomains: ['https://cdn.plivo.com'],
+    connectDomains: [
+      'https://*.plivo.com',
+      'wss://*.plivo.com',
+      'stun:stun.plivo.com:3478',
+      'stun:stun-fb.plivo.com:3478',
+      'stun:stun.l.google.com:19302'
+    ]
+  },
+  permissions: {
+    microphone: {}
+  }
+}
+
 export const EMAIL_WORKSPACE_TOOL_META = {
   ui: { resourceUri: EMAIL_WORKSPACE_URI },
   'ui/resourceUri': EMAIL_WORKSPACE_URI
@@ -45,14 +66,16 @@ export function registerEmailWorkspaceApp(server: McpServer): void {
       uri,
       {
         description: 'Outbound in Claude: Contacts, Sequence, and Tasks.',
-        mimeType: RESOURCE_MIME_TYPE
+        mimeType: RESOURCE_MIME_TYPE,
+        _meta: { ui: EMAIL_WORKSPACE_UI_META }
       },
       async () => ({
         contents: [
           {
             uri,
             mimeType: RESOURCE_MIME_TYPE,
-            text: emailWorkspaceHtml()
+            text: emailWorkspaceHtml(),
+            _meta: { ui: EMAIL_WORKSPACE_UI_META }
           }
         ]
       })

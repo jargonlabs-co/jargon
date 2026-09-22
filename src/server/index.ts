@@ -23,9 +23,11 @@ import {
 } from './auth'
 import { uid } from './crypto'
 import {
+  requestPasswordReset,
   signInWithPassword,
   signUpWithPassword,
-  supabaseConfigured
+  supabaseConfigured,
+  updatePasswordWithAccessToken
 } from './providers/supabaseAuth'
 import {
   consumeOAuthState,
@@ -36,6 +38,9 @@ import {
 } from './connections'
 import { platformGmailReady } from './providers/gmail'
 import { toE164, voiceTwiml, inspectTwilioVoice } from './providers/twilio'
+import { consumeRateLimit } from './rateLimit'
+import { PlanLimitError } from './planLimits'
+import { poolHealth, PoolBudgetError } from './outboundPools'
 import {
   hangupLiveCall,
   inspectLiveVoice,
@@ -76,7 +81,7 @@ import { createV1Router } from './v1'
 import { mountMcp } from './mcpHttp'
 import { claudeConnectorStatus } from './mcpOauth'
 import { parseDeployContacts } from './deployContacts'
-import { dashboardFor, sendPublicMessage } from './publicApi'
+import { dashboardFor, sendPublicMessage, startPublicCall } from './publicApi'
 import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { startOutboundScheduler } from './scheduler'
 
@@ -134,6 +139,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       publicUrl: config.publicUrl,
       storage: process.env.DATABASE_URL ? 'postgres' : 'json',
       userCount: store.db.users.length,
+      outboundPools: poolHealth(store, config),
       features: { deploy: true, cli: true, mcp: true }
     })
   })
@@ -215,6 +221,43 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.json(authPayload(store, signed.accessToken, user, org))
     } catch (err) {
       res.status(401).json({ error: err instanceof Error ? err.message : 'Invalid credentials' })
+    }
+  })
+
+  app.post('/auth/forgot-password', async (req, res) => {
+    if (!supabaseConfigured(config)) {
+      res.status(503).json({ error: 'Auth is not configured.' })
+      return
+    }
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+    if (!email) {
+      res.status(400).json({ error: 'email required' })
+      return
+    }
+    try {
+      await requestPasswordReset(config, email, `${config.appUrl}/reset-password`)
+    } catch (err) {
+      console.warn('[jargon] password reset request failed', err)
+    }
+    // Always 200 — do not reveal whether the email exists.
+    res.json({ ok: true, message: 'If that email is registered, a reset link is on the way.' })
+  })
+
+  app.post('/auth/reset-password', async (req, res) => {
+    if (!supabaseConfigured(config)) {
+      res.status(503).json({ error: 'Auth is not configured.' })
+      return
+    }
+    const { accessToken, password } = req.body as { accessToken?: string; password?: string }
+    if (!accessToken?.trim() || !password) {
+      res.status(400).json({ error: 'accessToken and password required' })
+      return
+    }
+    try {
+      await updatePasswordWithAccessToken(config, accessToken.trim(), password)
+      res.json({ ok: true })
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not reset password' })
     }
   })
 
@@ -630,12 +673,12 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     if (provider === 'gmail' || provider === 'twilio' || provider === 'heyreach') {
       res.status(400).json({
         error:
-          'Email, calling, and LinkedIn are sent by Jargon. Connect HubSpot or Railway for your data.'
+          'Email, calling, and LinkedIn are sent by Jargon on managed infrastructure. Connect Claude and bring your list — no outbound API keys needed.'
       })
       return
     }
     if (provider !== 'hubspot') {
-      res.status(400).json({ error: 'Unknown data source. Connect HubSpot or Railway.' })
+      res.status(400).json({ error: 'Unknown data source. Connect HubSpot or Railway, or bring a list via Claude.' })
       return
     }
     const { org, user } = req.auth!
@@ -721,9 +764,20 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   app.get('/voice/token', auth, (req, res) => {
     const identity = `user_${req.auth!.user.id}`.replace(/[^A-Za-z0-9_-]/g, '_')
     try {
-      res.json(createVoiceToken(config, identity))
+      res.json(
+        createVoiceToken(config, identity, {
+          store,
+          orgId: req.auth!.org.id
+        })
+      )
     } catch (err) {
-      res.status(503).json({ error: err instanceof Error ? err.message : 'Voice is not ready' })
+      const status =
+        err && typeof err === 'object' && 'status' in err
+          ? Number((err as { status: number }).status)
+          : 503
+      res.status(status || 503).json({
+        error: err instanceof Error ? err.message : 'Voice is not ready'
+      })
     }
   })
 
@@ -790,7 +844,10 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         call.phase = 'connected'
         call.connectedAt = call.connectedAt ?? Date.now()
       }
-      if (phase === 'failed') call.phase = 'failed'
+      if (phase === 'failed') {
+        call.phase = 'failed'
+        call.endedAt = call.endedAt ?? Date.now()
+      }
     })
   }
 
@@ -800,7 +857,14 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     const to = headerTo || plivoFormValue(body, 'To', 'Destination')
     const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
     const callUuid = plivoFormValue(body, 'CallUUID', 'ALegUUID')
-    const from = config.plivo.fromNumber || '+15555550100'
+    const call = callId
+      ? store.db.calls.find((c) => c.id === callId)
+      : undefined
+    const from =
+      call?.fromNumber ||
+      config.outboundPools.voiceEndpoints[0]?.fromNumber ||
+      config.plivo.fromNumber ||
+      '+15555550100'
     attachPlivoCall(callId, callUuid, 'ringing')
     res.type('text/xml').send(plivoDialXml(to, from, plivoCallbackUrl))
   })
@@ -829,6 +893,16 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     const cause = plivoFormValue(body, 'HangupCauseName', 'HangupCause').toLowerCase()
     const failed = /busy|no.answer|rejected|cancel|failed|timeout/.test(cause)
     attachPlivoCall(callId, callUuid, failed ? 'failed' : undefined)
+    store.update((db) => {
+      const byId = callId ? db.calls.find((c) => c.id === callId) : undefined
+      const bySid = callUuid ? db.calls.find((c) => c.providerCallSid === callUuid) : undefined
+      const call = byId ?? bySid
+      if (!call || call.endedAt) return
+      if (call.phase === 'dialing' || call.phase === 'ringing' || call.phase === 'connected') {
+        if (!failed) call.phase = 'completed'
+        call.endedAt = Date.now()
+      }
+    })
     res.status(204).end()
   })
 
@@ -857,10 +931,15 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         orgId,
         prompt,
         kind,
-        answers: answers ?? {}
+        answers: answers ?? {},
+        billing
       })
       res.status(201).json(bundleProject(store.db, projectId))
     } catch (err) {
+      if (err instanceof PlanLimitError) {
+        res.status(403).json({ error: err.message, code: err.code })
+        return
+      }
       res.status(502).json({ error: err instanceof Error ? err.message : 'Project create failed' })
     }
   })
@@ -901,7 +980,8 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         kind: kind ?? inferred.kind,
         answers: { ...inferred.answers, ...(answers ?? {}) },
         spec: inferred.spec,
-        contacts: parsed.contacts
+        contacts: parsed.contacts,
+        billing
       })
       const bundle = bundleProject(store.db, projectId)
       if (!bundle) {
@@ -917,6 +997,10 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         ...dashboard
       })
     } catch (err) {
+      if (err instanceof PlanLimitError) {
+        res.status(403).json({ error: err.message, code: err.code })
+        return
+      }
       res.status(502).json({ error: err instanceof Error ? err.message : 'Deploy failed' })
     }
   })
@@ -1170,6 +1254,19 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: 'Contact has no valid phone number' })
       return
     }
+    const limited = consumeRateLimit(
+      store,
+      req.auth!.org.id,
+      'call',
+      req.auth!.environment ?? 'live'
+    )
+    if (!limited.ok) {
+      res.status(429).json({
+        error: `Call rate limit (${limited.limit}/15min). Retry in ${limited.retryAfterSec}s.`,
+        retryAfterSec: limited.retryAfterSec
+      })
+      return
+    }
     const voice = inspectLiveVoice(config)
     if (!voice.ok) {
       res.status(503).json({ error: voice.error })
@@ -1193,47 +1290,28 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
     res.setHeader('X-Credits-Used', String(charge.creditsUsed))
     res.setHeader('X-Credits-Remaining', String(charge.remaining))
-    const now = Date.now()
-    const callId = uid('call')
-    const mode = voice.provider
-    store.update((db) => {
-      db.contacts.forEach((c) => {
-        if (c.projectId !== contact.projectId) return
-        if (c.id === contact.id) {
-          c.status = 'active'
-          c.updatedAt = now
-        } else if (c.status === 'active') {
-          c.status = 'queued'
-          c.updatedAt = now
-        }
+    try {
+      const call = startPublicCall(
+        store,
+        config,
+        contact,
+        req.auth!.environment === 'sandbox'
+      )
+      res.status(201).json({
+        ...call,
+        creditsUsed: charge.creditsUsed,
+        creditsRemaining: charge.remaining
       })
-      db.calls.unshift({
-        id: callId,
-        orgId: contact.orgId,
-        projectId: contact.projectId,
-        contactId: contact.id,
-        phase: 'dialing',
-        mode,
-        startedAt: now
-      })
-      db.activities.unshift({
-        id: uid('act'),
-        orgId: contact.orgId,
-        projectId: contact.projectId,
-        contactId: contact.id,
-        kind: 'call',
-        summary: `Dialing ${contact.name}`,
-        createdAt: now
-      })
-      const project = db.projects.find((p) => p.id === contact.projectId)
-      if (project) project.updatedAt = now
-    })
-
-    res.status(201).json({
-      ...store.db.calls.find((c) => c.id === callId),
-      creditsUsed: charge.creditsUsed,
-      creditsRemaining: charge.remaining
-    })
+    } catch (err) {
+      if (charge.creditsUsed > 0) {
+        await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
+      }
+      if (err instanceof PoolBudgetError) {
+        res.status(429).json({ error: err.message, code: err.code })
+        return
+      }
+      res.status(503).json({ error: err instanceof Error ? err.message : 'Call failed' })
+    }
   })
 
   app.post('/calls/:id/progress', auth, (req, res) => {
@@ -1351,6 +1429,19 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
 
     if (finalStatus === 'sent') {
+      const limited = consumeRateLimit(
+        store,
+        req.auth!.org.id,
+        'message',
+        req.auth!.environment ?? 'live'
+      )
+      if (!limited.ok) {
+        res.status(429).json({
+          error: `Message rate limit (${limited.limit}/15min). Retry in ${limited.retryAfterSec}s.`,
+          retryAfterSec: limited.retryAfterSec
+        })
+        return
+      }
       charge = await chargeIfLive(billing, {
         orgId: req.auth!.org.id,
         sandbox: req.auth!.environment === 'sandbox',

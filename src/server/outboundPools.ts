@@ -305,6 +305,24 @@ export function allocateLinkedInSeat(
   return seat
 }
 
+/**
+ * SIP user for the Browser SDK. The SDK builds `sub_authId@phone.plivo.com`
+ * and rejects the session ("Failed to create user agent") if `sub` contains
+ * `@` or whitespace — which is what you get if the endpoint is stored as a
+ * full SIP URI (`user@phone.plivo.com`).
+ */
+export function plivoSipUsername(endpointUsername: string): string {
+  let user = endpointUsername.trim()
+  if (/^sip:/i.test(user)) user = user.slice(4).trim()
+  const at = user.indexOf('@')
+  if (at >= 0) user = user.slice(0, at)
+  user = user.replace(/\s+/g, '')
+  if (!user) {
+    throw new Error('Plivo endpoint username is missing. Use the username Plivo shows on the endpoint, not the full SIP address.')
+  }
+  return user
+}
+
 /** Short-lived Plivo Browser SDK JWT — never ship endpoint passwords to the client. */
 export function mintPlivoAccessToken(
   config: ServerConfig,
@@ -313,7 +331,7 @@ export function mintPlivoAccessToken(
 ): string {
   const authId = config.plivo.authId.trim()
   const authToken = config.plivo.authToken.trim()
-  const username = endpointUsername.trim()
+  const username = plivoSipUsername(endpointUsername)
   if (!authId || !authToken || !username) {
     throw new Error('Plivo JWT mint requires authId, authToken, and endpoint username')
   }
@@ -330,7 +348,15 @@ export function mintPlivoAccessToken(
     sub: username,
     nbf: now,
     exp: now + lifetime,
+    // Server verifies `grants`. The browser SDK only reads `per` and
+    // refuses to dial when outgoing_allow is missing.
     grants: {
+      voice: {
+        incoming_allow: false,
+        outgoing_allow: true
+      }
+    },
+    per: {
       voice: {
         incoming_allow: false,
         outgoing_allow: true

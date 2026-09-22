@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
 import { EMAIL_WORKSPACE_URI, EMAIL_WORKSPACE_URIS, SAMPLE_EMAIL_WORKSPACE } from './emailWorkspace'
+import { applyEmailWorkspaceHtml } from '../shared/plivoSdp'
 
 const require = createRequire(import.meta.url)
 const here = dirname(fileURLToPath(import.meta.url))
@@ -28,7 +29,7 @@ let cachedHtml = ''
 export function emailWorkspaceHtml(): string {
   if (cachedHtml) return cachedHtml
   const template = readFileSync(join(here, 'apps/emailWorkspace.html'), 'utf8')
-  cachedHtml = template.replace('/*__EXT_APPS_BUNDLE__*/', () => inlineExtAppsBundle())
+  cachedHtml = applyEmailWorkspaceHtml(template, inlineExtAppsBundle())
   return cachedHtml
 }
 
@@ -97,5 +98,5 @@ export function emailWorkspacePreviewHtml(payloadJson?: string): string {
     requestDisplayMode(){return Promise.resolve({mode:'inline'})}
   }};`
   const html = readFileSync(join(here, 'apps/emailWorkspace.html'), 'utf8')
-  return html.replace('/*__EXT_APPS_BUNDLE__*/', shim)
+  return applyEmailWorkspaceHtml(html, shim)
 }

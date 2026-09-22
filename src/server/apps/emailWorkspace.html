@@ -891,7 +891,10 @@ function dueLabel(task) {
     });
   }
 
+  /*__PLIVO_SDP_FIX__*/
+
   async function ensurePlivo(opts) {
+    installPlivoSdpFix();
     await loadPlivoSdk();
     const accessToken = (opts.accessToken || '').trim();
     const username = (opts.username || '').trim();
@@ -904,7 +907,15 @@ function dueLabel(task) {
       plivoUser = null;
     }
     const Ctor = plivoCtor();
-    const next = asPlivoClient(new Ctor({ debug: 'ERROR', permOnClick: true, closeProtection: true, enableTracking: false }));
+    const next = asPlivoClient(new Ctor({
+      debug: 'ERROR',
+      permOnClick: true,
+      closeProtection: true,
+      enableTracking: false,
+      enableIPV6: false,
+      usePlivoStunServer: false,
+      codecs: ['OPUS', 'PCMU']
+    }));
     bindPlivo(next);
     await new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => reject(new Error('Plivo login timed out')), 15000);
@@ -971,7 +982,7 @@ function dueLabel(task) {
     try { plivoSdk?.client.hangup(); } catch (_) { /* no active call */ }
     const client = await ensurePlivo(opts);
     plivoActive = opts;
-    const started = client.client.call(opts.to, {
+    const started = client.client.call(plivoBrowserCallTarget(opts.to), {
       'X-PH-CallId': opts.callId,
       'X-PH-To': opts.to,
     });

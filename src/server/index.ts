@@ -47,7 +47,7 @@ import {
   createVoiceToken,
   voiceIsLive
 } from './providers/voice'
-import { inspectPlivoVoice, plivoDialXml, plivoFormValue } from './providers/plivo'
+import { inspectPlivoVoice, plivoDialXml, plivoFormValue, plivoWebhookBase } from './providers/plivo'
 import {
   exchangeHubSpotCode,
   fetchHubSpotContacts,
@@ -822,7 +822,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.status(204).end()
   })
 
-  const plivoCallbackUrl = `${config.publicUrl.replace(/\/$/, '')}/voice/plivo/dial`
+  const plivoCallbackUrl = `${plivoWebhookBase(config)}/voice/plivo/dial`
 
   function attachPlivoCall(
     callId: string,

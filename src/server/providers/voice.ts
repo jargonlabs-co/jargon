@@ -6,6 +6,7 @@ import {
   hangupPlivoCall,
   inspectPlivoVoice,
   issuePlivoAccessToken,
+  plivoWebhookBase,
   syncPlivoApplication
 } from './plivo'
 import { hangupTwilioPstn, inspectTwilioVoice, syncTwilioTwimlApp } from './twilio'
@@ -110,7 +111,7 @@ export async function syncVoiceProvider(config: ServerConfig): Promise<void> {
     if (!plivo.ok && config.outboundPools.voiceEndpoints.length === 0) {
       console.warn(`[jargon] Plivo application synced, but voice is not live: ${plivo.error}`)
     } else {
-      console.log(`[jargon] Plivo answer URL: ${config.publicUrl.replace(/\/$/, '')}/voice/plivo/answer`)
+      console.log(`[jargon] Plivo answer URL: ${plivoWebhookBase(config)}/voice/plivo/answer`)
       console.log(
         `[jargon] Voice pool: ${config.outboundPools.voiceEndpoints.length} exclusive DID(s); JWT softphone auth`
       )

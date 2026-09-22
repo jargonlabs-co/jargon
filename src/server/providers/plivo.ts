@@ -207,13 +207,46 @@ async function plivoRequest(
   return { status: res.status, json }
 }
 
+/**
+ * Host that actually serves /voice/plivo/*. JARGON_PUBLIC_URL is the website,
+ * which rewrites every path to the marketing page, so Plivo never receives Dial XML.
+ */
+export function plivoWebhookBase(config: Pick<ServerConfig, 'publicUrl'>): string {
+  const override = process.env.JARGON_VOICE_PUBLIC_URL?.trim()
+  if (override) return override.replace(/\/$/, '')
+  const railway = process.env.RAILWAY_PUBLIC_DOMAIN?.trim().replace(/^https?:\/\//, '')
+  if (railway) return `https://${railway}`
+  return config.publicUrl.replace(/\/$/, '')
+}
+
 function voiceUrls(config: ServerConfig): { answerUrl: string; hangupUrl: string; dialUrl: string } {
-  const base = config.publicUrl.replace(/\/$/, '')
+  const base = plivoWebhookBase(config)
   return {
     answerUrl: `${base}/voice/plivo/answer`,
     hangupUrl: `${base}/voice/plivo/hangup`,
     dialUrl: `${base}/voice/plivo/dial`
   }
+}
+
+/** Match an endpoint stored as a username or a full SIP address. */
+export function plivoEndpointMatches(stored: string, row: PlivoJson): boolean {
+  let want = ''
+  try {
+    want = plivoSipUsername(stored).toLowerCase()
+  } catch {
+    return false
+  }
+  if (!want) return false
+  for (const value of [row.username, row.alias, row.sip_uri]) {
+    const raw = String(value ?? '').trim()
+    if (!raw) continue
+    try {
+      if (plivoSipUsername(raw).toLowerCase() === want) return true
+    } catch {
+      /* ignore unusable alias */
+    }
+  }
+  return false
 }
 
 /** Point the Plivo XML application (and endpoint) at JARGON_PUBLIC_URL. */
@@ -246,19 +279,37 @@ export async function syncPlivoApplication(config: ServerConfig): Promise<void> 
   }
   await plivoRequest(config, 'POST', `/Application/${encodeURIComponent(appId)}/`, payload)
 
-  const username = config.plivo.endpointUsername.trim()
-  if (!username) return
+  const usernames = [
+    ...config.outboundPools.voiceEndpoints.map((member) => member.endpointUsername),
+    config.plivo.endpointUsername
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (!usernames.length) return
   const listed = await plivoRequest(config, 'GET', '/Endpoint/')
   const endpoints = Array.isArray(listed.json.objects) ? (listed.json.objects as PlivoJson[]) : []
-  const endpoint = endpoints.find((row) => String(row.username ?? '') === username)
-  const endpointId = endpoint ? String(endpoint.endpoint_id ?? '') : ''
-  if (!endpointId) {
-    console.warn(
-      `[jargon] Plivo endpoint ${username} was not found. Create it in Voice → Endpoints and attach the Jargon Voice application.`
-    )
-    return
+  const seen = new Set<string>()
+  let attached = 0
+  for (const username of usernames) {
+    const endpoint = endpoints.find((row) => plivoEndpointMatches(username, row))
+    const endpointId = endpoint ? String(endpoint.endpoint_id ?? '') : ''
+    if (!endpointId || seen.has(endpointId)) {
+      if (!endpointId) {
+        console.warn(
+          '[jargon] Plivo endpoint was not found. Create it in Voice → Endpoints so browser calls can use the Jargon Voice application.'
+        )
+      }
+      continue
+    }
+    seen.add(endpointId)
+    await plivoRequest(config, 'POST', `/Endpoint/${encodeURIComponent(endpointId)}/`, {
+      app_id: appId
+    })
+    attached += 1
   }
-  await plivoRequest(config, 'POST', `/Endpoint/${encodeURIComponent(endpointId)}/`, { app_id: appId })
+  if (attached) {
+    console.log(`[jargon] Attached ${attached} Plivo endpoint(s) to the voice application`)
+  }
 }
 
 export function plivoFormValue(body: Record<string, unknown>, ...keys: string[]): string {

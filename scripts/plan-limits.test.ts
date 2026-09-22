@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { countOrgTools, PlanLimitError } from '../src/server/planLimits.ts'
+import { assertCanCreateTool, countOrgTools, orgSkipsToolLimit, PlanLimitError } from '../src/server/planLimits.ts'
+import type { BillingService } from '../src/server/billing/types.ts'
 import { PLANS } from '../src/server/billing/catalog.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Database } from '../src/server/types.ts'
@@ -80,4 +81,32 @@ assert.equal(countOrgTools(store, orgId), 2)
 assert.equal(PLANS.free.maxTools, 2)
 assert.ok(new PlanLimitError('cap').code === 'plan_limit')
 
-console.log('plan-limits.test.ts ok')
+const freeBilling = {
+  async getCredits() {
+    return { plan: 'free' }
+  }
+} as unknown as BillingService
+
+async function main() {
+  await assert.rejects(() => assertCanCreateTool(freeBilling, store, orgId), PlanLimitError)
+
+  db.users.push({
+    id: 'user_tara',
+    email: 'tara@jargonlabs.co',
+    name: 'Tara',
+    createdAt: 1,
+    updatedAt: 1
+  })
+  db.memberships.push({
+    id: 'mem_tara',
+    orgId,
+    userId: 'user_tara',
+    role: 'owner',
+    createdAt: 1
+  })
+  assert.equal(orgSkipsToolLimit(store, orgId), true)
+  await assertCanCreateTool(freeBilling, store, orgId)
+  console.log('plan-limits.test.ts ok')
+}
+
+main()

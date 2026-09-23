@@ -120,6 +120,11 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.redirect(302, '/v1/openapi.json')
   })
 
+  // www.jargonlabs.co is this API. Opening the host in a browser should land on the app.
+  app.get('/', (_req, res) => {
+    res.redirect(302, `${config.appUrl}/`)
+  })
+
   app.get('/health', (_req, res) => {
     res.json({
       ok: true,

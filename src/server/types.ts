@@ -33,12 +33,16 @@ export interface FieldDef {
   origin: FieldOrigin
 }
 
+export type StepSendMode = 'manual' | 'auto'
+
 export interface WorkspaceSpecStep {
   day: number
   channel: Channel
   label: string
   subject?: string
   body?: string
+  /** Email steps only. Auto queues the send; manual becomes a task. */
+  mode?: StepSendMode
 }
 
 export interface WorkspaceSpec {
@@ -235,6 +239,8 @@ export interface SequenceStep {
   label: string
   subject?: string
   body?: string
+  /** Email steps only. Missing means manual. */
+  mode?: 'manual' | 'auto'
   order: number
 }
 

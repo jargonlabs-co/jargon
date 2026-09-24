@@ -235,12 +235,14 @@ export function parseDeploySpec(
       if (day != null && (!Number.isInteger(day) || day < 0 || day > 30)) {
         return { ok: false, error: `spec.steps[${i}].day must be an integer 0–30` }
       }
+      const mode = row.mode === 'auto' && channel === 'email' ? 'auto' : row.mode === 'manual' ? 'manual' : undefined
       steps.push({
         day: day ?? i,
         channel,
         label: typeof row.label === 'string' && row.label.trim() ? row.label.trim() : defaultLabel(channel, i === 0 ? 'intro' : 'followup'),
         subject: typeof row.subject === 'string' ? row.subject : undefined,
-        body: typeof row.body === 'string' ? row.body : undefined
+        body: typeof row.body === 'string' ? row.body : undefined,
+        ...(mode ? { mode } : {})
       })
     }
     spec.steps = steps

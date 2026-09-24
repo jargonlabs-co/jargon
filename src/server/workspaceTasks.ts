@@ -32,6 +32,8 @@ export type WorkspaceTask = {
   target?: string
   /** Why a task is blocked or skipped. */
   reason?: string
+  /** Auto emails send on their day and stay out of the rep's to-do list. */
+  owner: 'user' | 'auto'
 }
 
 export type TaskStats = {
@@ -99,7 +101,8 @@ export function buildWorkspaceTasks(input: {
         stepLabel: step.label || channelName(step.channel),
         stepOrder: step.order,
         day: Math.max(0, step.day),
-        channel: step.channel
+        channel: step.channel,
+        owner: 'user' as const
       }
 
       if (skippedIds.includes(step.id)) {
@@ -196,9 +199,11 @@ export function buildWorkspaceTasks(input: {
           : actionable
             ? 'due'
             : 'scheduled'
+      const autoEmail = step.channel === 'email' && step.mode === 'auto' && state !== 'blocked'
       tasks.push({
         ...base,
         ...copy,
+        owner: autoEmail ? 'auto' : 'user',
         dueAt: sendAt,
         state,
         bucket: bucketFor(state, sendAt, now),
@@ -216,7 +221,8 @@ export function buildWorkspaceTasks(input: {
 }
 
 export function summarizeTasks(tasks: WorkspaceTask[]): TaskStats {
-  const count = (fn: (task: WorkspaceTask) => boolean) => tasks.filter(fn).length
+  const mine = tasks.filter((t) => t.owner !== 'auto')
+  const count = (fn: (task: WorkspaceTask) => boolean) => mine.filter(fn).length
   const overdue = count((t) => t.bucket === 'overdue')
   const today = count((t) => t.bucket === 'today')
   return {

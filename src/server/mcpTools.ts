@@ -13,12 +13,14 @@ import {
   deliverPublicMessage,
   deployPublicTool,
   emptyQueue,
+  enrollHubSpotContacts,
   enrollPublicSequence,
   findOrgCall,
   findOrgContact,
   findOrgMessage,
   findOrgProject,
   isContactStatus,
+  listHubSpotContactsForEnroll,
   listPublicContacts,
   listPublicMessages,
   listPublicProjects,
@@ -34,6 +36,7 @@ import {
   updatePublicSequence,
   upsertPublicDraft,
   unenrollPublicContact,
+  setStepSendMode,
   skipPublicTask,
   savePublicResearch,
   savePublicTalkTrack,
@@ -106,11 +109,13 @@ function workspaceOk(
   orgId: string,
   projectId: string,
   sandbox: boolean,
-  focus?: McpTab
+  focus?: McpTab,
+  userId?: string
 ) {
   const ws = getEmailWorkspace(store, config, orgId, projectId, {
     sandbox,
-    focus
+    focus,
+    userId
   })
   if (!ws) return fail('Project not found')
   return {
@@ -309,7 +314,8 @@ export function registerJargonTools(
     channel: z.enum(['email', 'call', 'linkedin']),
     label: z.string().optional(),
     subject: z.string().optional(),
-    body: z.string().optional()
+    body: z.string().optional(),
+    mode: z.enum(['manual', 'auto']).optional()
   })
 
   const ImportListInput = z.object({
@@ -786,7 +792,7 @@ export function registerJargonTools(
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId)
   )
 
   server.registerTool(
@@ -798,7 +804,7 @@ export function registerJargonTools(
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId)
   )
 
   server.registerTool(
@@ -810,7 +816,7 @@ export function registerJargonTools(
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
   )
 
   server.registerTool(
@@ -830,7 +836,7 @@ export function registerJargonTools(
       })
     },
     async ({ projectId, bucket, contactId, limit }) => {
-      const ws = getEmailWorkspace(store, config, actor.orgId, projectId, { sandbox })
+      const ws = getEmailWorkspace(store, config, actor.orgId, projectId, { sandbox, userId: actor.userId })
       if (!ws) return fail('Project not found')
       const want = bucket ?? 'open'
       const tasks = ws.tasks.filter((task) => {
@@ -870,7 +876,7 @@ export function registerJargonTools(
       inputSchema: z.object({ projectId: z.string() }),
       _meta: { ui: { visibility: ['app'] } }
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox)
+    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId)
   )
 
   const UpdateSequenceInput = z.object({
@@ -941,7 +947,7 @@ export function registerJargonTools(
       sandbox
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks')
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
   }
 
   async function execSaveDraft(
@@ -1036,7 +1042,7 @@ export function registerJargonTools(
       enroll
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'tasks' : 'contacts')
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'tasks' : 'contacts', actor.userId)
   }
 
   async function execUpdateDraft(
@@ -1109,7 +1115,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll contacts into the cadence and open Tasks. summary is the sentence on Claude\'s Allow card. Prefer save_research after deploy — that enrolls with personalized copy. Use start_sequence to re-enroll, enroll a subset, or force-enroll without research. Keeps copy already saved with save_draft / save_research. Pass contactIds to enroll a subset.',
+        'Enroll people who are already in this workspace into the sequence and open To-dos. Use this when the user says to enroll these people and they are already contacts here. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: StartSequenceInput
     },
@@ -1128,6 +1134,103 @@ export function registerJargonTools(
   )
 
   server.registerTool(
+    'enroll_hubspot',
+    {
+      ...display('Enroll people from HubSpot', HINTS.send),
+      description:
+        'When the user asks to enroll people into the sequence, pull those people from the connected HubSpot portal and enroll them. summary is the sentence on Claude\'s Allow card. people is who they named (names or emails, comma or newline separated) or "all". Manual steps become their to-dos. Do not ask them to pick contacts in the app.',
+      _meta: EMAIL_WORKSPACE_TOOL_META,
+      inputSchema: z.object({
+        summary: Summary,
+        projectId: z.string(),
+        people: z.string().min(1).describe('Names or emails to enroll, or "all".')
+      })
+    },
+    async ({ projectId, people }) => {
+      const listed = await listHubSpotContactsForEnroll(store, config, actor.orgId)
+      if (!listed.ok) return fail(listed.error)
+      if (!listed.connected) return fail('HubSpot is not connected')
+      const query = people.trim().toLowerCase()
+      const enrollAll = query === 'all' || query === 'everyone'
+      const needles = enrollAll
+        ? []
+        : query.split(/[\n,;]+/).map((part) => part.trim()).filter(Boolean)
+      const picked = enrollAll
+        ? listed.contacts
+        : listed.contacts.filter((contact) =>
+            needles.some((needle) =>
+              contact.name.toLowerCase().includes(needle) ||
+              contact.email.toLowerCase().includes(needle) ||
+              contact.company.toLowerCase().includes(needle)
+            )
+          )
+      if (!picked.length) return fail('No HubSpot contacts matched')
+      const result = await enrollHubSpotContacts(
+        store,
+        config,
+        actor.orgId,
+        projectId,
+        picked.map((contact) => contact.externalId),
+        sandbox
+      )
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+    }
+  )
+
+  server.registerTool(
+    'run_list_hubspot_contacts',
+    {
+      ...display('List HubSpot contacts', HINTS.read),
+      description: 'Contacts available to enroll from the connected HubSpot portal. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({ projectId: z.string() })
+    },
+    async () => {
+      const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)
+      if (!result.ok) return fail(result.error)
+      return ok(result)
+    }
+  )
+
+  server.registerTool(
+    'run_enroll_hubspot',
+    {
+      ...display('Enroll HubSpot contacts', HINTS.send),
+      description: 'Add the selected HubSpot contacts to this sequence and assign their tasks. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({
+        projectId: z.string(),
+        externalIds: z.array(z.string()).min(1).max(100)
+      })
+    },
+    async ({ projectId, externalIds }) => {
+      const result = await enrollHubSpotContacts(store, config, actor.orgId, projectId, externalIds, sandbox)
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+    }
+  )
+
+  server.registerTool(
+    'run_set_step_mode',
+    {
+      ...display('Set email auto-send', HINTS.write),
+      description: 'Turn auto-send on or off for one email step. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({
+        projectId: z.string(),
+        stepId: z.string(),
+        mode: z.enum(['manual', 'auto'])
+      })
+    },
+    async ({ projectId, stepId, mode }) => {
+      const result = setStepSendMode(store, actor.orgId, projectId, stepId, mode)
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'sequence', actor.userId)
+    }
+  )
+
+  server.registerTool(
     'run_unenroll_contact',
     {
       ...display('Unenroll a contact', HINTS.write),
@@ -1138,7 +1241,7 @@ export function registerJargonTools(
     async ({ contactId }) => {
       const result = unenrollPublicContact(store, actor.orgId, contactId)
       if (!result.ok) return fail(result.error)
-      return workspaceOk(store, config, actor.orgId, result.contact.projectId, sandbox)
+      return workspaceOk(store, config, actor.orgId, result.contact.projectId, sandbox, undefined, actor.userId)
     }
   )
 
@@ -1155,7 +1258,7 @@ export function registerJargonTools(
       if (!contact) return fail('Contact not found')
       const result = skipPublicTask(store, actor.orgId, contactId, stepId)
       if (!result.ok) return fail(result.error)
-      return workspaceOk(store, config, actor.orgId, contact.projectId, sandbox, 'tasks')
+      return workspaceOk(store, config, actor.orgId, contact.projectId, sandbox, 'tasks', actor.userId)
     }
   )
 

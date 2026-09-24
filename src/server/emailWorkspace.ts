@@ -26,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=call4'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=engage4'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -46,6 +46,10 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=plivo1',
   'ui://jargon/email-workspace.html?v=call2',
   'ui://jargon/email-workspace.html?v=call3',
+  'ui://jargon/email-workspace.html?v=call4',
+  'ui://jargon/email-workspace.html?v=engage1',
+  'ui://jargon/email-workspace.html?v=engage2',
+  'ui://jargon/email-workspace.html?v=engage3',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -76,6 +80,8 @@ export type EmailWorkspace = {
   /** Tab the app should land on. Lifecycle default unless a tool set focus. */
   focus?: McpTab
   defaultTab: McpTab
+  /** The signed-in rep. Manual tasks are theirs. */
+  assignee?: { id: string; name: string }
   projectId: string
   name: string
   goal: string
@@ -148,7 +154,7 @@ export function getEmailWorkspace(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  opts?: { sandbox?: boolean; focus?: McpTab }
+  opts?: { sandbox?: boolean; focus?: McpTab; userId?: string }
 ): EmailWorkspace | null {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return null
@@ -244,6 +250,12 @@ export function getEmailWorkspace(
     surface,
     focus: opts?.focus ?? defaultTab,
     defaultTab,
+    assignee: opts?.userId
+      ? {
+          id: opts.userId,
+          name: store.db.users.find((u) => u.id === opts.userId)?.name || 'You'
+        }
+      : undefined,
     projectId: project.id,
     name: project.name,
     goal: sequence.goal || project.spec?.goal || project.answers.goal || '',
@@ -666,6 +678,7 @@ Ownership — do not compete with Jargon on structure:
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
 - Immediately research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens Tasks with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
+- Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Then open To-dos with show_tasks.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Phone calls stay in the in-chat dialer. Do not send the user to dashboardUrl to place a call.
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.

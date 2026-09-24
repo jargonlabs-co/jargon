@@ -5,29 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jargon email</title>
   <style>
-    :root {
-      color-scheme: light dark;
-      --bg: var(--color-background-primary, #fff);
-      --bg2: var(--color-background-secondary, #f4f4f2);
-      --fg: var(--color-text-primary, #161513);
-      --muted: var(--color-text-secondary, #6b6966);
-      --line: var(--color-border-tertiary, #e4e2dc);
-      --accent: var(--color-text-accent, #161513);
-      --danger: #b42318;
-      --ok: #17663a;
+    :root, :root.dark {
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg2: #f7f0e4;
+      --cream: #fdf8ee;
+      --fg: #131f22;
+      --muted: #5a6a7a;
+      --line: #e6ddd0;
+      --accent: #e4674c;
+      --navy: #131f22;
+      --tint: #fce8e3;
+      --danger: #d64545;
+      --ok: #2f8a4a;
       --pad: 14px;
       font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
-    :root.dark {
-      --bg: var(--color-background-primary, #1c1b19);
-      --bg2: var(--color-background-secondary, #242320);
-      --fg: var(--color-text-primary, #f4f2ee);
-      --muted: var(--color-text-secondary, #a8a59e);
-      --line: var(--color-border-tertiary, #3a3834);
-      --accent: var(--color-text-accent, #f4f2ee);
-    }
     * { box-sizing: border-box; }
-    html, body { margin: 0; background: var(--bg); color: var(--fg); }
+    html, body { margin: 0; background: var(--cream); color: var(--fg); }
     button, input, textarea, select { font: inherit; color: inherit; }
     button { cursor: pointer; }
     .wrap { padding: var(--pad); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
@@ -35,7 +30,7 @@
       display: flex; align-items: flex-start; justify-content: space-between;
       gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
     }
-    h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+    h1 { font-size: 15px; font-weight: 500; margin: 0; letter-spacing: -0.02em; font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif; }
     .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .actions { display: flex; gap: 8px; flex-shrink: 0; }
     .btn {
@@ -44,7 +39,7 @@
     }
     .btn:hover { background: var(--bg2); }
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+    .btn.primary { background: var(--navy); color: var(--cream); border-color: var(--navy); }
     .btn.primary:hover { opacity: 0.92; }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
     .tab {
@@ -283,6 +278,78 @@
     .btn.end { background: var(--danger); border-color: var(--danger); color: #fff; }
     .btn.call:hover, .btn.end:hover { opacity: 0.92; }
     .btn.on { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+    .engage-head { align-items: center; }
+    .eyebrow { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .engage-head h1 { font-size: 22px; letter-spacing: -0.03em; }
+    .page-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+    .page-tab {
+      border: 0; background: transparent; padding: 8px 12px; color: var(--muted);
+      border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600;
+    }
+    .page-tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .page-tab .count {
+      display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 6px;
+      border-radius: 999px; background: var(--tint); color: var(--accent); font-size: 11px;
+    }
+    .flow-layout { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .rail { display: flex; flex-direction: column; align-items: center; }
+    .rail-line { width: 0; height: 16px; border-left: 1.5px dotted color-mix(in srgb, var(--muted) 45%, transparent); }
+    .rail-wait { font-size: 11px; color: var(--muted); padding: 2px 0 6px; text-align: center; }
+    .rail-step {
+      border: 0; background: transparent; display: flex; flex-direction: column;
+      align-items: center; gap: 6px; color: var(--muted); width: 100%;
+    }
+    .rail-ico {
+      width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--line);
+      display: grid; place-items: center; background: var(--bg); color: var(--fg);
+    }
+    .rail-ico svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+    .rail-step.on { color: var(--accent); }
+    .rail-step.on .rail-ico { border-color: var(--accent); color: var(--accent); background: var(--tint); }
+    .rail-name { font-size: 12px; font-weight: 650; text-align: center; line-height: 1.25; }
+    .step-card {
+      border: 1px solid var(--line); border-radius: 16px; background: var(--bg);
+      padding: 16px; min-height: 320px; display: flex; flex-direction: column;
+    }
+    .step-card textarea { min-height: 160px; flex: 1; }
+    .mode-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+    .mode-toggle button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .token-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .token {
+      border: 0; background: var(--tint); color: var(--accent); border-radius: 999px;
+      padding: 3px 8px; font-size: 11px; font-weight: 650;
+    }
+    .todo-filters { display: flex; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+    .todo-filters button {
+      border: 0; background: transparent; color: var(--muted); font-weight: 650;
+      padding: 6px 2px; border-bottom: 2px solid transparent;
+    }
+    .todo-filters button.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .todos { display: grid; gap: 8px; }
+    .todo {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+      width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line);
+      border-radius: 12px; padding: 12px 14px;
+    }
+    .todo:hover, .todo.on { border-color: #f0c2b8; }
+    .todo .box {
+      width: 16px; height: 16px; border: 1.5px solid var(--line); border-radius: 4px; background: var(--bg);
+    }
+    .todo-due { text-align: right; color: #17663a; font-size: 12.5px; font-weight: 650; }
+    .todo-due span { display: block; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+    .work-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .who { font-size: 13px; font-weight: 650; }
+    .hs {
+      border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: var(--bg);
+    }
+    .hs-list { max-height: 240px; overflow: auto; margin: 8px 0; }
+    .hs-row {
+      display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center;
+      padding: 6px 2px; width: 100%; text-align: left; border: 0; background: transparent;
+    }
+    .step-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .btn.accent { background: var(--navy); border-color: var(--navy); color: var(--cream); }
+    .btn.accent:hover { opacity: 0.92; }
   </style>
 </head>
 <body>
@@ -518,7 +585,7 @@ function dueLabel(task) {
 (async () => {
   const app = new App({ name: 'jargon-outbound', version: '1.7.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
-  let tab = 'contacts';
+  let tab = 'flows';
   let seqPane = 'flow';
   let selectedStep = 0;
   let selectedId = null;
@@ -534,6 +601,8 @@ function dueLabel(task) {
   let draftSteps = [];
   let actionPane = 'email';
   let taskFilter = 'open';
+  let taskChannel = 'all';
+  let workFocus = false;
   let selectedTaskId = null;
   let dialState = 'idle';
   let dialContactId = null;
@@ -554,13 +623,12 @@ function dueLabel(task) {
   }
 
   function applySurface() {
-    const s = surface();
     const land = ws?.focus || ws?.defaultTab;
-    if (land === 'tasks' || s === 'tasks') tab = 'tasks';
-    else if (land === 'inbox' || s === 'inbox') tab = 'inbox';
-    else if (land === 'queue' || s === 'queue') tab = 'queue';
-    else if (land === 'sequence') tab = 'sequence';
-    else tab = 'contacts';
+    const enrolled = (ws?.taskStats?.enrolled || 0) > 0;
+    if (land === 'sequence' || land === 'contacts') tab = 'flows';
+    else if (land === 'tasks' || land === 'queue' || enrolled) tab = 'todos';
+    else tab = 'flows';
+    workFocus = false;
   }
 
   function listSurface() {
@@ -620,9 +688,8 @@ function dueLabel(task) {
   }
 
   function flushEditor() {
-    const steps = emailSteps();
-    const step = steps[selectedStep];
-    if (!step || seqPane !== 'email') return;
+    const step = draftSteps[selectedStep];
+    if (!step) return;
     const dayEl = document.getElementById('edit-day');
     const labelEl = document.getElementById('edit-label');
     const subjectEl = document.getElementById('edit-subject');
@@ -635,23 +702,14 @@ function dueLabel(task) {
 
   async function saveSequence() {
     flushEditor();
-    const originals = ws.steps || [];
-    const hasEmail = originals.some((s) => s.channel === 'email');
-    const edited = emailSteps();
-    let i = 0;
-    const steps = originals.map((step) => {
-      if (hasEmail && step.channel !== 'email') {
-        return { day: step.day, channel: step.channel, label: step.label, subject: step.subject, body: step.body };
-      }
-      const next = edited[i++] || step;
-      return {
-        day: Number(next.day || 0),
-        channel: next.channel,
-        label: next.label,
-        subject: next.subject || '',
-        body: next.body || '',
-      };
-    });
+    const steps = (draftSteps.length ? draftSteps : ws.steps || []).map((step) => ({
+      day: Number(step.day || 0),
+      channel: step.channel,
+      label: step.label,
+      subject: step.subject || '',
+      body: step.body || '',
+      mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
+    }));
     busy = true; render();
     const result = await app.callServerTool({
       name: 'run_update_sequence',
@@ -667,7 +725,24 @@ function dueLabel(task) {
     });
   }
 
+  function activeTask() {
+    return (ws?.tasks || []).find((t) => t.id === selectedTaskId) || null;
+  }
+
+  function stepOf(task) {
+    if (!task) return null;
+    return (draftSteps.length ? draftSteps : ws?.steps || []).find((s) => s.id === task.stepId) || null;
+  }
+
   function selectedEmailMessage(contact) {
+    const task = activeTask();
+    if (task?.channel === 'email') {
+      if (task.messageId) {
+        const hit = (ws.messages || []).find((m) => m.id === task.messageId);
+        if (hit) return hit;
+      }
+      return messageFor(ws, contact.id, { id: task.stepId, channel: 'email' });
+    }
     if (selectedMessageId) {
       return (ws.messages || []).find((m) => m.id === selectedMessageId) || null;
     }
@@ -677,7 +752,8 @@ function dueLabel(task) {
   }
 
   function currentDraftFields(contact) {
-    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const task = activeTask();
+    const step = (task?.channel === 'email' && stepOf(task)) || emailSteps()[peopleStep] || emailSteps()[0];
     const msg = selectedEmailMessage(contact);
     return {
       subject: document.getElementById('draft-subject')?.value
@@ -686,12 +762,13 @@ function dueLabel(task) {
       body: document.getElementById('draft-body')?.value
         ?? msg?.body
         ?? interpolate(step?.body || '', contact),
+      stepId: task?.channel === 'email' ? task.stepId : step?.id,
     };
   }
 
   async function saveDraft(contact) {
-    const { subject, body } = currentDraftFields(contact);
-    const step = emailSteps()[peopleStep] || emailSteps()[0];
+    const { subject, body, stepId } = currentDraftFields(contact);
+    const step = stepId ? { id: stepId } : (emailSteps()[peopleStep] || emailSteps()[0]);
     const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
@@ -725,10 +802,16 @@ function dueLabel(task) {
         if (patched?.error) { busy = false; setNotice(patched.error, 'err'); return; }
         result = await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } });
       } else {
-        result = await app.callServerTool({
-          name: 'run_send_message',
-          arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'sent' },
-        });
+        const saved = parseToolResult(await app.callServerTool({
+          name: 'run_save_draft',
+          arguments: { contactId: contact.id, subject, body, channel: 'email', stepId: currentDraftFields(contact).stepId },
+        }));
+        if (saved?.error || !saved?.message?.id) {
+          busy = false;
+          setNotice(saved?.error || 'Could not save the email.', 'err');
+          return;
+        }
+        result = await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
       }
       busy = false;
       const parsed = parseToolResult(result);
@@ -774,6 +857,27 @@ function dueLabel(task) {
     setNotice(`Scheduled for ${contact.name}.`, 'ok');
   }
 
+  async function setStepMode(stepId, mode) {
+    const step = draftSteps.find((s) => s.id === stepId);
+    if (step) step.mode = mode === 'auto' ? 'auto' : 'manual';
+    busy = true; render();
+    const result = await app.callServerTool({
+      name: 'run_set_step_mode',
+      arguments: { projectId: ws.projectId, stepId, mode: mode === 'auto' ? 'auto' : 'manual' },
+    });
+    busy = false;
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
+    const keep = selectedStep;
+    if (parsed?.projectId) {
+      ws = parsed;
+      syncDrafts();
+    }
+    selectedStep = keep;
+    tab = 'flows';
+    setNotice(mode === 'auto' ? 'Auto-send is on for this step.' : 'This step is manual. It will show up in To-dos.', 'ok');
+  }
+
   async function startSequence(contactIds) {
     if (!pendingStart) {
       pendingStart = true;
@@ -781,7 +885,7 @@ function dueLabel(task) {
       setNotice(
         pendingContactIds?.length === 1
           ? 'Enroll this person in the sequence?'
-          : 'Start this sequence? Every step becomes a dated task — nothing sends until you send it or its day arrives.',
+          : 'Enroll everyone already in this flow? Manual steps become your to-dos. Auto emails send on their day.',
         ''
       );
       return;
@@ -801,7 +905,8 @@ function dueLabel(task) {
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
     ws = parsed;
     syncDrafts();
-    tab = 'tasks';
+    tab = 'todos';
+    workFocus = false;
     const open = taskCounts().open;
     setNotice(open ? `${open} tasks due — work them here.` : 'Sequence started. Tasks land here on their send day.', 'ok');
     app.updateModelContext?.({
@@ -994,7 +1099,7 @@ function dueLabel(task) {
 
   async function startCall(contact) {
     if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
-    const typed = seqPane === 'call' && dialDigits ? dialDigits : '';
+    const typed = activeTask()?.channel === 'call' && dialDigits ? dialDigits : '';
     const number = toE164(typed || contact.phone || '');
     if (!number) { setNotice('This contact has no valid phone number.', 'err'); return; }
     busy = true; render();
@@ -1094,7 +1199,7 @@ function dueLabel(task) {
     const body = document.getElementById('li-body')?.value
       || contact.linkedinPreview?.body
       || '';
-    const step = (ws.steps || []).find((s) => s.channel === 'linkedin');
+    const step = (activeTask()?.channel === 'linkedin' && stepOf(activeTask())) || (ws.steps || []).find((s) => s.channel === 'linkedin');
     const existing = latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
     const result = existing
@@ -1118,7 +1223,11 @@ function dueLabel(task) {
     const body = document.getElementById('li-body')?.value
       || contact.linkedinPreview?.body
       || '';
-    const existing = latestChannelMessage(contact.id, 'linkedin');
+    const task = activeTask();
+    const step = (task?.channel === 'linkedin' && stepOf(task)) || (ws.steps || []).find((s) => s.channel === 'linkedin');
+    const existing = (task?.messageId && (ws.messages || []).find((m) => m.id === task.messageId))
+      || messageFor(ws, contact.id, step)
+      || latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
     try {
     if (existing && existing.status !== 'sent') {
@@ -1131,8 +1240,12 @@ function dueLabel(task) {
     const result = existing && existing.status !== 'sent'
       ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
       : await app.callServerTool({
-          name: 'run_send_message',
-          arguments: { contactId: contact.id, body, channel: 'linkedin', status: 'sent' },
+          name: 'run_save_draft',
+          arguments: { contactId: contact.id, body, channel: 'linkedin', stepId: step?.id },
+        }).then(async (savedResult) => {
+          const saved = parseToolResult(savedResult);
+          if (saved?.error || !saved?.message?.id) return savedResult;
+          return app.callServerTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
         });
     busy = false;
     const parsed = parseToolResult(result);
@@ -1272,8 +1385,10 @@ function dueLabel(task) {
   }
 
   function placeCall() {
-    const contact = dialerContact();
+    const task = activeTask();
+    const contact = (task?.channel === 'call' && contactById(task.contactId)) || dialerContact();
     if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+    if (task?.channel === 'call') dialContactId = contact.id;
     void startCall(contact);
   }
 
@@ -1306,7 +1421,7 @@ function dueLabel(task) {
             <div class="kicker">${esc(step.label || 'Call')}</div>
             <div class="meta">${esc(status)}</div>
           </div>
-          ${people.length > 1 && !live ? `
+          ${people.length > 1 && !live && activeTask()?.channel !== 'call' ? `
             <select id="dial-who">
               ${people.map((c) => `<option value="${esc(c.id)}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
             </select>
@@ -1457,7 +1572,8 @@ function dueLabel(task) {
     const showWrite = Boolean(opts?.showWrite);
     const steps = emailSteps();
     if (peopleStep >= steps.length) peopleStep = Math.max(0, steps.length - 1);
-    const step = steps[peopleStep] || steps[0];
+    const taskStep = activeTask()?.channel === 'email' ? stepOf(activeTask()) : null;
+    const step = taskStep || steps[peopleStep] || steps[0];
     const msg = selected ? selectedEmailMessage(selected) : null;
     const subject = msg?.subject || (selected && step ? interpolate(step.subject || '', selected) : '');
     const body = msg?.body || (selected && step ? interpolate(step.body || '', selected) : '');
@@ -1480,7 +1596,7 @@ function dueLabel(task) {
         <textarea id="draft-body">${esc(body)}</textarea>
         <div class="row">
           <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
-          <button class="btn primary" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Send now</button>
+          <button class="btn accent" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Send</button>
           <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
           <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
           ${showWrite ? `<button class="btn" id="write">Ask Claude to write</button>` : ''}
@@ -1619,8 +1735,11 @@ function dueLabel(task) {
   }
 
   function renderLinkedInPanel(contact) {
-    const step = (ws.steps || []).find((s) => s.channel === 'linkedin');
-    const msg = latestChannelMessage(contact.id, 'linkedin');
+    const task = activeTask();
+    const step = (task?.channel === 'linkedin' && stepOf(task)) || (ws.steps || []).find((s) => s.channel === 'linkedin');
+    const msg = (task?.channel === 'linkedin' && task.messageId && (ws.messages || []).find((m) => m.id === task.messageId))
+      || messageFor(ws, contact.id, step)
+      || latestChannelMessage(contact.id, 'linkedin');
     const body = msg?.body || contact.linkedinPreview?.body || (step ? interpolate(step.body || '', contact) : '');
     const sent = msg?.status === 'sent' || doneSet(contact).has('linkedin');
     return `
@@ -1629,7 +1748,7 @@ function dueLabel(task) {
         <label>Message</label>
         <textarea id="li-body">${esc(body)}</textarea>
         <div class="row">
-          <button class="btn primary" id="send-li" data-contact-id="${esc(contact.id)}" ${busy || sent ? 'disabled' : ''}>${sent ? 'Sent' : 'Send LinkedIn'}</button>
+          <button class="btn accent" id="send-li" data-contact-id="${esc(contact.id)}" ${busy || sent ? 'disabled' : ''}>${sent ? 'Sent' : 'Send'}</button>
           <button class="btn" id="save-li" ${busy || sent ? 'disabled' : ''}>Save draft</button>
           ${contact.linkedinUrl ? '<button class="btn" id="open-li">Open profile</button>' : ''}
         </div>
@@ -1658,13 +1777,17 @@ function dueLabel(task) {
     selectedMessageId = task.messageId || null;
     actionPane = task.channel;
     pendingSend = false;
+    if (dialState !== 'dialing' && dialState !== 'connected') dialContactId = task.contactId;
     const idx = emailSteps().findIndex((s) => s.id === task.stepId);
     if (idx >= 0) peopleStep = idx;
   }
 
   /** After finishing a task, drop the selection so the next due one opens. */
   function advanceTask() {
-    if (tab === 'tasks') selectedTaskId = null;
+    if (tab === 'todos') {
+      selectedTaskId = null;
+      workFocus = true;
+    }
   }
 
   function stepTask(delta) {
@@ -1920,6 +2043,152 @@ function dueLabel(task) {
     }
   }
 
+  function stepKind(step) {
+    if (step.channel === 'call') return 'Call';
+    if (step.channel === 'linkedin') return 'LinkedIn connect';
+    return step.mode === 'auto' ? 'Auto email' : 'Manual email';
+  }
+
+  function dueDate(task) {
+    const d = new Date(task.dueAt);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  function myOpenTasks() {
+    return (ws.tasks || []).filter((t) => t.owner !== 'auto' && t.state !== 'done' && t.state !== 'skipped');
+  }
+
+  function channelTasks() {
+    const tasks = myOpenTasks();
+    if (taskChannel === 'all') return tasks;
+    return tasks.filter((t) => t.channel === taskChannel);
+  }
+
+  function taskTitle(task) {
+    if (task.channel === 'call') return 'Call';
+    if (task.channel === 'linkedin') return 'LinkedIn connect';
+    return 'Send email';
+  }
+
+  function renderFlows() {
+    const steps = draftSteps.length ? draftSteps : (ws.steps || []);
+    if (selectedStep >= steps.length) selectedStep = 0;
+    const step = steps[selectedStep];
+    const rail = steps.map((s, i) => {
+      const prev = i === 0 ? 0 : Number(steps[i - 1].day || 0);
+      const wait = Number(s.day || 0) - prev;
+      const ico = s.channel === 'call' ? ICO.phone : s.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
+      return `
+        ${i ? `<div class="rail-line"></div>${wait > 0 ? `<div class="rail-wait">Wait ${wait} day${wait === 1 ? '' : 's'}</div><div class="rail-line"></div>` : ''}` : ''}
+        <button type="button" class="rail-step ${i === selectedStep ? 'on' : ''}" data-step="${i}">
+          <span class="rail-ico">${ico}</span>
+          <span class="rail-name">${esc(stepKind(s))}</span>
+        </button>
+      `;
+    }).join('');
+    const tokens = (ws.catalog || []).slice(0, 8).map((f) =>
+      `<button type="button" class="token" data-token="${esc(f.key)}">${esc(f.label)}</button>`
+    ).join('');
+    const editor = !step ? '<p class="empty">No steps yet.</p>' : `
+      <div class="step-card">
+        <div class="kicker">${esc(stepKind(step))}${step.label ? ` · ${esc(step.label)}` : ''}</div>
+        ${step.channel === 'email' ? `
+          <div class="mode-toggle">
+            <button type="button" class="btn ${step.mode === 'auto' ? '' : 'on'}" data-mode="manual">Manual</button>
+            <button type="button" class="btn ${step.mode === 'auto' ? 'on' : ''}" data-mode="auto">Auto-send</button>
+          </div>
+          <p class="sub">${step.mode === 'auto' ? 'Sends on day ' + Number(step.day || 0) + ' without a to-do.' : 'Becomes a to-do assigned to you.'}</p>
+        ` : `<p class="sub">Becomes a to-do assigned to you. You place the ${step.channel === 'call' ? 'call' : 'LinkedIn note'} from To-dos.</p>`}
+        <label>Day</label>
+        <input id="edit-day" type="text" value="${esc(step.day)}" />
+        <label>Label</label>
+        <input id="edit-label" type="text" value="${esc(step.label || '')}" />
+        ${step.channel !== 'call' ? `<label>Subject</label><input id="edit-subject" type="text" value="${esc(step.subject || '')}" />` : ''}
+        <label>${step.channel === 'call' ? 'Talk track' : 'Body'}</label>
+        ${tokens ? `<div class="token-row">${tokens}</div>` : ''}
+        <textarea id="edit-body">${esc(step.body || '')}</textarea>
+        <div class="step-foot">
+          <button class="btn" id="write" ${busy ? 'disabled' : ''}>Write with Claude</button>
+          <button class="btn accent" id="save-seq" ${busy ? 'disabled' : ''}>Save step</button>
+        </div>
+      </div>
+    `;
+    return `<div class="flow-layout"><div class="rail">${rail || '<p class="empty">No steps yet.</p>'}</div>${editor}</div>`;
+  }
+
+  function renderWork(task) {
+    const contact = contactById(task.contactId);
+    if (!contact) return '<p class="empty">Contact missing.</p>';
+    const step = stepOf(task);
+    if (task.channel === 'call') {
+      const dispositions = dialState === 'ended' ? '' : `
+        <label>Log outcome</label>
+        <div class="row">
+          <button class="btn" data-disp="interested" ${busy ? 'disabled' : ''}>Interested</button>
+          <button class="btn" data-disp="no_answer" ${busy ? 'disabled' : ''}>No answer</button>
+          <button class="btn" data-disp="not_interested" ${busy ? 'disabled' : ''}>Not interested</button>
+          <button class="btn" data-disp="completed" ${busy ? 'disabled' : ''}>Done</button>
+        </div>`;
+      return `
+        <div class="work-top"><button class="btn" id="work-back">Back</button><div class="who">${esc(contact.name)}</div></div>
+        ${renderDialer({ ...(step || {}), body: task.body || step?.body || '', label: task.stepLabel || 'Call', channel: 'call' })}
+        ${dispositions}
+      `;
+    }
+    if (task.channel === 'linkedin') {
+      return `
+        <div class="work-top"><button class="btn" id="work-back">Back</button><div class="who">${esc(contact.name)}</div><button class="btn" id="task-skip">Skip</button></div>
+        ${renderLinkedInPanel(contact)}
+      `;
+    }
+    return `
+      <div class="work-top"><button class="btn" id="work-back">Back</button><div class="who">${esc(contact.name)} · ${esc(task.stepLabel || 'Email')}</div><button class="btn" id="task-skip">Skip</button></div>
+      ${renderComposer(contact, { hideSteps: true, showWrite: true })}
+    `;
+  }
+
+  function renderTodos() {
+    const all = myOpenTasks();
+    const counts = {
+      all: all.length,
+      email: all.filter((t) => t.channel === 'email').length,
+      call: all.filter((t) => t.channel === 'call').length,
+      linkedin: all.filter((t) => t.channel === 'linkedin').length,
+    };
+    const tasks = channelTasks();
+    if (workFocus) {
+      const current = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
+      if (!current) {
+        workFocus = false;
+      } else {
+        if (current.id !== selectedTaskId) selectTask(current);
+        return renderWork(current);
+      }
+    }
+    return `
+      <div class="todo-filters">
+        ${[['all', 'All'], ['email', 'Emails'], ['call', 'Calls'], ['linkedin', 'LinkedIn']].map(([key, label]) => `
+          <button type="button" class="${taskChannel === key ? 'on' : ''}" data-task-channel="${key}">${label} <span class="count">${counts[key]}</span></button>
+        `).join('')}
+      </div>
+      ${!tasks.length ? `<p class="empty">${all.length ? 'Nothing in this channel.' : 'No to-dos yet. Ask Claude to enroll people into this sequence.'}</p>` : `
+        <div class="todos">
+          ${tasks.map((task) => `
+            <button type="button" class="todo ${task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
+              <span class="box" data-skip="${esc(task.id)}" title="Skip"></span>
+              <span>
+                <span class="title">${esc(taskTitle(task))}</span>
+                <div class="preview">Step ${Number(task.stepOrder || 0) + 1} · ${esc(task.contactName)}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}${task.reason ? ` · ${esc(task.reason)}` : ''}</div>
+              </span>
+              <span class="todo-due"><span>Due</span>${esc(dueDate(task))}</span>
+            </button>
+          `).join('')}
+        </div>
+      `}
+    `;
+  }
+
   function render() {
     if (!ws) {
       root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
@@ -1927,20 +2196,21 @@ function dueLabel(task) {
     }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
+    const open = myOpenTasks().length;
     root.innerHTML = `
-      <header>
+      <header class="engage-head">
         <div>
-          <h1>${esc(ws.name)}</h1>
-          <div class="sub">${headerMeta()}</div>
-        </div>
-        <div class="actions">
-          <button class="btn" id="full">Full screen</button>
-          <button class="btn" id="open">Open workspace</button>
+          <div class="eyebrow">Engage</div>
+          <h1>${tab === 'todos' ? 'To-dos' : 'Flows'}</h1>
+          <div class="sub">${esc(ws.name)}${ws.assignee?.name ? ` · ${esc(ws.assignee.name)}` : ''}</div>
         </div>
       </header>
-      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ws.researchPending ? '<div class="banner">Personalized copy is not saved yet — use Ask Claude to write drafts, or wait for save_research.</div>' : ''}
-      ${renderTabs()}
-      <div id="panel">${renderPanel()}</div>
+      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+      <div class="page-tabs">
+        <button class="page-tab ${tab === 'flows' ? 'on' : ''}" data-tab="flows">Flows</button>
+        <button class="page-tab ${tab === 'todos' ? 'on' : ''}" data-tab="todos">To-dos${open ? ` <span class="count">${open}</span>` : ''}</button>
+      </div>
+      <div id="panel">${tab === 'todos' ? renderTodos() : renderFlows()}</div>
     `;
     bindWorkspace();
   }
@@ -1948,11 +2218,11 @@ function dueLabel(task) {
   function bindWorkspace() {
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
     root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
-    root.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => {
+    root.querySelectorAll('.page-tab').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
-      resetDialer();
+      if (dialState !== 'dialing' && dialState !== 'connected') resetDialer();
       tab = el.getAttribute('data-tab');
-      if (tab !== 'inbox') selectedMessageId = null;
+      workFocus = false;
       render();
     }));
     root.querySelectorAll('[data-pane]').forEach((el) => el.addEventListener('click', () => {
@@ -1963,17 +2233,7 @@ function dueLabel(task) {
     }));
     root.querySelectorAll('[data-step]').forEach((el) => el.addEventListener('click', () => {
       flushEditor();
-      const next = Number(el.getAttribute('data-step'));
-      const changed = next !== selectedStep;
-      selectedStep = next;
-      const step = visibleSteps()[selectedStep];
-      seqPane = step?.channel === 'call' ? 'call' : 'email';
-      if (seqPane === 'call') {
-        if (changed || dialState === 'idle') resetDialer(selectedId ?? undefined);
-        selectedId = dialerContact()?.id ?? selectedId;
-      } else {
-        resetDialer();
-      }
+      selectedStep = Number(el.getAttribute('data-step'));
       notice = '';
       render();
     }));
@@ -1988,12 +2248,45 @@ function dueLabel(task) {
       notice = '';
       render();
     }));
-    root.querySelectorAll('[data-task]').forEach((el) => el.addEventListener('click', () => {
+    root.querySelectorAll('[data-task]').forEach((el) => el.addEventListener('click', (e) => {
+      if (e.target?.closest?.('[data-skip]')) return;
       const task = (ws.tasks || []).find((t) => t.id === el.getAttribute('data-task'));
       if (!task) return;
       selectTask(task);
+      workFocus = true;
       notice = '';
       render();
+    }));
+    root.querySelectorAll('[data-skip]').forEach((el) => el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const task = (ws.tasks || []).find((t) => t.id === el.getAttribute('data-skip'));
+      if (!task) return;
+      selectTask(task);
+      void skipCurrentTask();
+    }));
+    root.querySelector('#work-back')?.addEventListener('click', () => { workFocus = false; render(); });
+    root.querySelector('#task-skip')?.addEventListener('click', () => void skipCurrentTask());
+    root.querySelectorAll('[data-task-channel]').forEach((el) => el.addEventListener('click', () => {
+      taskChannel = el.getAttribute('data-task-channel');
+      selectedTaskId = null;
+      workFocus = false;
+      render();
+    }));
+    root.querySelectorAll('[data-mode]').forEach((el) => el.addEventListener('click', () => {
+      const step = draftSteps[selectedStep];
+      if (!step?.id) return;
+      void setStepMode(step.id, el.getAttribute('data-mode'));
+    }));
+    root.querySelectorAll('[data-token]').forEach((el) => el.addEventListener('click', () => {
+      const area = document.getElementById('edit-body');
+      const token = `{{${el.getAttribute('data-token')}}}`;
+      if (!area) return;
+      const start = area.selectionStart ?? area.value.length;
+      const end = area.selectionEnd ?? start;
+      area.value = area.value.slice(0, start) + token + area.value.slice(end);
+      area.dispatchEvent(new Event('input'));
+      const step = draftSteps[selectedStep];
+      if (step) step.body = area.value;
     }));
     root.querySelector('#task-prev')?.addEventListener('click', () => stepTask(-1));
     root.querySelector('#task-next')?.addEventListener('click', () => void skipCurrentTask());

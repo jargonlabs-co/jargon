@@ -15,6 +15,9 @@ import type {
 } from './types'
 import type { ServerConfig } from './config'
 import { uid } from './crypto'
+import { getConnection, readSecrets } from './connections'
+import { fetchHubSpotContacts } from './providers/hubspot'
+import { prospectsToContacts, type ContextProspect } from './providers/prospects'
 import { sendPlatformGmail } from './providers/gmail'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
@@ -91,6 +94,7 @@ export type PublicStep = {
   label: string
   subject?: string
   body?: string
+  mode?: 'manual' | 'auto'
   order: number
 }
 
@@ -191,6 +195,7 @@ export function toPublicStep(step: SequenceStep | null): PublicStep | null {
     label: step.label,
     subject: step.subject,
     body: step.body,
+    mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
     order: step.order
   }
 }
@@ -1078,6 +1083,7 @@ export function updatePublicSequence(
         label: step.label,
         subject: step.subject,
         body: step.body,
+        mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' as const : step.mode === 'manual' ? 'manual' as const : undefined,
         order
       }))
     )
@@ -1593,19 +1599,29 @@ export async function enrollPublicSequence(
           continue
         }
         // Keep Claude's researched copy. Only attach the step and send day.
+        const auto = step.channel === 'email' && step.mode === 'auto'
         const patched = patchPublicMessage(store, orgId, existing.id, {
           stepId: step.id,
-          sendAt: existing.sendAt ?? sendAt
+          sendAt: existing.sendAt ?? sendAt,
+          status:
+            existing.status === 'sent' || existing.status === 'cancelled'
+              ? undefined
+              : auto
+                ? 'queued'
+                : existing.status === 'queued'
+                  ? 'draft'
+                  : undefined
         })
         if (patched.ok) created.push(patched.message)
         continue
       }
+      const auto = step.channel === 'email' && step.mode === 'auto'
       const result = await sendPublicMessage(store, config, contact, {
         subject: step.subject,
         body: step.body ?? '',
         channel: step.channel,
-        // Enrollment drafts the cadence; nothing leaves until a human sends it.
-        status: 'draft',
+        // Manual steps stay drafts until the rep sends them. Auto emails queue for their day.
+        status: auto ? 'queued' : 'draft',
         sendAt,
         stepId: step.id,
         sandbox: input?.sandbox
@@ -1658,6 +1674,165 @@ export async function enrollPublicSequence(
     skipped,
     messages: created
   }
+}
+
+export function setStepSendMode(
+  store: DataStore,
+  orgId: string,
+  projectId: string,
+  stepId: string,
+  mode: 'manual' | 'auto'
+): { ok: true; mode: 'manual' | 'auto' } | { ok: false; error: string } {
+  const project = findOrgProject(store, orgId, projectId)
+  if (!project) return { ok: false, error: 'Project not found' }
+  const step = store.db.steps.find((s) => s.id === stepId && s.projectId === projectId && s.orgId === orgId)
+  if (!step) return { ok: false, error: 'Step not found' }
+  if (step.channel !== 'email') return { ok: false, error: 'Only email steps can auto-send' }
+  const sendMode = mode === 'auto' ? 'auto' : 'manual'
+  const now = Date.now()
+  store.update((db) => {
+    const row = db.steps.find((s) => s.id === stepId)
+    if (row) row.mode = sendMode
+    const next = db.projects.find((p) => p.id === projectId)
+    const specStep = next?.spec?.steps?.[row?.order ?? -1]
+    if (specStep && specStep.channel === 'email') specStep.mode = sendMode
+    for (const message of db.messages) {
+      if (message.orgId !== orgId || message.stepId !== stepId) continue
+      if (message.status === 'sent' || message.status === 'cancelled' || message.status === 'failed') continue
+      if (sendMode === 'auto' && message.status === 'draft') {
+        message.status = 'queued'
+        if (message.sendAt == null) message.sendAt = now
+      }
+      if (sendMode === 'manual' && message.status === 'queued') message.status = 'draft'
+      message.updatedAt = now
+    }
+    if (next) next.updatedAt = now
+  })
+  return { ok: true, mode: sendMode }
+}
+
+export type HubSpotPickerContact = {
+  externalId: string
+  name: string
+  title: string
+  company: string
+  email: string
+  phone: string
+  linkedinUrl: string
+}
+
+export async function listHubSpotContactsForEnroll(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string
+): Promise<
+  | { ok: true; connected: boolean; contacts: HubSpotPickerContact[] }
+  | { ok: false; error: string }
+> {
+  const conn = getConnection(store, orgId, 'hubspot')
+  if (!conn || conn.status !== 'connected') return { ok: true, connected: false, contacts: [] }
+  const secrets = readSecrets(conn)
+  const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
+  try {
+    const prospects = await fetchHubSpotContacts(secrets.accessToken, 100, demo)
+    return {
+      ok: true,
+      connected: true,
+      contacts: prospects.map((p) => ({
+        externalId: p.externalId,
+        name: p.name,
+        title: p.title,
+        company: p.company,
+        email: p.email,
+        phone: p.phone,
+        linkedinUrl: p.linkedinUrl || ''
+      }))
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
+  }
+}
+
+function upsertHubSpotProspects(
+  store: DataStore,
+  orgId: string,
+  projectId: string,
+  prospects: ContextProspect[]
+): { ok: true; contactIds: string[] } | { ok: false; error: string } {
+  const project = findOrgProject(store, orgId, projectId)
+  if (!project) return { ok: false, error: 'Project not found' }
+  const existing = store.db.contacts.filter((c) => c.projectId === projectId)
+  const fresh = prospects.filter(
+    (p) => !existing.some((c) => c.externalId === p.externalId && c.source === 'hubspot')
+  )
+  if (existing.length + fresh.length > MAX_CONTACTS) {
+    return { ok: false, error: `workspace can hold ${MAX_CONTACTS} contacts` }
+  }
+  const contactIds: string[] = []
+  store.update((db) => {
+    const now = Date.now()
+    for (const prospect of prospects) {
+      const row = db.contacts.find(
+        (c) => c.projectId === projectId && c.externalId === prospect.externalId && c.source === 'hubspot'
+      )
+      if (row) {
+        row.name = prospect.name
+        row.company = prospect.company
+        row.title = prospect.title
+        row.email = prospect.email
+        row.phone = prospect.phone
+        row.city = prospect.city
+        row.linkedinUrl = prospect.linkedinUrl
+        row.updatedAt = now
+        contactIds.push(row.id)
+        continue
+      }
+      const [created] = prospectsToContacts(orgId, projectId, [prospect], 'hubspot')
+      if (!created) continue
+      created.status = 'queued'
+      db.contacts.push(created)
+      contactIds.push(created.id)
+    }
+    setProjectCatalog(db, projectId)
+    const next = db.projects.find((p) => p.id === projectId)
+    if (next) {
+      next.answers = { ...next.answers, data_source: 'hubspot', prospect_source: 'hubspot' }
+      next.updatedAt = now
+    }
+  })
+  return { ok: true, contactIds }
+}
+
+export async function enrollHubSpotContacts(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  projectId: string,
+  externalIds: string[],
+  sandbox?: boolean
+): Promise<{ ok: true; enrolled: number } | { ok: false; error: string }> {
+  if (!externalIds.length) return { ok: false, error: 'Pick at least one contact' }
+  const conn = getConnection(store, orgId, 'hubspot')
+  if (!conn || conn.status !== 'connected') return { ok: false, error: 'HubSpot is not connected' }
+  const secrets = readSecrets(conn)
+  const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
+  let prospects: ContextProspect[]
+  try {
+    prospects = await fetchHubSpotContacts(secrets.accessToken, 100, demo)
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
+  }
+  const wanted = new Set(externalIds)
+  const picked = prospects.filter((p) => wanted.has(p.externalId))
+  if (!picked.length) return { ok: false, error: 'None of those contacts are in HubSpot' }
+  const upserted = upsertHubSpotProspects(store, orgId, projectId, picked)
+  if (!upserted.ok) return upserted
+  const started = await enrollPublicSequence(store, config, orgId, projectId, {
+    contactIds: upserted.contactIds,
+    sandbox
+  })
+  if (!started.ok) return started
+  return { ok: true, enrolled: started.contacts }
 }
 
 export async function dispatchDueMessages(

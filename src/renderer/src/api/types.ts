@@ -30,6 +30,7 @@ export interface WorkspaceSpecStep {
   label: string
   subject?: string
   body?: string
+  mode?: 'manual' | 'auto'
 }
 
 export interface WorkspaceSpec {

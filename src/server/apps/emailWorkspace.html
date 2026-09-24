@@ -247,6 +247,10 @@
       text-align: center; font-size: 22px; font-weight: 600;
       letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 2px;
     }
+    input.dial-num {
+      display: block; width: 100%; border: 0; background: transparent;
+      padding: 0; outline: none; box-shadow: none;
+    }
     .dial-timer {
       text-align: center; color: var(--muted); font-size: 12px;
       font-variant-numeric: tabular-nums; min-height: 17px;
@@ -1100,6 +1104,7 @@ function dueLabel(task) {
 
   async function startCall(contact) {
     if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
+    dialDigits = String(document.getElementById('dial-num')?.value ?? dialDigits).replace(/[^\d*#]/g, '').slice(0, 20);
     const number = toE164(dialDigits);
     if (!number) { setNotice('Enter a phone number.', 'err'); return; }
     busy = true; render();
@@ -1438,7 +1443,9 @@ function dueLabel(task) {
           ` : ''}
         </div>
         <div class="dial-who">${esc(contact?.name || 'Keypad')}</div>
-        <div class="dial-num">${esc(number || 'Enter a number')}</div>
+        ${live
+          ? `<div class="dial-num">${esc(number || 'Enter a number')}</div>`
+          : `<input id="dial-num" class="dial-num" type="tel" inputmode="tel" autocomplete="off" value="${esc(number)}" placeholder="Enter a number" />`}
         <div class="dial-timer" id="dial-timer">${live ? clockText(dialSeconds) : ''}</div>
         ${script ? `
           <div class="dial-script">
@@ -2321,6 +2328,19 @@ function dueLabel(task) {
       dialDigits = dialDigits.slice(0, -1);
       render();
     });
+    root.querySelector('#dial-num')?.addEventListener('input', (e) => {
+      dialDigits = String(e.target.value || '').replace(/[^\d*#]/g, '').slice(0, 20);
+      if (e.target.value !== dialDigits) e.target.value = dialDigits;
+    });
+    root.querySelector('#dial-num')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); placeCall(); }
+    });
+    const dialField = document.getElementById('dial-num');
+    if (dialField && dialState !== 'dialing' && dialState !== 'connected') {
+      dialField.focus();
+      const end = dialField.value.length;
+      try { dialField.setSelectionRange(end, end); } catch (_) { /* ignore */ }
+    }
     root.querySelector('#dial-call')?.addEventListener('click', placeCall);
     root.querySelector('#dial-end')?.addEventListener('click', hangUp);
     root.querySelector('#dial-mute')?.addEventListener('click', () => {
@@ -2417,6 +2437,24 @@ function dueLabel(task) {
       if (selected) void logCallOutcome(selected, el.getAttribute('data-disp'));
     }));
   }
+
+  document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('dial-call')) return;
+    const tag = e.target?.tagName || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (dialState === 'dialing' || dialState === 'connected') return;
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      dialDigits = dialDigits.slice(0, -1);
+      render();
+      return;
+    }
+    if (/^[0-9*#]$/.test(e.key)) {
+      e.preventDefault();
+      dialDigits = `${dialDigits}${e.key}`.slice(0, 20);
+      render();
+    }
+  });
 
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);

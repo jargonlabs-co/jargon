@@ -26,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=engage5'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=engage6'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -51,6 +51,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=engage2',
   'ui://jargon/email-workspace.html?v=engage3',
   'ui://jargon/email-workspace.html?v=engage4',
+  'ui://jargon/email-workspace.html?v=engage5',
   EMAIL_WORKSPACE_URI
 ] as const
 

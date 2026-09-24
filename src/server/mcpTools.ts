@@ -499,7 +499,11 @@ export function registerJargonTools(
     subject: z.string().optional(),
     sendAt: z.union([z.number(), z.string()]).optional().describe('Required if status is queued. Unix ms or ISO date.')
   })
-  const StartCallInput = z.object({ summary: Summary, contactId: z.string() })
+  const StartCallInput = z.object({
+    summary: Summary,
+    contactId: z.string(),
+    to: z.string().optional().describe('Number to dial. Overrides the contact phone, including when the contact has none.')
+  })
   const CompleteCallInput = z.object({
     summary: Summary,
     callId: z.string(),
@@ -571,10 +575,10 @@ export function registerJargonTools(
     )
   }
 
-  async function execStartCall(contactId: string) {
+  async function execStartCall(contactId: string, to?: string) {
     const contact = findOrgContact(store, actor.orgId, contactId)
     if (!contact) return fail('Contact not found')
-    if (!toE164(contact.phone ?? '')) return fail('This contact has no valid phone number.')
+    if (!toE164(to || contact.phone || '')) return fail('Enter a valid phone number.')
     if (!sandbox) {
       const live = inspectLiveVoice(config)
       if (!live.ok) return fail(live.error)
@@ -653,7 +657,7 @@ export function registerJargonTools(
         'Start a call in the in-chat dialer. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits. Do not send the user to dashboardUrl to dial.',
       inputSchema: StartCallInput
     },
-    async ({ contactId }) => execStartCall(contactId)
+    async ({ contactId, to }) => execStartCall(contactId, to)
   )
 
   server.registerTool(
@@ -664,7 +668,7 @@ export function registerJargonTools(
       _meta: APP_ONLY_META,
       inputSchema: StartCallInput.omit({ summary: true })
     },
-    async ({ contactId }) => execStartCall(contactId)
+    async ({ contactId, to }) => execStartCall(contactId, to)
   )
 
   server.registerTool(

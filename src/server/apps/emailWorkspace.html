@@ -607,6 +607,7 @@ function dueLabel(task) {
   let dialState = 'idle';
   let dialContactId = null;
   let dialDigits = '';
+  let dialSeedContactId = null;
   let dialSeconds = 0;
   let dialMuted = false;
   let dialTicker = 0;
@@ -1099,9 +1100,8 @@ function dueLabel(task) {
 
   async function startCall(contact) {
     if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
-    const typed = activeTask()?.channel === 'call' && dialDigits ? dialDigits : '';
-    const number = toE164(typed || contact.phone || '');
-    if (!number) { setNotice('This contact has no valid phone number.', 'err'); return; }
+    const number = toE164(dialDigits);
+    if (!number) { setNotice('Enter a phone number.', 'err'); return; }
     busy = true; render();
     try {
       await hangupPlivo();
@@ -1113,7 +1113,7 @@ function dueLabel(task) {
       }
       const started = parseToolResult(await app.callServerTool({
         name: 'run_start_call',
-        arguments: { contactId: contact.id },
+        arguments: { contactId: contact.id, to: number },
       }));
       if (started?.error) { setNotice(started.error, 'err'); return; }
       const call = started.call;
@@ -1367,7 +1367,15 @@ function dueLabel(task) {
   }
 
   function dialerNumber() {
-    return dialDigits || dialerContact()?.phone || '';
+    return dialDigits;
+  }
+
+  function seedDialDigits(contact) {
+    if (!contact || dialState === 'dialing' || dialState === 'connected') return;
+    if (dialSeedContactId === contact.id) return;
+    dialSeedContactId = contact.id;
+    const digits = String(contact.phone || '').replace(/\D/g, '');
+    dialDigits = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
   }
 
   function resetDialer(contactId) {
@@ -1381,6 +1389,7 @@ function dueLabel(task) {
     dialSeconds = 0;
     dialMuted = false;
     dialDigits = '';
+    dialSeedContactId = null;
     if (contactId !== undefined) dialContactId = contactId;
   }
 
@@ -1404,6 +1413,7 @@ function dueLabel(task) {
   function renderDialer(step) {
     const people = ws.contacts || [];
     const contact = dialerContact();
+    seedDialDigits(contact);
     const number = dialerNumber();
     const live = dialState === 'dialing' || dialState === 'connected';
     const status = dialState === 'dialing'

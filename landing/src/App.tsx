@@ -4,6 +4,7 @@ import { LoginPanel } from './components/LoginPanel'
 import { AccountApp, toolPath } from './components/account/AccountApp'
 import { ToolApp } from './components/ToolApp'
 import { MarketingPage } from './MarketingPage'
+import { ChangelogPage } from './components/ChangelogPage'
 import { ConnectClaude } from './components/ConnectClaude'
 import { IconPage } from './components/IconPage'
 import { ResetPasswordPanel } from './components/ResetPasswordPanel'
@@ -58,6 +59,22 @@ function Root() {
 
   if (path === '/connect/claude' || path.startsWith('/connect/claude/')) {
     return <ConnectClaude />
+  }
+
+  if (path === '/changelog' || path === '/changelog/') {
+    return (
+      <>
+        <ChangelogPage
+          signedIn={Boolean(user)}
+          onLogin={() => openAuth('login')}
+          onSignUp={() => openAuth('register')}
+          onOpenApp={() => navigate('/')}
+        />
+        {authOpen && !user ? (
+          <LoginPanel key={authMode} initialMode={authMode} onClose={() => setAuthOpen(false)} />
+        ) : null}
+      </>
+    )
   }
 
   if (user && toolId) {

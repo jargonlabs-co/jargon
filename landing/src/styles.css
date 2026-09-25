@@ -195,9 +195,9 @@ button {
   left: 0;
   right: 0;
   z-index: 50;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
   padding: 18px clamp(20px, 4vw, 48px);
   transition:
@@ -229,6 +229,7 @@ button {
 
 .nav-links {
   display: flex;
+  justify-content: center;
   gap: 28px;
   font-size: 14px;
   font-weight: 500;
@@ -242,6 +243,7 @@ button {
 .nav-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -268,6 +270,7 @@ button {
   border-radius: 999px;
   background: var(--navy);
   color: var(--cream);
+  cursor: pointer;
   transition: background 0.2s ease;
 }
 
@@ -1810,6 +1813,87 @@ button {
   color: var(--text-dim);
 }
 
+.footer-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.footer-link:hover {
+  color: var(--text);
+}
+
+.nav-links a[aria-current='page'] {
+  color: var(--text);
+}
+
+/* ——— Changelog ——— */
+
+.changelog {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 132px clamp(20px, 4vw, 48px) 96px;
+}
+
+.changelog-intro h1 {
+  font-family: var(--display);
+  font-size: clamp(2.6rem, 5vw, 4.2rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin-bottom: 16px;
+}
+
+.changelog-intro p:last-child {
+  max-width: 38rem;
+  font-size: 1.08rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.changelog-empty {
+  margin-top: 48px;
+  color: var(--text-muted);
+}
+
+.changelog-days {
+  list-style: none;
+  margin-top: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.changelog-day {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.changelog-version {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--accent-strong);
+  padding-top: 4px;
+}
+
+.changelog-day ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.changelog-day li p {
+  font-size: 1.02rem;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
 /* ——— Motion ——— */
 
 @keyframes rise {
@@ -1849,6 +1933,10 @@ button {
 /* ——— Responsive ——— */
 
 @media (max-width: 960px) {
+  .nav {
+    grid-template-columns: 1fr auto;
+  }
+
   .nav-links {
     display: none;
   }
@@ -1960,6 +2048,11 @@ button {
   .footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .changelog-day {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 

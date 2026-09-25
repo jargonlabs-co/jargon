@@ -70,10 +70,11 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
           <span>Jargon</span>
         </a>
         <nav className="nav-links">
-          <a href="#deploy">Deploy</a>
-          <a href="#run">Run</a>
-          <a href="#data">Data</a>
+          <a href="#deploy">Build</a>
+          <a href="#run">Use</a>
+          <a href="#data">Connect</a>
           <a href="#use-cases">Use cases</a>
+          <a href="/changelog">Changelog</a>
         </nav>
         <div className="nav-actions">
           <button type="button" className="nav-login" onClick={onLogin}>
@@ -295,10 +296,13 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
       </main>
 
       <footer className="footer">
-        <div className="footer-brand">
+        <a className="footer-brand" href="/">
           <LogoMark size={22} />
           <span>Jargon</span>
-        </div>
+        </a>
+        <a className="footer-link" href="/changelog">
+          Changelog
+        </a>
         <p>For those who are brave enough to build.</p>
       </footer>
     </div>

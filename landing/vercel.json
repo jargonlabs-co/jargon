@@ -6,7 +6,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!favicon\\.ico|favicon\\.svg|favicon\\.png|icon\\.svg|icon\\.png|assets/).*)",
+      "source": "/((?!favicon\\.ico|favicon\\.svg|favicon\\.png|icon\\.svg|icon\\.png|assets/|api/).*)",
       "destination": "/index.html"
     }
   ]

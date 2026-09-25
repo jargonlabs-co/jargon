@@ -96,8 +96,9 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
           <div className="hero-copy">
             <h1>Helping sales teams communicate better.</h1>
             <p className="hero-lede">
-              Build real outbound sequences inside the tools your reps already use. Kill workflow
-              bottlenecks and build more pipeline.
+              Find, sort, and dial contacts inside tools your reps already use.
+              <br />
+              Kill workflow bottlenecks and build more pipeline.
             </p>
             <div className="hero-actions">
               <a

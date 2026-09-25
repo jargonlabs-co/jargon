@@ -1,4 +1,5 @@
 import { uid } from '../crypto'
+import type { Warmth } from '../../shared/warmth'
 import type { Contact, ContactStatus } from '../types'
 
 export type ContextProspect = {
@@ -14,6 +15,7 @@ export type ContextProspect = {
   companyDomain?: string
   companyIndustry?: string
   companySize?: string
+  warmth?: Warmth
   context?: string[]
   companyOpenRoles?: Array<{
     title: string
@@ -103,6 +105,7 @@ export function prospectsToContacts(
     companyDomain: p.companyDomain,
     companyIndustry: p.companyIndustry,
     companySize: p.companySize,
+    warmth: p.warmth,
     context:
       p.context ??
       buildProspectContext({

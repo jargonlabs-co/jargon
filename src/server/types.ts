@@ -5,6 +5,7 @@ import type {
   OrgBillingRow,
   UsageDailyRow
 } from './billing/types'
+import type { Warmth } from '../shared/warmth'
 
 export type { PlanId } from './billing/catalog'
 
@@ -25,6 +26,18 @@ export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
 export type Channel = 'email' | 'call' | 'linkedin'
 export type FieldOrigin = 'identity' | 'attrs'
 export type FieldType = 'string' | 'number' | 'list'
+export type { Warmth }
+
+export interface WorkspaceBrief {
+  goal: string
+  /** Who gets enrolled on a CRM refresh. Cold contacts stay listed. */
+  warmthRule: string
+  lastSyncAt?: number
+  /** Set after Claude asks and the user answers. The cadence itself lives on the Claude task. */
+  scheduleChoice?: 'accepted' | 'declined'
+  cadence?: string
+  summary: string
+}
 
 export interface FieldDef {
   key: string
@@ -200,6 +213,8 @@ export interface Project {
   spec?: WorkspaceSpec
   /** Discovered variables for this workspace's source (identity + attrs). */
   fieldCatalog?: FieldDef[]
+  /** What a new Claude chat or a scheduled run should resume. */
+  brief?: WorkspaceBrief
   createdAt: number
   updatedAt: number
 }
@@ -266,6 +281,8 @@ export interface Contact {
   companyIndustry?: string
   companySize?: string
   companyRevenue?: string
+  /** CRM warmth. Missing means the contact was not scored. */
+  warmth?: Warmth
   /** Short talk-track snippets for dialer / queue (e.g. tenure, funding). */
   context?: string[]
   /** Source-specific fields that are not part of the core identity. */

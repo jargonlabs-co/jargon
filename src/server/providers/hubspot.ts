@@ -5,6 +5,7 @@ import type { DataStore } from '../store'
 import { prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
+import { hubspotTime, scoreWarmth } from '../../shared/warmth'
 import { setProjectCatalog } from '../fieldCatalogSync'
 
 const HUBSPOT_TOKEN = 'https://api.hubapi.com/oauth/v1/token'
@@ -29,6 +30,9 @@ const HUBSPOT_USEFUL_PROPS = [
   'state',
   'lifecyclestage',
   'hs_lead_status',
+  'notes_last_contacted',
+  'hs_last_sales_activity_timestamp',
+  'hs_sales_email_last_replied',
   'linkedinbio',
   'hs_linkedin_url',
   'job_function',
@@ -61,21 +65,32 @@ export async function fetchHubSpotContacts(
   limit: number,
   demo: boolean
 ): Promise<ContextProspect[]> {
-  const capped = Math.min(Math.max(limit, 1), 100)
+  const capped = Math.min(Math.max(limit, 1), 200)
   if (demo || accessToken === 'demo-hubspot-token') {
     return demoHubSpotContacts(capped)
   }
 
   const props = await hubspotPropertyNames(accessToken)
-  const url = `${HUBSPOT_CONTACTS}?limit=${capped}&properties=${encodeURIComponent(props.join(','))}`
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  })
-  if (!res.ok) throw new Error(`HubSpot contacts failed: ${await res.text()}`)
-  const json = (await res.json()) as {
-    results?: Array<{ id: string; properties?: Record<string, string | null> }>
+  const rows: Array<{ id: string; properties?: Record<string, string | null> }> = []
+  let after: string | undefined
+  while (rows.length < capped) {
+    const pageSize = Math.min(100, capped - rows.length)
+    const url = new URL(HUBSPOT_CONTACTS)
+    url.searchParams.set('limit', String(pageSize))
+    url.searchParams.set('properties', props.join(','))
+    if (after) url.searchParams.set('after', after)
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+    if (!res.ok) throw new Error(`HubSpot contacts failed: ${await res.text()}`)
+    const json = (await res.json()) as {
+      results?: Array<{ id: string; properties?: Record<string, string | null> }>
+      paging?: { next?: { after?: string } }
+    }
+    const page = json.results ?? []
+    rows.push(...page)
+    after = json.paging?.next?.after
+    if (!after || !page.length) break
   }
-  return (json.results ?? []).map((row, i) => contactFromHubSpot(row, i))
+  return rows.map((row, i) => contactFromHubSpot(row, i))
 }
 
 export function hubspotAuthUrl(
@@ -158,8 +173,19 @@ function contactFromHubSpot(
     'hs_linkedin_url',
     'website'
   ])
+  const lastActivityAt = hubspotTime(p.notes_last_contacted) ?? hubspotTime(p.hs_last_sales_activity_timestamp)
+  const lastReplyAt = hubspotTime(p.hs_sales_email_last_replied)
+  const warmth = scoreWarmth({
+    lifecycleStage: p.lifecyclestage ?? undefined,
+    leadStatus: p.hs_lead_status ?? undefined,
+    lastActivityAt,
+    lastReplyAt
+  })
   if ((p.lifecyclestage ?? '').trim()) attrs.lifecyclestage = p.lifecyclestage
+  if ((p.hs_lead_status ?? '').trim()) attrs.hs_lead_status = p.hs_lead_status
+  if (lastActivityAt) attrs.lastActivityAt = lastActivityAt
   if ((p.annualrevenue ?? '').trim()) attrs.annualrevenue = p.annualrevenue
+  attrs.warmth = warmth
   return {
     externalId: row.id,
     name,
@@ -173,6 +199,7 @@ function contactFromHubSpot(
     companyDomain: (p.website ?? '').replace(/^https?:\/\//, '').split('/')[0] || undefined,
     companyIndustry: industry || undefined,
     companySize: size || undefined,
+    warmth,
     attrs
   }
 }
@@ -200,8 +227,13 @@ function demoHubSpotContacts(limit: number): ContextProspect[] {
     ['Devon Lee', 'Perimeter Health Tech', 'Head of Sales', 'devon.lee@perimeter.test', 'Atlanta'],
     ['Eden Grant', 'Atlantic Freight', 'RevOps Lead', 'eden.grant@atlantic.test', 'Savannah']
   ]
+  const now = Date.now()
   return Array.from({ length: Math.min(limit, rows.length) }, (_, i) => {
     const [name, company, title, email, city] = rows[i]
+    const band = i % 3
+    const warmth = band === 0 ? 'hot' : band === 1 ? 'warm' : 'cold'
+    const lifecycle = warmth === 'hot' ? 'opportunity' : warmth === 'warm' ? 'marketingqualifiedlead' : 'subscriber'
+    const lastActivityAt = warmth === 'hot' ? now - 2 * 86_400_000 : warmth === 'warm' ? now - 40 * 86_400_000 : now - 200 * 86_400_000
     return {
       externalId: `demo_${i + 1}`,
       name,
@@ -212,7 +244,9 @@ function demoHubSpotContacts(limit: number): ContextProspect[] {
       city,
       accountName: company,
       companyIndustry: 'Software',
-      companySize: '50-200'
+      companySize: '50-200',
+      warmth: scoreWarmth({ lifecycleStage: lifecycle, lastActivityAt }, now),
+      attrs: { lifecyclestage: lifecycle, lastActivityAt, warmth }
     }
   })
 }

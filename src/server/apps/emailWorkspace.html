@@ -917,6 +917,12 @@ function dueLabel(task) {
     app.updateModelContext?.({
       content: [{ type: 'text', text: `Started the sequence for ${ws.name} (${ws.taskStats?.enrolled || ws.contactCount} enrolled). Work is on Tasks.` }],
     });
+    if (typeof ws.nextAction === 'string' && ws.nextAction.startsWith('Ask the user once')) {
+      await app.sendMessage?.({
+        role: 'user',
+        content: [{ type: 'text', text: ws.nextAction }],
+      });
+    }
   }
 
   async function unenrollContact(contact) {
@@ -1657,6 +1663,22 @@ function dueLabel(task) {
     `;
   }
 
+  function warmthKey(contact) {
+    return contact.warmth === 'hot' || contact.warmth === 'warm' || contact.warmth === 'cold' ? contact.warmth : 'unknown';
+  }
+
+  function personButton(c, oneOff) {
+    return `
+      <button class="person ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
+        <div>
+          <div>${esc(c.name)}</div>
+          <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div class="pill">${esc(c.warmth ? warmthKey(c) : (oneOff ? statusLabel(ws, c) : contactNextLabel(c)))}</div>
+      </button>
+    `;
+  }
+
   function renderPeople() {
     const people = ws.contacts || [];
     const oneOff = surface() === 'one_off';
@@ -1666,21 +1688,28 @@ function dueLabel(task) {
       selectedMessageId = null;
       pendingSend = false;
     }
+    const scored = people.some((c) => c.warmth);
+    const groups = scored
+      ? [
+          ['hot', 'Hot'],
+          ['warm', 'Warm'],
+          ['cold', 'Cold'],
+          ['unknown', 'Not scored'],
+        ].map(([key, label]) => ({
+          label,
+          people: people.filter((c) => warmthKey(c) === key),
+        })).filter((group) => group.people.length)
+      : [{ label: '', people }];
     return `
       ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
         ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
         ${oneOff ? `<p class="sub" style="margin: 0 0 10px;">One-off emails — edit and send each person. No cadence.</p>` : ''}
-        <div class="people">
-          ${people.map((c) => `
-            <button class="person ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
-              <div>
-                <div>${esc(c.name)}</div>
-                <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
-              </div>
-              <div class="pill">${esc(oneOff ? statusLabel(ws, c) : contactNextLabel(c))}</div>
-            </button>
-          `).join('')}
-        </div>
+        ${groups.map((group) => `
+          ${group.label ? `<div class="kicker" style="margin: 12px 0 6px;">${esc(group.label)}</div>` : ''}
+          <div class="people">
+            ${group.people.map((c) => personButton(c, oneOff)).join('')}
+          </div>
+        `).join('')}
       `}
       ${selected && oneOff ? renderComposer(selected, { hideSteps: true, showWrite: true }) : ''}
       ${selected && !oneOff ? renderContactDetail(selected) : ''}

@@ -26,7 +26,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=engage6'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=warmth1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -52,6 +52,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=engage3',
   'ui://jargon/email-workspace.html?v=engage4',
   'ui://jargon/email-workspace.html?v=engage5',
+  'ui://jargon/email-workspace.html?v=engage6',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -151,6 +152,10 @@ export function isEmailMotion(project: Project, steps: Array<{ channel: string }
   return steps.some((step) => step.channel === 'email')
 }
 
+export function scheduleAsk(projectId: string): string {
+  return `Ask the user once whether to run project ${projectId} on a schedule. Default: every Sunday at 6pm in their timezone. If they name another cadence, use that. If they say yes, propose a Claude scheduled task and wait for them to confirm with Schedule. Do not say it is scheduled until they confirm. The task instructions must say: call resume_workspace for this project, then list_crm_contacts, enroll hot and warm with enroll_hubspot, research anyone new, and save_research. Tell them the task must be allowed to use Jargon's write tools, or a later run stops on an Allow card. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+}
+
 export function getEmailWorkspace(
   store: DataStore,
   config: ServerConfig,
@@ -240,11 +245,14 @@ export function getEmailWorkspace(
   })
   const remaining = contacts.filter((c) => !motionComplete(c, spec)).length
   const researchPending = contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
+  const schedulePending = !researchPending && taskStats.enrolled > 0 && !project.brief?.scheduleChoice
   const nextAction = researchPending
     ? surface === 'one_off'
       ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
       : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. That enrolls everyone and opens Tasks. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
-    : undefined
+    : schedulePending
+      ? scheduleAsk(project.id)
+      : undefined
   const view =
     surface === 'overflow' ? 'overflow' : surface === 'queue' || surface === 'tasks' ? 'queue' : 'email_workspace'
   return {
@@ -667,7 +675,9 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
 
 export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account on managed infrastructure: email, phone, and LinkedIn are sent by Jargon (customers do not bring API keys). Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
 
-Bring your own data through Claude. Users connect their CRM/warehouse/files to Claude themselves. Put people into Jargon with import_list / deploy_tool as a markdown table or CSV in the workspace argument — do not assume HubSpot or Railway is connected inside Jargon.
+On a new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. If HubSpot is connected, call list_crm_contacts and group people by warmth. enroll_hubspot with people "hot,warm" enrolls that bucket and lists everyone else. Cold stays listed until the user asks to enroll them.
+
+Bring a list through Claude when HubSpot is not connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 
@@ -680,6 +690,7 @@ Ownership — do not compete with Jargon on structure:
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
 - Immediately research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens Tasks with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
+- After the sequence is saved, follow nextAction: ask once whether to run this workspace on a schedule. Default every Sunday at 6pm. Create the Claude scheduled task only after they confirm with Schedule, then call note_schedule_choice. An Allow click on a Jargon tool does not create that schedule.
 - Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Then open To-dos with show_tasks.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Phone calls stay in the in-chat dialer. Do not send the user to dashboardUrl to place a call.

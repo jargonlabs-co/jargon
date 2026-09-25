@@ -15,12 +15,14 @@ import {
   emptyQueue,
   enrollHubSpotContacts,
   enrollPublicSequence,
+  latestWorkspace,
+  listHubSpotContactsForEnroll,
+  saveWorkspaceBrief,
   findOrgCall,
   findOrgContact,
   findOrgMessage,
   findOrgProject,
   isContactStatus,
-  listHubSpotContactsForEnroll,
   listPublicContacts,
   listPublicMessages,
   listPublicProjects,
@@ -51,6 +53,7 @@ import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
+import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
   'queued',
@@ -157,7 +160,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'Import a list with import_list or deploy_tool. Put people in workspace as a markdown table, CSV, or JSON (Name, Company, Title, Email, LinkedIn). State goal and any step count / day span — Jargon builds the cadence; do not write Day 0…N in chat. summary is the one sentence on Claude\'s Allow card — never pass a contacts array. Then research each person and save_research talk tracks / email / LinkedIn copy — that enrolls everyone and opens Tasks. For one-offs, save_draft / send_draft. Reopen with show_email_workspace.'
+        'In a new chat, call resume_workspace first. If HubSpot is connected, list_crm_contacts and enroll hot and warm with enroll_hubspot. Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
       })
     }
   )
@@ -1142,18 +1145,24 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'When the user asks to enroll people into the sequence, pull those people from the connected HubSpot portal and enroll them. summary is the sentence on Claude\'s Allow card. people is who they named (names or emails, comma or newline separated) or "all". Manual steps become their to-dos. Do not ask them to pick contacts in the app.',
+        'Pull people from the connected HubSpot portal, group them by warmth, and enroll a bucket into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, "all", or a warmth bucket such as "hot,warm". Cold contacts are listed and not enrolled unless people names them. People already on the sequence are skipped. Manual steps become their to-dos.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
-        people: z.string().min(1).describe('Names or emails to enroll, or "all".')
+        people: z.string().min(1).describe('Names, emails, "all", or a warmth bucket such as "hot,warm".')
       })
     },
     async ({ projectId, people }) => {
       const listed = await listHubSpotContactsForEnroll(store, config, actor.orgId)
       if (!listed.ok) return fail(listed.error)
       if (!listed.connected) return fail('HubSpot is not connected')
+      const warmth = parseWarmthFilter(people)
+      if (warmth !== 'all') {
+        const result = await enrollHubSpotContacts(store, config, actor.orgId, projectId, [], sandbox, warmth)
+        if (!result.ok) return fail(result.error)
+        return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'contacts', actor.userId)
+      }
       const query = people.trim().toLowerCase()
       const enrollAll = query === 'all' || query === 'everyone'
       const needles = enrollAll
@@ -1179,6 +1188,67 @@ export function registerJargonTools(
       )
       if (!result.ok) return fail(result.error)
       return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+    }
+  )
+
+  server.registerTool(
+    'list_crm_contacts',
+    {
+      ...display('Pull CRM contacts by warmth', HINTS.read),
+      description:
+        'Pull contacts from the connected HubSpot portal and group them by warmth (hot, warm, cold, unknown). Does not enroll them. Call this before enroll_hubspot when the user wants the CRM organized by warmth.'
+    },
+    async () => {
+      const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)
+      if (!result.ok) return fail(result.error)
+      return ok(result)
+    }
+  )
+
+  server.registerTool(
+    'resume_workspace',
+    {
+      ...display('Resume the saved outbound workspace', HINTS.read),
+      description:
+        'Open the latest saved workspace for this account: brief, sequence, warmth, and what a scheduled run should do. Call this first in a new Claude chat, and first on a scheduled run, before import_list or deploy_tool.',
+      inputSchema: z.object({
+        projectId: z.string().optional().describe('Workspace to resume. Omit to open the most recently updated one.')
+      }),
+      _meta: EMAIL_WORKSPACE_TOOL_META
+    },
+    async ({ projectId }) => {
+      const project = projectId
+        ? findOrgProject(store, actor.orgId, projectId)
+        : latestWorkspace(store, actor.orgId)
+      if (!project) return fail('No saved workspace yet. Import a list or connect HubSpot and deploy one.')
+      const brief = project.brief ?? saveWorkspaceBrief(store, actor.orgId, project.id)
+      const ws = getEmailWorkspace(store, config, actor.orgId, project.id, { sandbox, userId: actor.userId })
+      if (!ws) return fail('Project not found')
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ ...ws, brief }) }],
+        _meta: EMAIL_WORKSPACE_TOOL_META
+      }
+    }
+  )
+
+  server.registerTool(
+    'note_schedule_choice',
+    {
+      ...display('Remember the schedule answer', HINTS.write),
+      description:
+        'Record whether the user approved a Claude scheduled task for this workspace. Call this after they answer the schedule question. accepted means they confirmed with Schedule. declined means they said no. This does not create the Claude task.',
+      inputSchema: z.object({
+        summary: Summary,
+        projectId: z.string(),
+        choice: z.enum(['accepted', 'declined']),
+        cadence: z.string().optional().describe('The cadence they approved, such as "every Sunday at 6pm".')
+      })
+    },
+    async ({ projectId, choice, cadence }) => {
+      if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
+      const brief = saveWorkspaceBrief(store, actor.orgId, projectId, { scheduleChoice: choice, cadence })
+      if (!brief) return fail('Project not found')
+      return ok({ brief })
     }
   )
 

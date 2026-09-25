@@ -11,6 +11,7 @@ import type {
   MessageStatus,
   Project,
   SequenceStep,
+  WorkspaceBrief,
   WorkspaceSpec
 } from './types'
 import type { ServerConfig } from './config'
@@ -27,6 +28,7 @@ import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
+import { warmthRank, type Warmth } from '../shared/warmth'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
   extractContactsFromPrompt,
@@ -79,6 +81,7 @@ export type PublicContact = {
   notes: string
   linkedinUrl?: string
   accountName?: string
+  warmth?: Contact['warmth']
   context?: string[]
   attrs?: Record<string, unknown>
   channelsDone?: Contact['channelsDone']
@@ -177,6 +180,7 @@ export function toPublicContact(contact: Contact): PublicContact {
     notes: contact.notes,
     linkedinUrl: normalizeLinkedInUrl(contact.linkedinUrl) ?? contact.linkedinUrl,
     accountName: contact.accountName,
+    warmth: contact.warmth,
     context: contact.context,
     attrs: contact.attrs && Object.keys(contact.attrs).length ? contact.attrs : undefined,
     channelsDone: contact.channelsDone?.length ? contact.channelsDone : undefined,
@@ -1719,6 +1723,7 @@ export type HubSpotPickerContact = {
   email: string
   phone: string
   linkedinUrl: string
+  warmth: NonNullable<Contact['warmth']>
 }
 
 export async function listHubSpotContactsForEnroll(
@@ -1726,27 +1731,34 @@ export async function listHubSpotContactsForEnroll(
   config: ServerConfig,
   orgId: string
 ): Promise<
-  | { ok: true; connected: boolean; contacts: HubSpotPickerContact[] }
+  | { ok: true; connected: boolean; contacts: HubSpotPickerContact[]; counts: Record<Warmth, number> }
   | { ok: false; error: string }
 > {
   const conn = getConnection(store, orgId, 'hubspot')
-  if (!conn || conn.status !== 'connected') return { ok: true, connected: false, contacts: [] }
+  if (!conn || conn.status !== 'connected') {
+    return { ok: true, connected: false, contacts: [], counts: { hot: 0, warm: 0, cold: 0, unknown: 0 } }
+  }
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
-    const prospects = await fetchHubSpotContacts(secrets.accessToken, 100, demo)
-    return {
-      ok: true,
-      connected: true,
-      contacts: prospects.map((p) => ({
+    const prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
+    const contacts = prospects
+      .map((p) => ({
         externalId: p.externalId,
         name: p.name,
         title: p.title,
         company: p.company,
         email: p.email,
         phone: p.phone,
-        linkedinUrl: p.linkedinUrl || ''
+        linkedinUrl: p.linkedinUrl || '',
+        warmth: p.warmth ?? 'unknown'
       }))
+      .sort((a, b) => warmthRank(a.warmth) - warmthRank(b.warmth))
+    return {
+      ok: true,
+      connected: true,
+      contacts,
+      counts: warmthCounts(contacts)
     }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
@@ -1783,6 +1795,7 @@ function upsertHubSpotProspects(
         row.phone = prospect.phone
         row.city = prospect.city
         row.linkedinUrl = prospect.linkedinUrl
+        if (prospect.warmth) row.warmth = prospect.warmth
         row.updatedAt = now
         contactIds.push(row.id)
         continue
@@ -1803,36 +1816,105 @@ function upsertHubSpotProspects(
   return { ok: true, contactIds }
 }
 
+function warmthCounts(contacts: Array<{ warmth?: Warmth }>): Record<Warmth, number> {
+  const counts: Record<Warmth, number> = { hot: 0, warm: 0, cold: 0, unknown: 0 }
+  for (const contact of contacts) counts[contact.warmth ?? 'unknown'] += 1
+  return counts
+}
+
+const DEFAULT_WARMTH_RULE = 'Enroll hot and warm. List cold contacts without enrolling them.'
+
+export function saveWorkspaceBrief(
+  store: DataStore,
+  orgId: string,
+  projectId: string,
+  patch?: Partial<WorkspaceBrief>
+): WorkspaceBrief | null {
+  let brief: WorkspaceBrief | null = null
+  store.update((db) => {
+    const project = db.projects.find((p) => p.id === projectId && p.orgId === orgId)
+    if (!project) return
+    const contacts = db.contacts.filter((c) => c.projectId === projectId)
+    const counts = warmthCounts(contacts)
+    const goal = patch?.goal ?? project.brief?.goal ?? project.spec?.goal ?? project.answers.goal ?? ''
+    const warmthRule = patch?.warmthRule ?? project.brief?.warmthRule ?? DEFAULT_WARMTH_RULE
+    brief = {
+      goal,
+      warmthRule,
+      lastSyncAt: patch && 'lastSyncAt' in patch ? patch.lastSyncAt : project.brief?.lastSyncAt,
+      scheduleChoice: patch?.scheduleChoice ?? project.brief?.scheduleChoice,
+      cadence: patch?.cadence ?? project.brief?.cadence,
+      summary: `${project.name}: ${goal || 'outbound'}. ${warmthRule} ${counts.hot} hot, ${counts.warm} warm, ${counts.cold} cold.`
+    }
+    project.brief = brief
+    project.updatedAt = Date.now()
+  })
+  return brief
+}
+
+export function latestWorkspace(store: DataStore, orgId: string): Project | null {
+  const projects = store.db.projects.filter((p) => p.orgId === orgId)
+  if (!projects.length) return null
+  return [...projects].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+}
+
 export async function enrollHubSpotContacts(
   store: DataStore,
   config: ServerConfig,
   orgId: string,
   projectId: string,
   externalIds: string[],
-  sandbox?: boolean
-): Promise<{ ok: true; enrolled: number } | { ok: false; error: string }> {
-  if (!externalIds.length) return { ok: false, error: 'Pick at least one contact' }
+  sandbox?: boolean,
+  warmth?: Warmth[] | 'all'
+): Promise<{ ok: true; enrolled: number; listed: number; skipped: number } | { ok: false; error: string }> {
+  const byWarmth = Array.isArray(warmth)
+  if (!byWarmth && !externalIds.length) return { ok: false, error: 'Pick at least one contact' }
   const conn = getConnection(store, orgId, 'hubspot')
   if (!conn || conn.status !== 'connected') return { ok: false, error: 'HubSpot is not connected' }
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   let prospects: ContextProspect[]
   try {
-    prospects = await fetchHubSpotContacts(secrets.accessToken, 100, demo)
+    prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
   }
+  const ranked = [...prospects].sort((a, b) => warmthRank(a.warmth) - warmthRank(b.warmth))
   const wanted = new Set(externalIds)
-  const picked = prospects.filter((p) => wanted.has(p.externalId))
-  if (!picked.length) return { ok: false, error: 'None of those contacts are in HubSpot' }
-  const upserted = upsertHubSpotProspects(store, orgId, projectId, picked)
+  const listed = byWarmth ? ranked : ranked.filter((p) => wanted.has(p.externalId))
+  if (!listed.length) return { ok: false, error: 'None of those contacts are in HubSpot' }
+  const inProject = store.db.contacts.filter((c) => c.projectId === projectId)
+  const existingIds = new Set(
+    inProject.filter((c) => c.source === 'hubspot' && c.externalId).map((c) => c.externalId as string)
+  )
+  const already = listed.filter((p) => existingIds.has(p.externalId))
+  const fresh = listed.filter((p) => !existingIds.has(p.externalId)).slice(0, Math.max(0, MAX_CONTACTS - inProject.length))
+  const fitting = [...already, ...fresh]
+  if (!fitting.length) return { ok: false, error: `workspace can hold ${MAX_CONTACTS} contacts` }
+  const upserted = upsertHubSpotProspects(store, orgId, projectId, fitting)
   if (!upserted.ok) return upserted
+  const enrollIds = store.db.contacts
+    .filter((c) => {
+      if (!upserted.contactIds.includes(c.id)) return false
+      if (enrolledAtOf(c) != null) return false
+      if (!byWarmth) return true
+      return warmth.includes(c.warmth ?? 'unknown')
+    })
+    .map((c) => c.id)
+  saveWorkspaceBrief(store, orgId, projectId, { lastSyncAt: Date.now() })
+  if (!enrollIds.length) return { ok: true, enrolled: 0, listed: upserted.contactIds.length, skipped: upserted.contactIds.length }
   const started = await enrollPublicSequence(store, config, orgId, projectId, {
-    contactIds: upserted.contactIds,
+    contactIds: enrollIds,
     sandbox
   })
   if (!started.ok) return started
-  return { ok: true, enrolled: started.contacts }
+  saveWorkspaceBrief(store, orgId, projectId, { lastSyncAt: Date.now() })
+  return {
+    ok: true,
+    enrolled: enrollIds.length,
+    listed: upserted.contactIds.length,
+    skipped: upserted.contactIds.length - enrollIds.length
+  }
 }
 
 export async function dispatchDueMessages(

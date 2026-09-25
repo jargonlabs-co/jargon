@@ -1,4 +1,6 @@
+import { copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import type { Connect, Plugin } from 'vite'
 import type { ServerResponse } from 'node:http'
 import { toReleases, type ChangelogRelease } from './customerChangelog'
@@ -68,6 +70,25 @@ export function changelogPlugin(repoRoot: string): Plugin {
     },
     configurePreviewServer(server) {
       attachChangelog(repoRoot, server.middlewares)
+    },
+    generateBundle(_options, bundle) {
+      const cssFile = Object.values(bundle).find(
+        (file) => file.type === 'asset' && file.fileName.endsWith('.css')
+      )
+      const entry = Object.values(bundle).find((file) => file.type === 'chunk' && file.isEntry)
+      if (!cssFile || cssFile.type !== 'asset' || !entry || entry.type !== 'chunk') return
+      const css = typeof cssFile.source === 'string' ? cssFile.source : new TextDecoder().decode(cssFile.source)
+      entry.code =
+        `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s)})();` +
+        entry.code
+    },
+    closeBundle() {
+      try {
+        const dist = resolve(repoRoot, 'landing/dist')
+        copyFileSync(resolve(dist, 'index.html'), resolve(dist, '404.html'))
+      } catch {
+        // Local dev has no dist yet.
+      }
     }
   }
 }

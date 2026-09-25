@@ -103,20 +103,18 @@ export function ChangelogPage({ signedIn, onLogin, onSignUp, onOpenApp }: Props)
         {releases.length === 0 ? (
           <p className="changelog-empty">No launches yet.</p>
         ) : (
-          <ol className="changelog-days">
+          <div className="changelog-days">
             {releases.map((release) => (
-              <li key={release.version} className="changelog-day">
+              <section key={release.version} className="changelog-day">
                 <p className="changelog-version">{release.version}</p>
-                <ul>
+                <div className="changelog-notes">
                   {release.titles.map((title) => (
-                    <li key={title}>
-                      <p>{title}</p>
-                    </li>
+                    <p key={title}>{title}</p>
                   ))}
-                </ul>
-              </li>
+                </div>
+              </section>
             ))}
-          </ol>
+          </div>
         )}
       </main>
 

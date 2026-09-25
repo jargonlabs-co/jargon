@@ -4,33 +4,73 @@ import { ClaudeMark } from './ClaudeMark'
 import { MockWindow } from './MockWindow'
 
 const HERO_PROMPT =
-  'Build me a dialer for the top 100 contacts I need to build pipeline with'
+  'Pull my Salesforce contacts and build a dialer ranked by warmth. Call the hottest one from here.'
 
 const HERO_CONTACTS = [
   {
-    name: 'Alex Chen',
-    meta: 'Head of GTM Eng · Northwind',
-    next: 'Call',
-    channels: ['Email', 'Call', 'LinkedIn'] as const,
-    active: 'Call'
+    name: 'Maya Chen',
+    title: 'VP Sales',
+    company: 'Lattice',
+    city: 'San Francisco',
+    phone: '+1 (415) 555-0142',
+    warmth: 'hot' as const
   },
   {
-    name: 'Priya Shah',
-    meta: 'VP RevOps · Harbor',
-    next: 'Call',
-    channels: ['Email', 'Call', 'LinkedIn'] as const,
-    active: null
+    name: 'Jordan Blake',
+    title: 'Director of Sales',
+    company: 'Rippling',
+    city: 'San Francisco',
+    phone: '+1 (415) 555-0148',
+    warmth: 'hot' as const
   },
   {
-    name: 'Sam Ortiz',
-    meta: 'GTM Engineer · Lumen',
-    next: 'Email',
-    channels: ['Email', 'Call', 'LinkedIn'] as const,
-    active: null
+    name: 'Priya Nair',
+    title: 'Head of RevOps',
+    company: 'Notion',
+    city: 'New York',
+    phone: '+1 (917) 555-0162',
+    warmth: 'warm' as const
+  },
+  {
+    name: 'Sam Okonkwo',
+    title: 'AE Manager',
+    company: 'Figma',
+    city: 'London',
+    phone: '+44 20 7946 0958',
+    warmth: 'warm' as const
+  },
+  {
+    name: 'Elena Vasquez',
+    title: 'VP Sales',
+    company: 'Linear',
+    city: 'Austin',
+    phone: '+1 (512) 555-0190',
+    warmth: 'cold' as const
   }
 ]
 
-type HeroPhase = 'idle' | 'typing' | 'sent' | 'tool' | 'widget' | 'ready'
+const WARMTH_GROUPS = [
+  { key: 'hot', label: 'Hot' },
+  { key: 'warm', label: 'Warm' },
+  { key: 'cold', label: 'Cold' }
+] as const
+
+const KEYPAD = [
+  ['1', ''],
+  ['2', 'ABC'],
+  ['3', 'DEF'],
+  ['4', 'GHI'],
+  ['5', 'JKL'],
+  ['6', 'MNO'],
+  ['7', 'PQRS'],
+  ['8', 'TUV'],
+  ['9', 'WXYZ'],
+  ['*', ''],
+  ['0', '+'],
+  ['#', '']
+] as const
+
+type HeroPhase = 'idle' | 'typing' | 'sent' | 'tool' | 'list' | 'dialing' | 'live'
 
 function wait(ms: number, timers: number[]) {
   return new Promise<void>((resolve) => {
@@ -166,11 +206,21 @@ export function DialerMock() {
   )
 }
 
+function clock(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 export function HeroClaudeMock() {
   const [phase, setPhase] = useState<HeroPhase>('idle')
   const [typed, setTyped] = useState('')
-  const [remaining, setRemaining] = useState(0)
   const [visiblePeople, setVisiblePeople] = useState(0)
+  const [seconds, setSeconds] = useState(0)
+
+  useEffect(() => {
+    if (phase !== 'live') return
+    const id = window.setInterval(() => setSeconds((value) => value + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [phase])
 
   useEffect(() => {
     const timers: number[] = []
@@ -179,18 +229,18 @@ export function HeroClaudeMock() {
     async function play() {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         setTyped(HERO_PROMPT)
-        setPhase('ready')
-        setRemaining(100)
         setVisiblePeople(HERO_CONTACTS.length)
+        setSeconds(42)
+        setPhase('live')
         return
       }
 
       while (!cancelled) {
         setPhase('idle')
         setTyped('')
-        setRemaining(0)
         setVisiblePeople(0)
-        await wait(1800, timers)
+        setSeconds(0)
+        await wait(700, timers)
         if (cancelled) return
 
         setPhase('typing')
@@ -198,36 +248,36 @@ export function HeroClaudeMock() {
           if (cancelled) return
           setTyped(HERO_PROMPT.slice(0, i))
           const char = HERO_PROMPT[i - 1]
-          await wait(char === ' ' ? 140 : 72, timers)
+          await wait(char === ' ' ? 55 : 28, timers)
         }
 
-        await wait(1600, timers)
+        await wait(420, timers)
         if (cancelled) return
         setPhase('sent')
 
-        await wait(1600, timers)
+        await wait(700, timers)
         if (cancelled) return
         setPhase('tool')
 
-        await wait(2200, timers)
+        await wait(900, timers)
         if (cancelled) return
-        setPhase('widget')
-
-        for (let n = 0; n <= 100; n += 2) {
-          if (cancelled) return
-          setRemaining(n)
-          await wait(48, timers)
-        }
-        setRemaining(100)
+        setPhase('list')
 
         for (let i = 1; i <= HERO_CONTACTS.length; i += 1) {
           if (cancelled) return
           setVisiblePeople(i)
-          await wait(900, timers)
+          await wait(280, timers)
         }
 
-        setPhase('ready')
-        await wait(10000, timers)
+        await wait(2200, timers)
+        if (cancelled) return
+        setPhase('dialing')
+
+        await wait(1400, timers)
+        if (cancelled) return
+        setSeconds(0)
+        setPhase('live')
+        await wait(7200, timers)
       }
     }
 
@@ -239,152 +289,201 @@ export function HeroClaudeMock() {
   }, [])
 
   const showThread = phase !== 'idle' && phase !== 'typing'
-  const showCall = phase === 'ready'
+  const showWork = phase === 'tool' || phase === 'list' || phase === 'dialing' || phase === 'live'
+  const showApp = phase === 'list' || phase === 'dialing' || phase === 'live'
+  const onCall = phase === 'dialing' || phase === 'live'
+  const shown = HERO_CONTACTS.slice(0, visiblePeople)
+  const lead = HERO_CONTACTS[0]
 
   return (
-    <MockWindow className="mock-hero-claude" wide>
-      <div className="hc">
-        <div className="hc-head">
-          <span className="hc-brand">
-            <ClaudeMark size={18} />
-            Claude
-          </span>
-          <span className="hc-status">Jargon connected</span>
+    <div className="hc-shell" aria-hidden="true">
+      <aside className="hc-side">
+        <div className="hc-side-brand">
+          <ClaudeMark size={22} />
+          Claude
         </div>
+        <div className="hc-new">
+          <span>+</span> New chat
+        </div>
+        <div className="hc-side-label">Recents</div>
+        <div className="hc-recent on">Salesforce warmth dialer</div>
+        <div className="hc-recent">AE book follow-ups</div>
+        <div className="hc-recent">Rippling demo prep</div>
+        <div className="hc-recent">Q3 pipeline review</div>
+        <div className="hc-side-foot">
+          <div className="hc-you">Y</div>
+          <div>
+            <div className="hc-who">You</div>
+            <div className="hc-plan">Pro plan</div>
+          </div>
+        </div>
+      </aside>
 
-        <div className="hc-thread">
-          {showThread ? (
-            <div className="hc-user">
-              {HERO_PROMPT}
-            </div>
-          ) : null}
+      <section className="hc-main">
+        <div className="hc-top">
+          <span>Share</span>
+        </div>
+        <div className="hc-scroll">
+          <div className="hc-col">
+            {showThread ? <div className="hc-user">{HERO_PROMPT}</div> : null}
 
-          {phase === 'tool' || phase === 'widget' || phase === 'ready' ? (
-            <div className="hc-tools">
-              <div className="claude-tool">
-                <span className="claude-tool-name">Jargon</span>
-                <span className="claude-tool-action">deploy_tool</span>
+            {showWork ? (
+              <p className="hc-assistant">
+                Pulled 24 Salesforce contacts and ranked them by warmth. Opening Maya Chen.
+              </p>
+            ) : null}
+
+            {showWork ? (
+              <div className="hc-tool">
+                <span className="hc-tool-ico" aria-hidden="true" />
+                <span>
+                  <strong>Jargon</strong> · ranked Salesforce contacts by warmth
+                </span>
               </div>
-              {phase !== 'tool' ? (
-                <div className="hc-tool-note">HubSpot · top 100 contacts</div>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
 
-          {phase === 'widget' || phase === 'ready' ? (
-            <div className={`hc-app ${phase === 'ready' ? 'is-ready' : 'is-building'}`}>
-              <header className="hc-app-head">
-                <div>
-                  <h3>Pipeline dialer · top 100</h3>
-                  <p>
-                    Email · Call · LinkedIn · {remaining} contacts remaining · HubSpot
-                  </p>
+            {showApp ? (
+              <div className="hc-mcp">
+                <div className="hc-mcp-bar">
+                  <div className="hc-mcp-brand">
+                    <BrandMark size={16} />
+                    Jargon <span>· Engage</span>
+                  </div>
+                  <span className="hc-full">Full screen</span>
                 </div>
-                <div className="hc-app-actions">
-                  <span>Full screen</span>
-                  <span>Open workspace</span>
-                </div>
-              </header>
+                <div className="hc-wrap">
+                  <header className="hc-engage-head">
+                    <div className="hc-eyebrow">Engage</div>
+                    <h3>{onCall ? 'Call' : 'Dialer'}</h3>
+                    <p>Outbound dialer · Salesforce · 8 hot · 11 warm · 5 cold</p>
+                  </header>
 
-              {phase === 'widget' && visiblePeople === 0 ? (
-                <div className="hc-banner">Building dialer from your CRM…</div>
-              ) : (
-                <>
-                  <div className="hc-tabs">
-                    <span>Contacts</span>
-                    <span className="on">Queue</span>
-                    <span>Sequence</span>
-                    <span>
-                      Tasks <em>100</em>
-                    </span>
-                  </div>
-                  <div className="hc-stats">
-                    <div>
-                      <strong>{remaining}</strong>
-                      <span>remaining</span>
-                    </div>
-                    <div>
-                      <strong>0</strong>
-                      <span>emailed</span>
-                    </div>
-                    <div>
-                      <strong>0</strong>
-                      <span>called</span>
-                    </div>
-                    <div>
-                      <strong>0</strong>
-                      <span>LinkedIn</span>
-                    </div>
-                  </div>
-                  {remaining === 100 ? (
-                    <div className="hc-banner">Showing 3 of 100. Open workspace for the full list.</div>
-                  ) : null}
-                  <div className="hc-people">
-                    {HERO_CONTACTS.slice(0, visiblePeople).map((person, i) => (
-                      <div key={person.name} className={`hc-person ${i === 0 ? 'on' : ''}`}>
-                        <div>
-                          <div className="hc-name">{person.name}</div>
-                          <div className="hc-meta">{person.meta}</div>
-                        </div>
-                        <div className="hc-side">
-                          <span className="hc-pill">Next · {person.next}</span>
-                          <div className="hc-chans">
-                            {person.channels.map((channel) => (
-                              <span
-                                key={channel}
-                                className={`hc-chan ${person.active === channel ? 'on' : ''} ${person.next === channel && person.active !== channel ? 'next' : ''}`}
-                              >
-                                {channel}
-                              </span>
-                            ))}
+                  {onCall ? (
+                    <div className="hc-call-layout">
+                      <div className="hc-book">
+                        {WARMTH_GROUPS.map((group) => {
+                          const people = HERO_CONTACTS.filter((person) => person.warmth === group.key)
+                          return (
+                            <div key={group.key}>
+                              <div className={`hc-group-label ${group.key}`}>{group.label}</div>
+                              <div className="hc-people">
+                                {people.map((person) => (
+                                  <div
+                                    key={person.name}
+                                    className={`hc-person ${person.name === lead.name ? 'on' : ''}`}
+                                  >
+                                    <div className="hc-name">{person.name}</div>
+                                    <span className={`hc-warmth ${person.warmth}`}>{person.warmth}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="hc-dial-card">
+                        <div className="hc-dial-h">
+                          <div>
+                            <div className="hc-kicker">Outbound call</div>
+                            <div className="hc-dial-status">
+                              {phase === 'dialing' ? 'Calling…' : 'On the line'}
+                            </div>
                           </div>
+                          <span className="hc-work-who">1 of 24</span>
+                        </div>
+                        <div className="hc-dial-who">{lead.name}</div>
+                        <div className="hc-dial-num">{lead.phone}</div>
+                        <div className="hc-dial-timer">{phase === 'live' ? clock(seconds) : 'Connecting…'}</div>
+                        <div className="hc-facts">
+                          <span>Lattice</span>
+                          <span>San Francisco</span>
+                          <span className="hot">Hot</span>
+                        </div>
+                        <div className="hc-dial-actions">
+                          {phase === 'live' ? (
+                            <>
+                              <span className="hc-mini">Mute</span>
+                              <span className="hc-mini end">End call</span>
+                            </>
+                          ) : (
+                            <span className="hc-mini call">Call</span>
+                          )}
+                        </div>
+                        <div className="hc-track">
+                          <label>Talk track</label>
+                          <p>Maya replied last week. Confirm the evaluation, then ask who owns outbound.</p>
+                        </div>
+                        <div className="hc-keypad">
+                          {KEYPAD.map(([key, sub]) => (
+                            <span key={key} className="hc-key">
+                              <b>{key}</b>
+                              <em>{sub}</em>
+                            </span>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {showCall ? (
-                <div className="hc-call">
-                  <div className="hc-call-to">Alex Chen · +1 (415) 555-0142</div>
-                  <div className="hc-track">
-                    <label>Talk track</label>
-                    <p>
-                      Reference the intro email. Ask how Northwind runs outbound today and who owns
-                      pipeline.
-                    </p>
-                  </div>
-                  <div className="hc-call-row">
-                    <span className="hc-btn primary">Start call</span>
-                    <span className="hc-btn">Interested</span>
-                    <span className="hc-btn">No answer</span>
-                    <span className="hc-btn">Not interested</span>
-                  </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hc-banner">
+                        Showing {shown.length} of 24, ranked hottest first.
+                      </div>
+                      {WARMTH_GROUPS.map((group) => {
+                        const people = shown.filter((person) => person.warmth === group.key)
+                        if (!people.length) return null
+                        return (
+                          <div key={group.key} className="hc-group">
+                            <div className={`hc-group-label ${group.key}`}>{group.label}</div>
+                            <div className="hc-people">
+                              {people.map((person) => (
+                                <div
+                                  key={person.name}
+                                  className={`hc-person ${person.name === lead.name ? 'on' : ''}`}
+                                >
+                                  <div>
+                                    <div className="hc-name">{person.name}</div>
+                                    <div className="hc-meta">
+                                      {person.title} · {person.company}
+                                    </div>
+                                  </div>
+                                  <span className={`hc-warmth ${person.warmth}`}>{person.warmth}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className={`hc-composer ${phase === 'typing' || phase === 'idle' ? 'is-live' : ''}`}>
-          {phase === 'typing' || (phase === 'idle' && typed) ? (
-            <span>
-              {typed}
-              <span className="hc-caret" />
-            </span>
-          ) : phase === 'idle' ? (
-            <span className="hc-placeholder">
-              Message Claude…
-              <span className="hc-caret" />
-            </span>
-          ) : (
-            <span className="hc-placeholder">Message Claude…</span>
-          )}
-          <span className={`hc-send ${phase === 'typing' && typed ? 'on' : ''}`} />
+        <div className="hc-composer-wrap">
+          <div className={`hc-composer ${phase === 'typing' ? 'is-live' : ''}`}>
+            <div className="hc-hint">
+              {phase === 'typing' ? (
+                <span>
+                  {typed}
+                  <span className="hc-caret" />
+                </span>
+              ) : (
+                <span className="hc-placeholder">
+                  Reply to Claude…
+                  {phase === 'idle' ? <span className="hc-caret" /> : null}
+                </span>
+              )}
+            </div>
+            <div className="hc-composer-bar">
+              <span className="hc-model">+ &nbsp; Sonnet 4.6</span>
+              <span className={`hc-send ${phase === 'typing' && typed ? 'on' : ''}`} />
+            </div>
+          </div>
         </div>
-      </div>
-    </MockWindow>
+      </section>
+    </div>
   )
 }
 

@@ -28,6 +28,7 @@ import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
+import { isPriorityPipelinePrompt, rankHubSpotLeads, type LeadPriority } from '../shared/priorityOverlay'
 import { warmthRank, type Warmth } from '../shared/warmth'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
@@ -437,6 +438,9 @@ export async function deployPublicTool(
       body.nextAction = willEnrollLater
         ? `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${projectId} with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step (pass stepId). Do not paste the JSON into chat — save_research enrolls everyone and opens Tasks. Do not leave {{first_name}} placeholders as the send copy.`
         : `Research each contact and save_research personalized email copy for project ${projectId}. Do not start a sequence.`
+    }
+    if (isPriorityPipelinePrompt(prompt)) {
+      body.nextAction = `Call show_tasks for project ${projectId} now. The priority pipeline is already ranked. Do not research, do not save_research, and do not ask to schedule.`
     }
     return {
       ok: true,
@@ -1724,6 +1728,7 @@ export type HubSpotPickerContact = {
   phone: string
   linkedinUrl: string
   warmth: NonNullable<Contact['warmth']>
+  priority?: LeadPriority
 }
 
 export async function listHubSpotContactsForEnroll(
@@ -1742,8 +1747,8 @@ export async function listHubSpotContactsForEnroll(
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
     const prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
-    const contacts = prospects
-      .map((p) => ({
+    const contacts = rankHubSpotLeads(
+      prospects.map((p) => ({
         externalId: p.externalId,
         name: p.name,
         title: p.title,
@@ -1751,9 +1756,14 @@ export async function listHubSpotContactsForEnroll(
         email: p.email,
         phone: p.phone,
         linkedinUrl: p.linkedinUrl || '',
-        warmth: p.warmth ?? 'unknown'
-      }))
-      .sort((a, b) => warmthRank(a.warmth) - warmthRank(b.warmth))
+        warmth: (p.warmth ?? 'unknown') as NonNullable<Contact['warmth']>
+      })),
+      (contact) => ({
+        seed: (contact.email || contact.externalId).trim().toLowerCase(),
+        company: contact.company,
+        title: contact.title
+      })
+    )
     return {
       ok: true,
       connected: true,
@@ -1823,6 +1833,7 @@ function warmthCounts(contacts: Array<{ warmth?: Warmth }>): Record<Warmth, numb
 }
 
 const DEFAULT_WARMTH_RULE = 'Enroll hot and warm. List cold contacts without enrolling them.'
+const RANKED_QUEUE_RULE = 'Enroll the full HubSpot list. The queue is already ranked by research signals.'
 
 export function saveWorkspaceBrief(
   store: DataStore,
@@ -1837,14 +1848,31 @@ export function saveWorkspaceBrief(
     const contacts = db.contacts.filter((c) => c.projectId === projectId)
     const counts = warmthCounts(contacts)
     const goal = patch?.goal ?? project.brief?.goal ?? project.spec?.goal ?? project.answers.goal ?? ''
-    const warmthRule = patch?.warmthRule ?? project.brief?.warmthRule ?? DEFAULT_WARMTH_RULE
+    const hubspot = contacts.filter((c) => c.source === 'hubspot')
+    const ranked = hubspot.length
+      ? rankHubSpotLeads(hubspot, (contact) => ({
+          seed: (contact.email || contact.externalId || contact.id).trim().toLowerCase(),
+          company: contact.company,
+          title: contact.title
+        }))
+      : []
+    const inbound = ranked.filter((contact) => contact.priority?.motion === 'inbound').length
+    const outbound = ranked.filter((contact) => contact.priority?.motion === 'outbound').length
+    const storedRule = patch?.warmthRule ?? project.brief?.warmthRule
+    const warmthRule =
+      hubspot.length && (!storedRule || storedRule === DEFAULT_WARMTH_RULE)
+        ? RANKED_QUEUE_RULE
+        : (storedRule ?? DEFAULT_WARMTH_RULE)
+    const summary = hubspot.length
+      ? `${project.name}: ${goal || 'outbound'}. Priority queue from HubSpot: ${inbound} inbound, ${outbound} outbound, best call first.`
+      : `${project.name}: ${goal || 'outbound'}. ${warmthRule} ${counts.hot} hot, ${counts.warm} warm, ${counts.cold} cold.`
     brief = {
       goal,
       warmthRule,
       lastSyncAt: patch && 'lastSyncAt' in patch ? patch.lastSyncAt : project.brief?.lastSyncAt,
       scheduleChoice: patch?.scheduleChoice ?? project.brief?.scheduleChoice,
       cadence: patch?.cadence ?? project.brief?.cadence,
-      summary: `${project.name}: ${goal || 'outbound'}. ${warmthRule} ${counts.hot} hot, ${counts.warm} warm, ${counts.cold} cold.`
+      summary
     }
     project.brief = brief
     project.updatedAt = Date.now()

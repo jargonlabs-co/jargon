@@ -68,7 +68,12 @@
     .person:last-child { border-bottom: 0; }
     .person:hover, .person.on { background: var(--bg2); }
     .meta { color: var(--muted); font-size: 12px; }
-    .pill { font-size: 11px; color: var(--muted); }
+    .signal { color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.35; }
+    .pill { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .pill.inbound, .pill.outbound {
+      border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line); font-weight: 650;
+    }
+    .pill.inbound { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
     .composer { margin-top: 12px; }
     .to { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
@@ -1650,7 +1655,8 @@ function dueLabel(task) {
       <div class="detail-panel">
         <div class="kicker">${esc(contact.name)}</div>
         <div class="meta">${esc([contact.title, contact.company, contact.email || 'no email'].filter(Boolean).join(' · '))}</div>
-        <div class="meta" style="margin-top:6px;">${esc(contactNextLabel(contact))}${contact.status ? ` · ${esc(String(contact.status).replace('_', ' '))}` : ''}</div>
+        ${signalLine(contact) ? `<div class="signal">${esc(signalLine(contact))}</div>` : ''}
+        <div class="meta" style="margin-top:6px;">${motionPill(contact) ? `${motionPill(contact)} · ` : ''}${esc(contactNextLabel(contact))}${contact.status ? ` · ${esc(String(contact.status).replace('_', ' '))}` : ''}</div>
         ${missing ? '<div class="banner err" style="margin-top:10px;">Missing email — add one in Claude or the full workspace.</div>' : ''}
         <div class="row">
           ${!enrolled ? `<button class="btn primary" id="enroll-one" ${busy ? 'disabled' : ''}>${pendingStart ? 'Confirm enroll' : 'Enroll this person'}</button>` : ''}
@@ -1667,20 +1673,59 @@ function dueLabel(task) {
     return contact.warmth === 'hot' || contact.warmth === 'warm' || contact.warmth === 'cold' ? contact.warmth : 'unknown';
   }
 
+  function priorityOf(contact) {
+    const p = contact && contact.priority;
+    if (!p || !p.rank || (p.motion !== 'inbound' && p.motion !== 'outbound')) return null;
+    return p;
+  }
+
+  function priorityPeople(people) {
+    if (!people.some(priorityOf)) return people;
+    return [...people].sort((a, b) => (priorityOf(a)?.rank || 9999) - (priorityOf(b)?.rank || 9999));
+  }
+
+  function signalLine(contact) {
+    const p = priorityOf(contact);
+    if (!p || !Array.isArray(p.signals)) return '';
+    return p.signals.filter(Boolean).join(' · ');
+  }
+
+  function motionPill(contact) {
+    const p = priorityOf(contact);
+    if (!p) return '';
+    const label = p.motion === 'inbound' ? 'Inbound' : 'Outbound';
+    return `<span class="pill ${p.motion}">#${p.rank} · ${label}</span>`;
+  }
+
+  function priorityStats(people) {
+    const inbound = people.filter((c) => priorityOf(c)?.motion === 'inbound').length;
+    const outbound = people.filter((c) => priorityOf(c)?.motion === 'outbound').length;
+    if (!inbound && !outbound) return '';
+    return `
+      <div class="statrow">
+        <div><strong>${inbound}</strong><span>inbound</span></div>
+        <div><strong>${outbound}</strong><span>outbound</span></div>
+      </div>
+    `;
+  }
+
   function personButton(c, oneOff) {
+    const signal = signalLine(c);
+    const pill = motionPill(c) || `<div class="pill">${esc(c.warmth ? warmthKey(c) : (oneOff ? statusLabel(ws, c) : contactNextLabel(c)))}</div>`;
     return `
       <button class="person ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
         <div>
           <div>${esc(c.name)}</div>
           <div class="meta">${esc([c.title, c.company, c.email || 'no email'].filter(Boolean).join(' · '))}</div>
+          ${signal ? `<div class="signal">${esc(signal)}</div>` : ''}
         </div>
-        <div class="pill">${esc(c.warmth ? warmthKey(c) : (oneOff ? statusLabel(ws, c) : contactNextLabel(c)))}</div>
+        ${pill}
       </button>
     `;
   }
 
   function renderPeople() {
-    const people = ws.contacts || [];
+    const people = priorityPeople(ws.contacts || []);
     const oneOff = surface() === 'one_off';
     const selected = people.find((c) => c.id === selectedId) || people[0];
     if (selected && selectedId !== selected.id) {
@@ -1688,8 +1733,12 @@ function dueLabel(task) {
       selectedMessageId = null;
       pendingSend = false;
     }
-    const scored = people.some((c) => c.warmth);
-    const groups = scored
+    const ordered = people;
+    const ranked = ordered.some(priorityOf);
+    const scored = !ranked && people.some((c) => c.warmth);
+    const groups = ranked
+      ? [{ label: '', people: ordered }]
+      : scored
       ? [
           ['hot', 'Hot'],
           ['warm', 'Warm'],
@@ -1702,7 +1751,8 @@ function dueLabel(task) {
       : [{ label: '', people }];
     return `
       ${!people.length ? '<p class="empty">No contacts yet. Import a list in Claude, or connect HubSpot / Railway and deploy again.</p>' : `
-        ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
+        ${priorityStats(ordered)}
+        ${ws.contactsTotal > people.length ? `<div class="banner">${ranked ? `Top ${people.length} of ${ws.contactsTotal} by priority.` : `Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.`}</div>` : ''}
         ${oneOff ? `<p class="sub" style="margin: 0 0 10px;">One-off emails — edit and send each person. No cadence.</p>` : ''}
         ${groups.map((group) => `
           ${group.label ? `<div class="kicker" style="margin: 12px 0 6px;">${esc(group.label)}</div>` : ''}
@@ -1747,6 +1797,7 @@ function dueLabel(task) {
     if (typeof contact?.attrs?.talkTrack === 'string' && contact.attrs.talkTrack.trim()) {
       return contact.attrs.talkTrack.trim();
     }
+    if (priorityOf(contact)) return '';
     const bullets = (contact?.context || []).filter(Boolean);
     return bullets.length ? bullets.join('\n') : '';
   }
@@ -1757,7 +1808,8 @@ function dueLabel(task) {
     const phase = call?.phase;
     const task = (ws.tasks || []).find((t) => t.contactId === contact.id && t.channel === 'call' && t.state !== 'done' && t.state !== 'skipped');
     const track = task?.body || talkTrackFor(contact, task?.stepId);
-    const bullets = (contact.context || []).filter(Boolean);
+    const prioritySignals = priorityOf(contact)?.signals?.filter(Boolean) || [];
+    const bullets = prioritySignals.length ? prioritySignals : (contact.context || []).filter(Boolean);
     return `
       <div class="composer call-panel">
         <div class="to">${esc(contact.name)} · ${esc(contact.phone || 'No number on file')}</div>
@@ -1811,10 +1863,17 @@ function dueLabel(task) {
 
   function visibleTasks() {
     const tasks = ws.tasks || [];
-    if (taskFilter === 'all') return tasks;
-    if (taskFilter === 'upcoming') return tasks.filter((t) => taskBucket(t) === 'upcoming');
-    if (taskFilter === 'done') return tasks.filter((t) => taskBucket(t) === 'done' || taskBucket(t) === 'skipped');
-    return tasks.filter((t) => taskBucket(t) === 'overdue' || taskBucket(t) === 'today');
+    const filtered = taskFilter === 'all'
+      ? tasks
+      : taskFilter === 'upcoming'
+        ? tasks.filter((t) => taskBucket(t) === 'upcoming')
+        : taskFilter === 'done'
+          ? tasks.filter((t) => taskBucket(t) === 'done' || taskBucket(t) === 'skipped')
+          : tasks.filter((t) => taskBucket(t) === 'overdue' || taskBucket(t) === 'today');
+    if (!filtered.some((t) => priorityOf(contactById(t.contactId)))) return filtered;
+    return [...filtered].sort(
+      (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
+    );
   }
 
   function selectTask(task) {
@@ -1855,7 +1914,9 @@ function dueLabel(task) {
   function taskRow(task) {
     const bucket = taskBucket(task);
     const ico = task.channel === 'call' ? ICO.phone : task.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
-    const line = task.reason || oneLine(task.subject || task.body) || channelLabel(task.channel);
+    const contact = contactById(task.contactId);
+    const line = signalLine(contact) || task.reason || oneLine(task.subject || task.body) || channelLabel(task.channel);
+    const mark = motionPill(contact);
     return `
       <button class="task ${task.id === selectedTaskId ? 'on' : ''} ${bucket}" data-task="${esc(task.id)}">
         <span class="ico">${ico}</span>
@@ -1863,7 +1924,7 @@ function dueLabel(task) {
           <div class="title">${esc(task.contactName)} · ${esc(task.stepLabel)}</div>
           <div class="preview">${esc(line)}</div>
         </div>
-        <div class="due ${bucket}">${esc(dueLabel(task))}</div>
+        ${mark || `<div class="due ${bucket}">${esc(dueLabel(task))}</div>`}
       </button>
     `;
   }
@@ -1890,6 +1951,7 @@ function dueLabel(task) {
         <div><strong>${counts.upcoming}</strong><span>upcoming</span></div>
         <div><strong>${counts.done}</strong><span>done</span></div>
       </div>
+      ${priorityStats(ws.contacts || [])}
       <div class="seg filters">
         ${[['open', `Due now (${counts.open})`], ['upcoming', `Upcoming (${counts.upcoming})`], ['done', `Done (${counts.done + counts.skipped})`], ['all', 'All']].map(([key, label]) => `
           <button type="button" class="${taskFilter === key ? 'on' : ''}" data-task-filter="${key}">${esc(label)}</button>
@@ -1904,6 +1966,7 @@ function dueLabel(task) {
             <div>
               <div class="kicker">Task ${position} of ${tasks.length} · ${esc(channelLabel(current.channel))}</div>
               <div class="meta">${esc(contact.name)}${current.contactMeta ? ` · ${esc(current.contactMeta)}` : ''} · ${esc(dueLabel(current))}</div>
+              ${signalLine(contact) ? `<div class="signal">${esc(signalLine(contact))}</div>` : ''}
             </div>
             <div class="nav">
               <button class="btn" id="task-prev" ${position <= 1 ? 'disabled' : ''}>Previous</button>
@@ -1918,7 +1981,7 @@ function dueLabel(task) {
   }
 
   function renderQueue() {
-    const people = ws.contacts || [];
+    const people = priorityPeople(ws.contacts || []);
     const selected = people.find((c) => c.id === selectedId) || people[0];
     if (selected && selectedId !== selected.id) {
       selectAction(selected, nextFor(selected));
@@ -1934,16 +1997,18 @@ function dueLabel(task) {
           ${workspaceChannels().includes('call') ? `<div><strong>${ws.stats?.called ?? 0}</strong><span>called</span></div>` : ''}
           ${workspaceChannels().includes('linkedin') ? `<div><strong>${ws.stats?.linkedin ?? 0}</strong><span>LinkedIn</span></div>` : ''}
         </div>
-        ${ws.contactsTotal > people.length ? `<div class="banner">Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.</div>` : ''}
+        ${priorityStats(people)}
+        ${ws.contactsTotal > people.length ? `<div class="banner">${people.some(priorityOf) ? `Top ${people.length} of ${ws.contactsTotal} by priority.` : `Showing ${people.length} of ${ws.contactsTotal}. Open workspace for the full list.`}</div>` : ''}
         <div class="people">
           ${people.map((c) => `
             <div class="person queue ${c.id === selectedId ? 'on' : ''}" data-id="${esc(c.id)}">
               <button type="button" class="pick" data-id="${esc(c.id)}">
                 <div>${esc(c.name)}</div>
                 <div class="meta">${esc([c.title, c.company, c.phone || c.email || c.linkedinUrl].filter(Boolean).join(' · '))}</div>
+                ${signalLine(c) ? `<div class="signal">${esc(signalLine(c))}</div>` : ''}
               </button>
               <div class="side">
-                <div class="pill">${esc(progressLabel(c))}</div>
+                ${motionPill(c) || `<div class="pill">${esc(progressLabel(c))}</div>`}
                 ${renderChannelButtons(c)}
               </div>
             </div>
@@ -2107,8 +2172,11 @@ function dueLabel(task) {
 
   function channelTasks() {
     const tasks = myOpenTasks();
-    if (taskChannel === 'all') return tasks;
-    return tasks.filter((t) => t.channel === taskChannel);
+    const filtered = taskChannel === 'all' ? tasks : tasks.filter((t) => t.channel === taskChannel);
+    if (!filtered.some((t) => priorityOf(contactById(t.contactId)))) return filtered;
+    return [...filtered].sort(
+      (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
+    );
   }
 
   function taskTitle(task) {
@@ -2213,6 +2281,7 @@ function dueLabel(task) {
       }
     }
     return `
+      ${priorityStats(ws.contacts || [])}
       <div class="todo-filters">
         ${[['all', 'All'], ['email', 'Emails'], ['call', 'Calls'], ['linkedin', 'LinkedIn']].map(([key, label]) => `
           <button type="button" class="${taskChannel === key ? 'on' : ''}" data-task-channel="${key}">${label} <span class="count">${counts[key]}</span></button>
@@ -2220,16 +2289,22 @@ function dueLabel(task) {
       </div>
       ${!tasks.length ? `<p class="empty">${all.length ? 'Nothing in this channel.' : 'No to-dos yet. Ask Claude to enroll people into this sequence.'}</p>` : `
         <div class="todos">
-          ${tasks.map((task) => `
+          ${tasks.map((task) => {
+            const contact = contactById(task.contactId);
+            const signal = signalLine(contact);
+            const who = [task.contactName, contact?.title, contact?.company].filter(Boolean).join(' · ');
+            return `
             <button type="button" class="todo ${task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
               <span class="box" data-skip="${esc(task.id)}" title="Skip"></span>
               <span>
-                <span class="title">${esc(taskTitle(task))}</span>
-                <div class="preview">Step ${Number(task.stepOrder || 0) + 1} · ${esc(task.contactName)}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}${task.reason ? ` · ${esc(task.reason)}` : ''}</div>
+                <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
+                <div class="preview">${esc(who || task.contactName)}</div>
+                ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
               </span>
               <span class="todo-due"><span>Due</span>${esc(dueDate(task))}</span>
             </button>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       `}
     `;
@@ -2488,7 +2563,7 @@ function dueLabel(task) {
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
     if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
-    if (!parsed?.projectId) return;
+    if (!parsed?.projectId || (!parsed.view && !parsed.contacts)) return;
     applyWorkspace(parsed);
     render();
   };

@@ -79,7 +79,7 @@ const MCP_SEQUENCE_RE =
 const MCP_ONE_OFF_RE =
   /\bone[ -]?offs?\b|\bhandful\b|\ba few emails\b|\bindividual emails?\b|\bjust (?:send|email|draft)/
 const MCP_TASKS_RE =
-  /\btasks? (?:view|list|feed|tab|board)\b|\bdaily tasks\b|\btoday'?s tasks\b|\btasks? due\b|\bdue today\b|\bto[ -]?do list\b|\bwork (?:through )?(?:my |the )?tasks\b|\bclick through .{0,24}tasks\b/
+  /\btasks? (?:view|list|feed|tab|board)\b|\bdaily tasks\b|\btoday'?s tasks\b|\btasks? due\b|\bdue today\b|\bto[ -]?do list\b|\bwork (?:through )?(?:my |the )?tasks\b|\bclick through .{0,24}tasks\b|\bpriority pipeline\b/
 
 export function inferMcpSurface(input: {
   prompt: string

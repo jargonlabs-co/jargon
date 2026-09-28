@@ -22,6 +22,7 @@ import {
   toManualContacts,
   type DeployContactInput
 } from './deployContacts'
+import { isPriorityPipelinePrompt, salesExecContactIds, wantsSalesExecs } from '../shared/priorityOverlay'
 
 export { PlanLimitError }
 
@@ -151,6 +152,19 @@ export async function createProjectRecord(
     try {
       const prospects = await fetchHubSpotContacts(secrets.accessToken, limit, demo)
       writeHubSpotContactsToProjects(store, orgId, prospects, projectId)
+      if (isPriorityPipelinePrompt(prompt) && wantsSalesExecs(prompt)) {
+        const keep = salesExecContactIds(
+          store.db.contacts
+            .filter((contact) => contact.projectId === projectId)
+            .map((contact) => ({ id: contact.id, title: contact.title }))
+        )
+        if (keep) {
+          const ids = new Set(keep)
+          store.update((db) => {
+            db.contacts = db.contacts.filter((contact) => contact.projectId !== projectId || ids.has(contact.id))
+          })
+        }
+      }
     } catch {
       writeDemoContactsToProject(store, orgId, projectId, 20)
     }

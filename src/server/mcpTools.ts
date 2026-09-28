@@ -53,6 +53,7 @@ import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
+import { isPriorityPipelinePrompt } from '../shared/priorityOverlay'
 import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
@@ -160,7 +161,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'In a new chat, call resume_workspace first. If HubSpot is connected, list_crm_contacts and enroll hot and warm with enroll_hubspot. Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
+        'If the user asks to pull HubSpot contacts and build a priority pipeline, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat, call resume_workspace first. If HubSpot is connected, list_crm_contacts and enroll everyone with enroll_hubspot people "all". The list is already ranked, inbound and outbound mixed. Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
       })
     }
   )
@@ -351,6 +352,7 @@ export function registerJargonTools(
   async function execDeploy(prompt: string, contacts: unknown, spec: unknown) {
     const parsed = parseDeployContacts(contacts)
     if (!parsed.ok) return fail(parsed.error)
+    const pipeline = isPriorityPipelinePrompt(prompt)
     const result = await deployPublicTool(
       store,
       config,
@@ -358,9 +360,10 @@ export function registerJargonTools(
       prompt,
       parsed.contacts,
       spec,
-      { enroll: false, billing }
+      { enroll: pipeline, billing }
     )
     if (!result.ok) return fail(result.body.error)
+    if (pipeline) return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox, 'tasks', actor.userId)
     return ok(result.body)
   }
 
@@ -416,8 +419,9 @@ export function registerJargonTools(
     'deploy_tool',
     {
       ...display('Set up a new outbound workspace', HINTS.write),
+      _meta: EMAIL_WORKSPACE_TOOL_META,
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. Exception: a HubSpot priority pipeline (for example "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week") is the sentence alone, no table. That enrolls HubSpot contacts and opens To-dos already ranked. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -1145,7 +1149,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal, group them by warmth, and enroll a bucket into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, "all", or a warmth bucket such as "hot,warm". Cold contacts are listed and not enrolled unless people names them. People already on the sequence are skipped. Manual steps become their to-dos.',
+        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". "all" enrolls the full portal list; the app ranks it with inbound and outbound mixed. People already on the sequence are skipped. Manual steps become their to-dos.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         summary: Summary,
@@ -1196,7 +1200,7 @@ export function registerJargonTools(
     {
       ...display('Pull CRM contacts by warmth', HINTS.read),
       description:
-        'Pull contacts from the connected HubSpot portal and group them by warmth (hot, warm, cold, unknown). Does not enroll them. Call this before enroll_hubspot when the user wants the CRM organized by warmth.'
+        'Pull contacts from the connected HubSpot portal. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals. Sorted best-first. Does not enroll them. Do not regroup by warmth.'
     },
     async () => {
       const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)

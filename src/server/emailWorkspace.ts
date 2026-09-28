@@ -12,11 +12,13 @@ import {
   listPublicContacts,
   listPublicMessages,
   toPublicCall,
+  toPublicContact,
   type PublicCall,
   type PublicContact,
   type PublicMessage,
   type PublicStep
 } from './publicApi'
+import { isPriorityPipelinePrompt, rankHubSpotLeads, type LeadPriority } from '../shared/priorityOverlay'
 import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
 import {
   buildWorkspaceTasks,
@@ -26,7 +28,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=warmth1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=priority1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -53,6 +55,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=engage4',
   'ui://jargon/email-workspace.html?v=engage5',
   'ui://jargon/email-workspace.html?v=engage6',
+  'ui://jargon/email-workspace.html?v=warmth1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -66,6 +69,8 @@ export type WorkspaceContact = PublicContact & {
   nextChannel?: Channel | null
   preview?: { subject: string; body: string }
   linkedinPreview?: { body: string }
+  /** Present for HubSpot contacts. Computed for the app; not a CRM field. */
+  priority?: LeadPriority
 }
 
 export type StepStat = {
@@ -153,7 +158,7 @@ export function isEmailMotion(project: Project, steps: Array<{ channel: string }
 }
 
 export function scheduleAsk(projectId: string): string {
-  return `Ask the user once whether to run project ${projectId} on a schedule. Default: every Sunday at 6pm in their timezone. If they name another cadence, use that. If they say yes, propose a Claude scheduled task and wait for them to confirm with Schedule. Do not say it is scheduled until they confirm. The task instructions must say: call resume_workspace for this project, then list_crm_contacts, enroll hot and warm with enroll_hubspot, research anyone new, and save_research. Tell them the task must be allowed to use Jargon's write tools, or a later run stops on an Allow card. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+  return `Ask the user once whether to run project ${projectId} on a schedule. Default: every Sunday at 6pm in their timezone. If they name another cadence, use that. If they say yes, propose a Claude scheduled task and wait for them to confirm with Schedule. Do not say it is scheduled until they confirm. The task instructions must say: call resume_workspace for this project, then list_crm_contacts, enroll everyone with enroll_hubspot people "all", research anyone new, and save_research. Tell them the task must be allowed to use Jargon's write tools, or a later run stops on an Allow card. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
 }
 
 export function getEmailWorkspace(
@@ -169,7 +174,25 @@ export function getEmailWorkspace(
   if (!sequence) return null
   const steps = sequence.steps.filter((step): step is PublicStep => Boolean(step))
   const dashboard = dashboardFor(project.id, config.appUrl)
-  const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
+  const projectRows = store.db.contacts.filter((c) => c.projectId === projectId)
+  const hubspotQueue = projectRows.some((c) => c.source === 'hubspot')
+  const rankedRows = hubspotQueue
+    ? rankHubSpotLeads(projectRows, (contact) =>
+        contact.source === 'hubspot'
+          ? {
+              seed: (contact.email || contact.externalId || contact.id).trim().toLowerCase(),
+              company: contact.company,
+              title: contact.title
+            }
+          : null
+      ).slice(0, 50)
+    : null
+  const listed = rankedRows
+    ? { contacts: rankedRows.map(toPublicContact), total: projectRows.length }
+    : listPublicContacts(store, projectId, { limit: 50, offset: 0 })
+  const priorityById = new Map(
+    (rankedRows ?? []).flatMap((contact) => (contact.priority ? [[contact.id, contact.priority] as const] : []))
+  )
   const messages = listPublicMessages(store, {
     orgId,
     projectId,
@@ -209,7 +232,8 @@ export function getEmailWorkspace(
       ...contact,
       preview,
       linkedinPreview,
-      nextChannel: nextChannel(contact, spec)
+      nextChannel: nextChannel(contact, spec),
+      priority: priorityById.get(contact.id)
     }
   })
   const sources = store.db.connections
@@ -237,6 +261,14 @@ export function getEmailWorkspace(
     (c) => c.projectId === projectId && c.phase !== 'completed' && c.phase !== 'failed'
   )
   const tasks = buildWorkspaceTasks({ contacts, steps, messages, calls: projectCalls })
+  if (priorityById.size) {
+    tasks.sort(
+      (a, b) =>
+        (priorityById.get(a.contactId)?.rank ?? 9999) - (priorityById.get(b.contactId)?.rank ?? 9999) ||
+        a.dueAt - b.dueAt ||
+        a.contactName.localeCompare(b.contactName)
+    )
+  }
   const taskStats = summarizeTasks(tasks)
   const defaultTab = inferMcpDefaultTab({
     surface,
@@ -244,8 +276,10 @@ export function getEmailWorkspace(
     enrolled: taskStats.enrolled > 0
   })
   const remaining = contacts.filter((c) => !motionComplete(c, spec)).length
-  const researchPending = contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
-  const schedulePending = !researchPending && taskStats.enrolled > 0 && !project.brief?.scheduleChoice
+  const priorityPipeline = isPriorityPipelinePrompt(project.prompt || '')
+  const researchPending = !priorityPipeline && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
+  const schedulePending =
+    !priorityPipeline && !researchPending && taskStats.enrolled > 0 && !project.brief?.scheduleChoice
   const nextAction = researchPending
     ? surface === 'one_off'
       ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
@@ -675,7 +709,9 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
 
 export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account on managed infrastructure: email, phone, and LinkedIn are sent by Jargon (customers do not bring API keys). Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
 
-On a new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. If HubSpot is connected, call list_crm_contacts and group people by warmth. enroll_hubspot with people "hot,warm" enrolls that bucket and lists everyone else. Cold stays listed until the user asks to enroll them.
+Priority pipeline: when the user asks to pull HubSpot contacts and build a priority pipeline, including "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week", call deploy_tool with that sentence as workspace and no contact table. Do not call resume_workspace first. Then call show_tasks with the projectId. Stop. The To-dos list is already ranked, inbound and outbound mixed. Do not save_research and do not ask to schedule.
+
+On any other new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. If HubSpot is connected, call list_crm_contacts. Each contact has priority.rank, priority.motion (inbound or outbound), and priority.signals. The queue is already sorted, best first, with inbound and outbound mixed. enroll_hubspot with people "all" enrolls that list. Do not regroup by warmth and do not drop cold contacts.
 
 Bring a list through Claude when HubSpot is not connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument.
 

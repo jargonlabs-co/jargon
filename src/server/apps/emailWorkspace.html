@@ -416,13 +416,24 @@ function toolErrorText(text) {
 
 function parseToolResult(result) {
   if (!result) return null;
-  if (result.isError) {
-    const t = result.content?.[0]?.text;
+  const bag = result.params && (result.params.content || result.params.structuredContent || result.params.isError)
+    ? result.params
+    : result;
+  const structured = bag.structuredContent;
+  if (structured && typeof structured === 'object' && (structured.projectId || structured.view || structured.tasks)) {
+    return structured;
+  }
+  if (bag.isError) {
+    const t = bag.content?.[0]?.text;
     return { error: toolErrorText(t) };
   }
-  const text = result.content?.find((c) => c.type === 'text')?.text;
-  if (!text) return result.structuredContent || result;
-  try { return JSON.parse(text); } catch { return { error: text }; }
+  const text = (bag.content || []).filter((block) => block && block.type === 'text' && block.text).map((block) => block.text).join('');
+  if (!text) return structured || null;
+  try { return JSON.parse(text); } catch { return structured || { error: text.slice(0, 280) }; }
+}
+
+function isWorkspacePayload(parsed) {
+  return Boolean(parsed && parsed.projectId && (parsed.view || Array.isArray(parsed.contacts) || Array.isArray(parsed.tasks)));
 }
 
 function sendError(parsed) {
@@ -2312,7 +2323,7 @@ function dueLabel(task) {
 
   function render() {
     if (!ws) {
-      root.innerHTML = '<p class="empty">Waiting for workspace data…</p>';
+      root.innerHTML = `<p class="empty">${notice ? esc(notice) : 'Waiting for workspace data…'}</p>`;
       return;
     }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
@@ -2560,17 +2571,60 @@ function dueLabel(task) {
     }
   });
 
+  let toolProjectId = null;
+
+  function rememberProject(input) {
+    const args = input?.arguments || input?.params?.arguments || input;
+    if (args && typeof args.projectId === 'string') toolProjectId = args.projectId;
+  }
+
+  function acceptWorkspace(parsed) {
+    if (!isWorkspacePayload(parsed)) return false;
+    applyWorkspace(parsed);
+    notice = '';
+    try {
+      render();
+    } catch (err) {
+      notice = err?.message || 'Could not draw the workspace';
+      noticeTone = 'err';
+      ws = null;
+      render();
+    }
+    return true;
+  }
+
+  app.ontoolinput = rememberProject;
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
-    if (parsed?.error && !parsed.projectId) { ws = null; setNotice(parsed.error, 'err'); return; }
-    if (!parsed?.projectId || (!parsed.view && !parsed.contacts)) return;
-    applyWorkspace(parsed);
-    render();
+    if (parsed?.projectId) toolProjectId = parsed.projectId;
+    if (acceptWorkspace(parsed)) return;
+    if (parsed?.error && !ws) {
+      notice = parsed.error;
+      noticeTone = 'err';
+      render();
+    }
   };
   app.onhostcontextchanged = themeFromHost;
   await app.connect();
   themeFromHost();
   render();
+  if (!ws) {
+    try {
+      const fetched = parseToolResult(await app.callServerTool({
+        name: toolProjectId ? 'show_tasks' : 'resume_workspace',
+        arguments: toolProjectId ? { projectId: toolProjectId } : {}
+      }));
+      if (!acceptWorkspace(fetched) && fetched?.error) {
+        notice = fetched.error;
+        noticeTone = 'err';
+        render();
+      }
+    } catch (err) {
+      notice = err?.message || 'Could not load the workspace';
+      noticeTone = 'err';
+      render();
+    }
+  }
 })();
   </script>
 </body>

@@ -1762,7 +1762,7 @@ function dueLabel(task) {
       const band = bandOf(contactById(task.contactId), ranked) || 'low';
       buckets[band].tasks.push(task);
     }
-    return [buckets.low, buckets.medium, buckets.high].filter((group) => group.tasks.length);
+    return [buckets.high, buckets.medium, buckets.low].filter((group) => group.tasks.length);
   }
 
   function bandStats(tasks) {
@@ -1787,7 +1787,7 @@ function dueLabel(task) {
           <div class="preview">${esc(who || task.contactName)}</div>
           ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
         </span>
-        <span class="todo-due"><span>Due</span>${esc(dueDate(task))}</span>
+        <span class="todo-due"><span>${esc(taskTitle(task))}</span>${esc(dueDate(task))}</span>
       </button>
     `;
   }
@@ -2253,13 +2253,29 @@ function dueLabel(task) {
     return (ws.tasks || []).filter((t) => t.owner !== 'auto' && t.state !== 'done' && t.state !== 'skipped');
   }
 
+  function nextTaskByContact(tasks) {
+    const best = new Map();
+    for (const task of tasks) {
+      const prev = best.get(task.contactId);
+      if (
+        !prev ||
+        task.dueAt < prev.dueAt ||
+        (task.dueAt === prev.dueAt && Number(task.stepOrder || 0) < Number(prev.stepOrder || 0))
+      ) {
+        best.set(task.contactId, task);
+      }
+    }
+    const next = [...best.values()];
+    if (!next.some((t) => priorityOf(contactById(t.contactId)))) return next;
+    return next.sort(
+      (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
+    );
+  }
+
   function channelTasks() {
     const tasks = myOpenTasks();
     const filtered = taskChannel === 'all' ? tasks : tasks.filter((t) => t.channel === taskChannel);
-    if (!filtered.some((t) => priorityOf(contactById(t.contactId)))) return filtered;
-    return [...filtered].sort(
-      (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
-    );
+    return nextTaskByContact(filtered);
   }
 
   function taskTitle(task) {
@@ -2346,12 +2362,12 @@ function dueLabel(task) {
   }
 
   function renderTodos() {
-    const all = myOpenTasks();
+    const open = myOpenTasks();
     const counts = {
-      all: all.length,
-      email: all.filter((t) => t.channel === 'email').length,
-      call: all.filter((t) => t.channel === 'call').length,
-      linkedin: all.filter((t) => t.channel === 'linkedin').length,
+      all: nextTaskByContact(open).length,
+      email: nextTaskByContact(open.filter((t) => t.channel === 'email')).length,
+      call: nextTaskByContact(open.filter((t) => t.channel === 'call')).length,
+      linkedin: nextTaskByContact(open.filter((t) => t.channel === 'linkedin')).length,
     };
     const tasks = channelTasks();
     if (workFocus) {
@@ -2371,7 +2387,7 @@ function dueLabel(task) {
           <button type="button" class="${taskChannel === key ? 'on' : ''}" data-task-channel="${key}">${label} <span class="count">${counts[key]}</span></button>
         `).join('')}
       </div>
-      ${!tasks.length ? `<p class="empty">${all.length ? 'Nothing in this channel.' : 'No to-dos yet. Ask Claude to enroll people into this sequence.'}</p>` : `
+      ${!tasks.length ? `<p class="empty">${open.length ? 'Nothing in this channel.' : 'No to-dos yet. Ask Claude to enroll people into this sequence.'}</p>` : `
         <div class="todos">
           ${groups.map((group) => `
             <section class="todo-group">
@@ -2391,7 +2407,7 @@ function dueLabel(task) {
     }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
-    const open = myOpenTasks().length;
+    const open = nextTaskByContact(myOpenTasks()).length;
     root.innerHTML = `
       <header class="engage-head">
         <div>

@@ -220,6 +220,23 @@ export function buildWorkspaceTasks(input: {
   return tasks.sort((a, b) => a.dueAt - b.dueAt || a.contactName.localeCompare(b.contactName))
 }
 
+/** One open to-do per contact: the soonest step still assigned to the rep. */
+export function nextOpenTasksByContact(tasks: WorkspaceTask[]): WorkspaceTask[] {
+  const best = new Map<string, WorkspaceTask>()
+  for (const task of tasks) {
+    if (task.owner === 'auto' || task.state === 'done' || task.state === 'skipped') continue
+    const prev = best.get(task.contactId)
+    if (
+      !prev ||
+      task.dueAt < prev.dueAt ||
+      (task.dueAt === prev.dueAt && task.stepOrder < prev.stepOrder)
+    ) {
+      best.set(task.contactId, task)
+    }
+  }
+  return [...best.values()]
+}
+
 export function summarizeTasks(tasks: WorkspaceTask[]): TaskStats {
   const mine = tasks.filter((t) => t.owner !== 'auto')
   const count = (fn: (task: WorkspaceTask) => boolean) => mine.filter(fn).length

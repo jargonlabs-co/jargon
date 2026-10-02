@@ -1,19 +1,31 @@
 import { useState } from 'react'
 import { api, getClaudeConnectorInstallUrl, getMcpUrl } from '../api'
 import { useAuth } from '../auth'
+import { ChatGptMark } from './ChatGptMark'
 import { ClaudeMark } from './ClaudeMark'
 import { LoginPanel } from './LoginPanel'
 import { LogoMark } from './LogoMark'
+import { StarterPrompt } from './StarterPrompt'
 import { CONNECTOR_DESCRIPTION, CONNECTOR_TAGLINE, ConnectorGallery } from './ConnectorGallery'
+import {
+  detectChatHost,
+  getChatGptConnectorUrl,
+  hostLabel,
+  launchChat,
+  STARTER_PROMPT,
+  type ChatDestination
+} from '../lib/chatLaunch'
 
 function ConnectShell({
   title,
   subtitle,
+  destination = 'claude',
   wide,
   children
 }: {
   title: string
   subtitle: string
+  destination?: ChatDestination
   wide?: boolean
   children: React.ReactNode
 }) {
@@ -26,8 +38,8 @@ function ConnectShell({
               <LogoMark size={22} />
             </span>
             <span className="connect-claude-wire" aria-hidden="true" />
-            <span className="connect-claude-tile bare">
-              <ClaudeMark size={44} />
+            <span className={`connect-claude-tile${destination === 'claude' ? ' bare' : ''}`}>
+              {destination === 'chatgpt' ? <ChatGptMark size={22} /> : <ClaudeMark size={44} />}
             </span>
           </div>
           <h1>{title}</h1>
@@ -46,13 +58,17 @@ export function ConnectClaude() {
   const redirectUri = params.get('redirect_uri') ?? ''
   const codeChallenge = params.get('code_challenge') ?? ''
   const state = params.get('state') ?? undefined
-  const hasOAuth = Boolean(clientId && redirectUri && codeChallenge)
+  const previewConsent = import.meta.env.DEV && params.get('preview') === 'consent'
+  const hasOAuth = previewConsent || Boolean(clientId && redirectUri && codeChallenge)
+  const destination = detectChatHost(redirectUri || (previewConsent ? 'https://claude.ai/callback' : ''))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
 
   const command = `claude mcp add --transport http --scope user jargon ${getMcpUrl()}`
+  const host = hostLabel(destination)
+  const partner = destination === 'chatgpt' ? 'ChatGPT' : 'Claude'
 
   async function approve() {
     setBusy(true)
@@ -66,7 +82,7 @@ export function ConnectClaude() {
       })
       window.location.assign(result.redirect)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not connect Claude')
+      setError(err instanceof Error ? err.message : `Could not connect ${partner}`)
     } finally {
       setBusy(false)
     }
@@ -82,7 +98,12 @@ export function ConnectClaude() {
     }
   }
 
-  if (loading) {
+  const previewUser = previewConsent
+    ? { email: user?.email ?? 'tara@jargonlabs.co', name: user?.name ?? 'Tara' }
+    : user
+  const previewOrg = previewConsent ? { name: org?.name ?? 'Jargon Demo' } : org
+
+  if (loading && !previewConsent) {
     return <div className="page-loading">Loading…</div>
   }
 
@@ -105,6 +126,23 @@ export function ConnectClaude() {
                 Switch
               </button>
             </div>
+            <StarterPrompt />
+            <div className="connect-open-row">
+              <button
+                type="button"
+                className="btn primary btn-sm"
+                onClick={() => launchChat('claude', STARTER_PROMPT)}
+              >
+                Open in Claude
+              </button>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                onClick={() => launchChat('chatgpt', STARTER_PROMPT)}
+              >
+                Open in ChatGPT
+              </button>
+            </div>
             <ol className="connect-claude-steps">
               <li>
                 <span className="connect-claude-step-label">Claude desktop or web</span>
@@ -115,6 +153,17 @@ export function ConnectClaude() {
                   rel="noreferrer"
                 >
                   Add connector in Claude
+                </a>
+              </li>
+              <li>
+                <span className="connect-claude-step-label">ChatGPT</span>
+                <a
+                  className="btn ghost btn-full"
+                  href={getChatGptConnectorUrl()}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Add connector in ChatGPT
                 </a>
               </li>
               <li>
@@ -144,22 +193,23 @@ export function ConnectClaude() {
         )}
         {user ? (
           <p className="connect-claude-foot">
-            <a href="/claude">Back to dashboard</a>
+            <a href="/">Back to dashboard</a>
           </p>
         ) : null}
       </ConnectShell>
     )
   }
 
-  if (!user) {
+  if (!previewUser) {
     return (
       <ConnectShell
-        title="Connect Claude to Jargon"
+        title={`Connect ${partner} to Jargon`}
         subtitle={
           authMode === 'login'
-            ? 'Sign in so Claude can build sequences and work today’s tasks in your workspace.'
-            : 'Create a Jargon workspace so Claude can run contacts, sequences, and tasks from chat.'
+            ? `Sign in so ${partner} can build sequences and work today’s tasks in your workspace.`
+            : `Create a Jargon workspace so ${partner} can run contacts, sequences, and tasks from chat.`
         }
+        destination={destination}
       >
         <LoginPanel embedded showBrand={false} onModeChange={setAuthMode} />
         <p className="connect-claude-foot">
@@ -168,7 +218,7 @@ export function ConnectClaude() {
               New to Jargon? Choose <strong>Create account</strong> above.
             </>
           ) : (
-            <>You&apos;ll come straight back here to approve Claude.</>
+            <>You&apos;ll come straight back here to approve {partner}.</>
           )}
         </p>
       </ConnectShell>
@@ -177,38 +227,48 @@ export function ConnectClaude() {
 
   return (
     <ConnectShell
-      title="Claude wants access to Jargon"
-      subtitle={`Approve to let Claude build sequences and work today’s tasks in ${org?.name ?? 'your workspace'}.`}
+      title={`Connect Jargon to ${partner}`}
+      subtitle={`Access Jargon’s queues, cadences, and dialer right inside ${partner}.`}
+      destination={destination}
     >
-      <div className="connect-claude-card">
+      <p className="connect-claude-sent">
+        Access code will be sent to: <strong>{host}</strong>
+      </p>
+      <div className="connect-claude-card connect-onboard-card">
         <div className="connect-claude-identity">
           <span className="connect-claude-avatar" aria-hidden="true">
-            {user.email.slice(0, 1).toUpperCase()}
+            {previewUser.email.slice(0, 1).toUpperCase()}
           </span>
           <div>
-            <strong>{user.email}</strong>
-            {org ? <span>{org.name}</span> : null}
+            <strong>{previewUser.email}</strong>
+            {previewOrg ? <span>{previewOrg.name}</span> : null}
           </div>
           <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
             Switch
           </button>
         </div>
-        <ul className="connect-claude-scopes">
-          <li>See your contacts and who is enrolled in a cadence</li>
-          <li>Build sequences and start them from chat</li>
-          <li>Work today’s tasks — email, calls, and LinkedIn billed to your plan</li>
-        </ul>
+        <StarterPrompt />
+        <p className="connect-privacy">
+          Please check your AI provider&apos;s privacy settings before sharing any personal
+          information through this connection. Make sure your provider does not train on the data
+          you submit to receive Jargon contact information.
+        </p>
         {error ? <p className="form-error">{error}</p> : null}
-        <div className="connect-claude-actions">
-          <button type="button" className="btn primary btn-full" disabled={busy} onClick={() => void approve()}>
-            {busy ? 'Connecting…' : 'Allow access'}
-          </button>
-          <a className="btn ghost btn-full" href="/claude">
+        <div className="connect-onboard-actions">
+          <a className="btn ghost" href="/">
             Cancel
           </a>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy || previewConsent}
+            onClick={() => void approve()}
+          >
+            {busy ? 'Connecting…' : 'Allow'}
+          </button>
         </div>
       </div>
-      <p className="connect-claude-foot">You can revoke Claude&apos;s access any time from your dashboard.</p>
+      <p className="connect-claude-foot">You can revoke {partner}&apos;s access any time from your dashboard.</p>
     </ConnectShell>
   )
 }

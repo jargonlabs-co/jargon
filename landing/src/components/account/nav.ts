@@ -1,11 +1,11 @@
 import type { AccountSnapshot, ConnectionPublic, PortalBuild } from '../../api'
 
 export const ACCOUNT_NAV = [
-  { id: 'overview', path: '/', label: 'Overview' },
+  { id: 'overview', path: '/', label: 'Home' },
   { id: 'usage', path: '/usage', label: 'Usage' },
   { id: 'billing', path: '/billing', label: 'Billing' },
   { id: 'data', path: '/data', label: 'Data' },
-  { id: 'claude', path: '/claude', label: 'Claude connector' },
+  { id: 'claude', path: '/claude', label: 'Connectors' },
   { id: 'keys', path: '/keys', label: 'API keys' },
   { id: 'tools', path: '/tools', label: 'Tools' },
   { id: 'settings', path: '/settings', label: 'Settings' }

@@ -374,13 +374,15 @@ export function AccountApp({
             Sign out
           </button>
         </header>
-        <main className="account-main">
+        <main className={`account-main${page === 'overview' ? ' is-home' : ''}`}>
           {!snapshot && !error ? <p className="section-lede">Loading account…</p> : null}
           {snapshot && page === 'overview' ? (
             <OverviewPage
               snapshot={snapshot}
               connections={connections}
               builds={builds}
+              userName={user.name}
+              userEmail={user.email}
               onNavigate={onNavigate}
               onOpenTool={(id) => onOpenTool?.(id)}
             />

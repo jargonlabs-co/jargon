@@ -56,7 +56,7 @@ export function LoginPanel({
       setStoredToken(payload.token)
       await refresh()
       if (mode === 'register') {
-        window.history.pushState({}, '', '/claude')
+        window.history.pushState({}, '', '/')
         window.dispatchEvent(new PopStateEvent('popstate'))
       }
     } catch (err) {
@@ -95,7 +95,7 @@ export function LoginPanel({
               {mode === 'login' ? (
                 <>
                   <h2>Welcome back</h2>
-                  <p>Sign in to connect Claude and run outbound.</p>
+                  <p>Sign in to open Jargon in Claude or ChatGPT.</p>
                 </>
               ) : mode === 'forgot' ? (
                 <>
@@ -105,7 +105,7 @@ export function LoginPanel({
               ) : (
                 <>
                   <h2>Create your account</h2>
-                  <p>Sign up, connect Claude, and bring your list.</p>
+                  <p>Sign up, then open a prompt in Claude or ChatGPT.</p>
                 </>
               )}
             </div>

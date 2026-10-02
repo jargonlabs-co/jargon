@@ -57,7 +57,11 @@ function Root() {
 
   const toolId = toolIdFromPath(path)
 
-  if (path === '/connect/claude' || path.startsWith('/connect/claude/')) {
+  if (
+    path === '/connect/claude' ||
+    path.startsWith('/connect/claude/') ||
+    (import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'consent')
+  ) {
     return <ConnectClaude />
   }
 

@@ -1,128 +1,159 @@
-import { getClaudeConnectorInstallUrl, resolveMcpUrl, type AccountSnapshot, type PortalBuild } from '../../api'
-import { formatCredits, formatWhen } from './nav'
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { type AccountSnapshot, type PortalBuild } from '../../api'
+import { ChatGptMark } from '../ChatGptMark'
+import { ClaudeMark } from '../ClaudeMark'
+import {
+  HOME_PLACEHOLDER,
+  firstNameOf,
+  launchChat,
+  timeGreeting,
+  type ChatDestination
+} from '../../lib/chatLaunch'
+import { formatWhen } from './nav'
 
 export function OverviewPage({
   snapshot,
   builds,
+  userName,
+  userEmail,
   onNavigate,
   onOpenTool
 }: {
   snapshot: AccountSnapshot
   connections?: unknown
   builds: PortalBuild[]
+  userName?: string
+  userEmail?: string
   onNavigate: (path: string) => void
   onOpenTool: (id: string) => void
 }) {
-  const { credits, usage, claude } = snapshot
-  const connectorUrl = getClaudeConnectorInstallUrl(resolveMcpUrl(claude?.mcpUrl))
-  const claudeConnected = Boolean(claude?.connected)
+  const claudeConnected = Boolean(snapshot.claude?.connected)
+  const [prompt, setPrompt] = useState('')
+  const [destination, setDestination] = useState<ChatDestination>('claude')
+
+  function submit(event?: FormEvent) {
+    event?.preventDefault()
+    const text = prompt.trim()
+    if (!text) return
+    launchChat(destination, text)
+  }
 
   return (
-    <section className="webapp-section">
-      <div className="section-heading">
-        <p className="eyebrow">Account</p>
-        <h1>Overview</h1>
-        <p className="section-lede">
-          Connect Claude, bring your list, and run outbound. Manage plan and credits here.
-        </p>
-      </div>
-
-      <div className="account-stat-grid">
-        <article className="account-stat">
-          <p className="account-stat-label">Credits</p>
-          <p className="account-stat-value">{formatCredits(credits.credits)}</p>
-          <p className="account-stat-meta">
-            {formatCredits(credits.included)} included · resets {formatWhen(credits.periodEnd)}
-          </p>
-          <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/billing')}>
-            Buy credits
-          </button>
-        </article>
-        <article className="account-stat">
-          <p className="account-stat-label">Plan</p>
-          <p className="account-stat-value">{credits.planName}</p>
-          <p className="account-stat-meta">{credits.payments.ready ? 'Billing on' : 'Payments coming online'}</p>
-          <button type="button" className="btn primary btn-sm" onClick={() => onNavigate('/billing')}>
-            {credits.plan === 'free' ? 'Upgrade' : 'Manage plan'}
-          </button>
-        </article>
-        <article className="account-stat">
-          <p className="account-stat-label">This period</p>
-          <p className="account-stat-value">{formatCredits(usage.totals.credits)}</p>
-          <p className="account-stat-meta">
-            {usage.totals.emails} email · {usage.totals.calls} calls · {usage.totals.linkedin} LinkedIn
-          </p>
-          <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/usage')}>
-            View usage
-          </button>
-        </article>
-      </div>
-
-      <div className="account-split">
-        <article className="context-card">
-          <div className="context-card-top">
-            <span className="context-role">First step</span>
-            <span className={`context-status ${claudeConnected ? 'ok' : ''}`}>
-              {claudeConnected ? 'Connected' : 'Required'}
-            </span>
-          </div>
-          <h3>Connect Claude</h3>
-          <p>
-            Add Jargon as a custom connector. Bring lists from your other Claude tools — no CRM OAuth
-            required inside Jargon.
-          </p>
-          <div className="key-actions">
-            <a className="btn primary btn-sm" href={connectorUrl} target="_blank" rel="noreferrer">
-              {claudeConnected ? 'Reconnect Claude' : 'Connect Claude'}
-            </a>
-            <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/claude')}>
-              Setup
+    <section className="home-dash">
+      <header className="home-hero">
+        <h1>
+          {timeGreeting()}, {firstNameOf(userName, userEmail)}
+        </h1>
+        <form className="home-composer" onSubmit={submit}>
+          <textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                submit()
+              }
+            }}
+            placeholder={HOME_PLACEHOLDER}
+            rows={3}
+            aria-label="Prompt for Claude or ChatGPT"
+          />
+          <div className="home-composer-bar">
+            <div className="home-destinations" role="tablist" aria-label="Open in">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={destination === 'claude'}
+                className={destination === 'claude' ? 'is-on' : ''}
+                onClick={() => setDestination('claude')}
+              >
+                <ClaudeMark size={16} />
+                Claude
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={destination === 'chatgpt'}
+                className={destination === 'chatgpt' ? 'is-on' : ''}
+                onClick={() => setDestination('chatgpt')}
+              >
+                <ChatGptMark size={16} />
+                ChatGPT
+              </button>
+            </div>
+            <button
+              type="submit"
+              className="home-send"
+              disabled={!prompt.trim()}
+              aria-label={`Open in ${destination === 'chatgpt' ? 'ChatGPT' : 'Claude'}`}
+            >
+              <SendIcon />
             </button>
           </div>
-        </article>
-        <article className="context-card">
-          <div className="context-card-top">
-            <span className="context-role">Outbound</span>
-            <span className="context-status">Live</span>
-          </div>
-          <h3>How lists enter</h3>
-          <p>
-            In Claude, call import_list with a markdown table or CSV. Email, phone, and LinkedIn are
-            sent on Jargon&apos;s managed infrastructure — no outbound API keys to connect.
-          </p>
-          <button type="button" className="btn ghost btn-sm" onClick={() => onNavigate('/claude')}>
-            Claude setup
+        </form>
+        <p className="home-or">Or start from</p>
+        <div className="home-starts">
+          <button type="button" className="home-start" onClick={() => onNavigate('/claude')}>
+            <ClaudeMark size={14} />
+            Connect Claude
           </button>
-        </article>
-      </div>
+          <button type="button" className="home-start" onClick={() => onNavigate('/claude')}>
+            <ChatGptMark size={14} />
+            Connect ChatGPT
+          </button>
+          <button type="button" className="home-start" onClick={() => onNavigate('/data')}>
+            Import from CRM
+          </button>
+        </div>
+      </header>
 
-      <div className="section-heading" style={{ marginTop: 40 }}>
-        <h2>Tools</h2>
-      </div>
-      {builds.length === 0 ? (
-        <p className="section-lede">No tools yet. Deploy from Claude or the CLI.</p>
-      ) : (
-        <ul className="build-list">
-          {builds.slice(0, 4).map((build) => (
-            <li key={build.project.id} className="build-row">
-              <div>
+      <div className="home-recent">
+        <div className="home-recent-head">
+          <h2>Recent tools</h2>
+          <button type="button" className="btn primary btn-sm" onClick={() => onNavigate('/tools')}>
+            All tools
+          </button>
+        </div>
+        {builds.length === 0 ? (
+          <button type="button" className="home-empty-row" onClick={() => onNavigate('/claude')}>
+            + New tool — {claudeConnected ? 'type a prompt above to open Claude or ChatGPT' : 'connect Claude or ChatGPT to deploy one'}
+          </button>
+        ) : (
+          <div className="home-table">
+            <div className="home-table-head">
+              <span>Name</span>
+              <span>Contacts</span>
+              <span>Last modified</span>
+            </div>
+            {builds.slice(0, 6).map((build) => (
+              <button
+                key={build.project.id}
+                type="button"
+                className="home-table-row"
+                onClick={() => onOpenTool(build.project.id)}
+              >
                 <strong>{build.project.name}</strong>
-                <p>
-                  {build.contactCount} contacts · {build.project.prompt}
-                </p>
-              </div>
-              <button type="button" className="btn primary btn-sm" onClick={() => onOpenTool(build.project.id)}>
-                Open
+                <span>{build.contactCount}</span>
+                <span>{formatWhen(build.project.updatedAt)}</span>
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {builds.length > 0 ? (
-        <button type="button" className="btn ghost btn-sm" style={{ marginTop: 12 }} onClick={() => onNavigate('/tools')}>
-          All tools
-        </button>
-      ) : null}
+            ))}
+          </div>
+        )}
+      </div>
     </section>
+  )
+}
+
+function SendIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 12.5V3.5M8 3.5L3.5 8M8 3.5L12.5 8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }

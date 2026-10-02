@@ -45,12 +45,7 @@ function Reveal({
   )
 }
 
-interface Props {
-  onLogin: () => void
-  onSignUp: () => void
-}
-
-export function MarketingPage({ onLogin, onSignUp }: Props) {
+export function MarketingPage() {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -77,9 +72,6 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
           <a href="/changelog">Changelog</a>
         </nav>
         <div className="nav-actions">
-          <button type="button" className="nav-login" onClick={onLogin}>
-            Log in
-          </button>
           <a
             className="nav-cta"
             href="https://calendly.com/tara_jargonlabs/30min"
@@ -109,9 +101,6 @@ export function MarketingPage({ onLogin, onSignUp }: Props) {
               >
                 Book a demo
               </a>
-              <button type="button" className="btn ghost" onClick={onSignUp}>
-                Sign up
-              </button>
             </div>
             <div className="hero-available" aria-label="Available on Claude and ChatGPT">
               <span className="hero-available-label">Available on</span>

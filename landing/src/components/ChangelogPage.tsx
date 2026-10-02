@@ -4,8 +4,6 @@ import { LogoMark } from './LogoMark'
 
 interface Props {
   signedIn: boolean
-  onLogin: () => void
-  onSignUp: () => void
   onOpenApp: () => void
 }
 
@@ -22,7 +20,7 @@ function isReleaseList(value: unknown): value is typeof initialReleases {
   )
 }
 
-export function ChangelogPage({ signedIn, onLogin, onSignUp, onOpenApp }: Props) {
+export function ChangelogPage({ signedIn, onOpenApp }: Props) {
   const [scrolled, setScrolled] = useState(false)
   const [releases, setReleases] = useState(initialReleases)
 
@@ -78,14 +76,14 @@ export function ChangelogPage({ signedIn, onLogin, onSignUp, onOpenApp }: Props)
               Open app
             </button>
           ) : (
-            <>
-              <button type="button" className="nav-login" onClick={onLogin}>
-                Log in
-              </button>
-              <button type="button" className="nav-cta" onClick={onSignUp}>
-                Sign up
-              </button>
-            </>
+            <a
+              className="nav-cta"
+              href="https://calendly.com/tara_jargonlabs/30min"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Book a demo
+            </a>
           )}
         </div>
       </header>

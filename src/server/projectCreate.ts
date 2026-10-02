@@ -5,8 +5,13 @@ import type { DataStore } from './store'
 import type { DeploySpecInput, ProjectKind } from './types'
 import { compileWorkspaceSpec } from '../shared/workspaceSpec'
 import type { BillingService } from './billing/types'
-import { assertCanCreateTool, PlanLimitError } from './planLimits'
-import { fetchHubSpotContacts, writeHubSpotContactsToProjects } from './providers/hubspot'
+import { assertCanCreateTool, orgWaitsForHubSpotEnrichment, PlanLimitError } from './planLimits'
+import {
+  pullHubSpotContacts,
+  pullHubSpotContactsUntilReady,
+  writeHubSpotContactsToProjects,
+  type HubSpotContactPull
+} from './providers/hubspot'
 import {
   fetchPostgresProspects,
   readPostgresSecrets,
@@ -22,6 +27,11 @@ import { isPriorityPipelinePrompt, salesExecContactIds, wantsSalesExecs } from '
 
 export { PlanLimitError }
 
+export type CreatedProject = {
+  projectId: string
+  hubspot?: HubSpotContactPull
+}
+
 export async function createProjectRecord(
   store: DataStore,
   config: ServerConfig,
@@ -34,7 +44,7 @@ export async function createProjectRecord(
     spec?: DeploySpecInput
     billing?: BillingService
   }
-): Promise<string> {
+): Promise<CreatedProject> {
   const { orgId, prompt } = input
   if (input.billing) {
     await assertCanCreateTool(input.billing, store, orgId)
@@ -75,7 +85,7 @@ export async function createProjectRecord(
     projectId = project.id
   })
 
-  if (provided) return projectId
+  if (provided) return { projectId }
 
   const limit = Math.min(
     Math.max(Number(finalAnswers.prospect_count ?? 50), 1),
@@ -97,7 +107,7 @@ export async function createProjectRecord(
         projectId,
         limit
       })
-      if (result.count > 0) return projectId
+      if (result.count > 0) return { projectId }
     } catch (err) {
       console.warn('[jargon] Railway prospects load failed, trying Postgres', err)
     }
@@ -133,7 +143,7 @@ export async function createProjectRecord(
               c.meta = { ...c.meta, rowCount: String(prospects.length), table }
             }
           })
-          return projectId
+          return { projectId }
         }
       }
     } catch (err) {
@@ -146,25 +156,32 @@ export async function createProjectRecord(
     const secrets = readSecrets(conn)
     const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
     try {
-      const prospects = await fetchHubSpotContacts(secrets.accessToken, limit, demo)
-      writeHubSpotContactsToProjects(store, orgId, prospects, projectId)
-      if (isPriorityPipelinePrompt(prompt) && wantsSalesExecs(prompt)) {
-        const keep = salesExecContactIds(
-          store.db.contacts
-            .filter((contact) => contact.projectId === projectId)
-            .map((contact) => ({ id: contact.id, title: contact.title }))
-        )
-        if (keep) {
-          const ids = new Set(keep)
-          store.update((db) => {
-            db.contacts = db.contacts.filter((contact) => contact.projectId !== projectId || ids.has(contact.id))
-          })
+      const wait = orgWaitsForHubSpotEnrichment(store, orgId)
+      const pull = wait
+        ? await pullHubSpotContactsUntilReady(secrets.accessToken, limit, demo)
+        : await pullHubSpotContacts(secrets.accessToken, limit, demo)
+      const pipeline = isPriorityPipelinePrompt(prompt)
+      if (pipeline || !wait || pull.recentlyPending === 0) {
+        writeHubSpotContactsToProjects(store, orgId, pull.reachable, projectId)
+        if (pipeline && wantsSalesExecs(prompt)) {
+          const keep = salesExecContactIds(
+            store.db.contacts
+              .filter((contact) => contact.projectId === projectId)
+              .map((contact) => ({ id: contact.id, title: contact.title }))
+          )
+          if (keep) {
+            const ids = new Set(keep)
+            store.update((db) => {
+              db.contacts = db.contacts.filter((contact) => contact.projectId !== projectId || ids.has(contact.id))
+            })
+          }
         }
       }
+      return { projectId, hubspot: pull }
     } catch (err) {
       console.warn('[jargon] HubSpot contacts load failed', err)
     }
   }
 
-  return projectId
+  return { projectId }
 }

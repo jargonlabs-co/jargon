@@ -932,14 +932,14 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
     const orgId = req.auth!.org.id
     try {
-      const projectId = await createProjectRecord(store, config, {
+      const created = await createProjectRecord(store, config, {
         orgId,
         prompt,
         kind,
         answers: answers ?? {},
         billing
       })
-      res.status(201).json(bundleProject(store.db, projectId))
+      res.status(201).json(bundleProject(store.db, created.projectId))
     } catch (err) {
       if (err instanceof PlanLimitError) {
         res.status(403).json({ error: err.message, code: err.code })
@@ -979,7 +979,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     )
     const orgId = req.auth!.org.id
     try {
-      const projectId = await createProjectRecord(store, config, {
+      const created = await createProjectRecord(store, config, {
         orgId,
         prompt: prompt.trim(),
         kind: kind ?? inferred.kind,
@@ -988,6 +988,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         contacts: parsed.contacts,
         billing
       })
+      const projectId = created.projectId
       const bundle = bundleProject(store.db, projectId)
       if (!bundle) {
         res.status(500).json({ error: 'Project created but could not be loaded' })

@@ -19,13 +19,22 @@ export function countOrgTools(store: DataStore, orgId: string): number {
   return store.db.projects.filter((p) => p.orgId === orgId).length
 }
 
-export function orgSkipsToolLimit(store: DataStore, orgId: string): boolean {
+function orgHasDogfoodOwner(store: DataStore, orgId: string): boolean {
   const memberIds = new Set(
     store.db.memberships.filter((membership) => membership.orgId === orgId).map((membership) => membership.userId)
   )
   return store.db.users.some(
     (user) => memberIds.has(user.id) && UNLIMITED_TOOLS_EMAILS.has(user.email.trim().toLowerCase())
   )
+}
+
+export function orgSkipsToolLimit(store: DataStore, orgId: string): boolean {
+  return orgHasDogfoodOwner(store, orgId)
+}
+
+/** Tara's HubSpot is empty until Lusha writes — do not block customer enrolls on that wait. */
+export function orgWaitsForHubSpotEnrichment(store: DataStore, orgId: string): boolean {
+  return orgHasDogfoodOwner(store, orgId)
 }
 
 /** Enforce Free-tier maxTools (and future maxDataSources) before creating a tool. */

@@ -17,19 +17,23 @@ import type {
 import type { ServerConfig } from './config'
 import { uid } from './crypto'
 import { getConnection, readSecrets } from './connections'
-import { fetchHubSpotContacts } from './providers/hubspot'
-import { prospectsToContacts, type ContextProspect } from './providers/prospects'
+import {
+  hubspotEnrichmentWaitMessage,
+  pullHubSpotContacts,
+  pullHubSpotContactsUntilReady
+} from './providers/hubspot'
+import { factsFromProspect, prospectsToContacts, type ContextProspect } from './providers/prospects'
 import { sendPlatformGmail } from './providers/gmail'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
+import { orgWaitsForHubSpotEnrichment } from './planLimits'
 import { channelsFromSteps, formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
 import {
-  hasReachableContact,
   isPriorityContact,
   isPriorityPipelinePrompt,
   leadIdentity,
@@ -92,6 +96,9 @@ export type PublicContact = {
   warmth?: Contact['warmth']
   context?: string[]
   attrs?: Record<string, unknown>
+  companyIndustry?: string
+  companySize?: string
+  companyDomain?: string
   channelsDone?: Contact['channelsDone']
   enrichedAt?: number
   createdAt: number
@@ -191,6 +198,9 @@ export function toPublicContact(contact: Contact): PublicContact {
     warmth: contact.warmth,
     context: contact.context,
     attrs: contact.attrs && Object.keys(contact.attrs).length ? contact.attrs : undefined,
+    companyIndustry: contact.companyIndustry,
+    companySize: contact.companySize,
+    companyDomain: contact.companyDomain,
     channelsDone: contact.channelsDone?.length ? contact.channelsDone : undefined,
     enrichedAt: contact.enrichedAt,
     createdAt: contact.createdAt,
@@ -342,7 +352,12 @@ export async function deployPublicTool(
           company?: string
           title?: string
           email?: string
+          phone?: string
+          city?: string
           linkedinUrl?: string
+          companyIndustry?: string
+          companySize?: string
+          context?: string[]
         }>
       }
     }
@@ -367,7 +382,7 @@ export async function deployPublicTool(
   }
   const inferred = await inferDeployParamsAsync(prompt, parsedSpec.spec, config)
   try {
-    const projectId = await createProjectRecord(store, config, {
+    const created = await createProjectRecord(store, config, {
       orgId,
       prompt,
       kind: inferred.kind,
@@ -376,6 +391,7 @@ export async function deployPublicTool(
       contacts: resolved,
       billing: opts?.billing
     })
+    const projectId = created.projectId
     const project = store.db.projects.find((p) => p.id === projectId)
     if (!project) {
       return { ok: false, status: 502, body: { error: 'Project created but could not be loaded' } }
@@ -400,6 +416,7 @@ export async function deployPublicTool(
       project: PublicProject
       researchPending?: boolean
       nextAction?: string
+      pendingEnrichment?: number
       steps?: Array<{ id: string; day: number; channel: string; label: string }>
       people?: Array<{
         id: string
@@ -407,7 +424,12 @@ export async function deployPublicTool(
         company?: string
         title?: string
         email?: string
+        phone?: string
+        city?: string
         linkedinUrl?: string
+        companyIndustry?: string
+        companySize?: string
+        context?: string[]
       }>
     } = {
       projectId,
@@ -416,7 +438,17 @@ export async function deployPublicTool(
       dashboardUrl: publicProject.dashboardUrl,
       project: publicProject
     }
-    if (opts?.enroll === false && publicProject.contactCount > 0) {
+    const recentPending = created.hubspot?.recentlyPending ?? 0
+    if (
+      opts?.enroll === false &&
+      recentPending > 0 &&
+      !isPriorityPipelinePrompt(prompt) &&
+      orgWaitsForHubSpotEnrichment(store, orgId)
+    ) {
+      body.researchPending = true
+      body.pendingEnrichment = recentPending
+      body.nextAction = hubspotEnrichmentWaitMessage(recentPending)
+    } else if (opts?.enroll === false && publicProject.contactCount > 0) {
       const sequence = getPublicSequence(store, orgId, projectId)
       const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
       const willEnrollLater = shouldAutoStartSequence({
@@ -440,11 +472,16 @@ export async function deployPublicTool(
         company: c.company || undefined,
         title: c.title || undefined,
         email: c.email || undefined,
-        linkedinUrl: c.linkedinUrl || undefined
+        phone: c.phone || undefined,
+        city: c.city || undefined,
+        linkedinUrl: c.linkedinUrl || undefined,
+        companyIndustry: c.companyIndustry || undefined,
+        companySize: c.companySize || undefined,
+        context: c.context?.length ? c.context : undefined
       }))
       body.nextAction = willEnrollLater
-        ? `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${projectId} with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step (pass stepId). Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
-        : `Research each contact and save_research personalized email copy for project ${projectId}. Do not start a sequence.`
+        ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from the HubSpot contact and company fields (Lusha enrichment) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
+        : `Write personalized email copy from each contact's HubSpot fields for project ${projectId}. Do not invent company facts. Do not start a sequence.`
     }
     if (isPriorityPipelinePrompt(prompt)) {
       body.nextAction = `Call show_tasks for project ${projectId} now. The priority pipeline is already ranked. Do not research, do not save_research, and do not ask to schedule.`
@@ -1738,7 +1775,21 @@ export type HubSpotPickerContact = {
   phone: string
   linkedinUrl: string
   warmth: NonNullable<Contact['warmth']>
+  attrs?: Record<string, unknown>
   priority?: LeadPriority
+}
+
+async function hubSpotPullForOrg(
+  store: DataStore,
+  orgId: string,
+  accessToken: string,
+  demo: boolean
+) {
+  const wait = orgWaitsForHubSpotEnrichment(store, orgId)
+  const pull = wait
+    ? await pullHubSpotContactsUntilReady(accessToken, 200, demo)
+    : await pullHubSpotContacts(accessToken, 200, demo)
+  return { pull, wait }
 }
 
 export async function listHubSpotContactsForEnroll(
@@ -1746,7 +1797,15 @@ export async function listHubSpotContactsForEnroll(
   config: ServerConfig,
   orgId: string
 ): Promise<
-  | { ok: true; connected: boolean; contacts: HubSpotPickerContact[]; counts: Record<Warmth, number> }
+  | {
+      ok: true
+      connected: boolean
+      contacts: HubSpotPickerContact[]
+      counts: Record<Warmth, number>
+      pendingEnrichment?: number
+      pending?: Array<{ name: string; company: string; title: string }>
+      nextAction?: string
+    }
   | { ok: false; error: string }
 > {
   const conn = getConnection(store, orgId, 'hubspot')
@@ -1756,9 +1815,9 @@ export async function listHubSpotContactsForEnroll(
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
-    const prospects = (await fetchHubSpotContacts(secrets.accessToken, 200, demo)).filter(hasReachableContact)
+    const { pull, wait } = await hubSpotPullForOrg(store, orgId, secrets.accessToken, demo)
     const contacts = rankLeads(
-      prospects.map((p) => ({
+      pull.reachable.map((p) => ({
         externalId: p.externalId,
         name: p.name,
         title: p.title,
@@ -1766,7 +1825,8 @@ export async function listHubSpotContactsForEnroll(
         email: p.email,
         phone: p.phone,
         linkedinUrl: p.linkedinUrl || '',
-        warmth: (p.warmth ?? 'unknown') as NonNullable<Contact['warmth']>
+        warmth: (p.warmth ?? 'unknown') as NonNullable<Contact['warmth']>,
+        attrs: p.attrs
       })),
       leadIdentity
     )
@@ -1774,7 +1834,17 @@ export async function listHubSpotContactsForEnroll(
       ok: true,
       connected: true,
       contacts,
-      counts: warmthCounts(contacts)
+      counts: warmthCounts(contacts),
+      pendingEnrichment: wait ? pull.recentlyPending : 0,
+      pending: wait
+        ? pull.pending.slice(0, 20).map((p) => ({
+            name: p.name,
+            company: p.company,
+            title: p.title
+          }))
+        : undefined,
+      nextAction:
+        wait && pull.recentlyPending > 0 ? hubspotEnrichmentWaitMessage(pull.recentlyPending) : undefined
     }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
@@ -1811,7 +1881,14 @@ function upsertHubSpotProspects(
         row.phone = prospect.phone
         row.city = prospect.city
         row.linkedinUrl = prospect.linkedinUrl
+        row.companyDomain = prospect.companyDomain
+        row.companyIndustry = prospect.companyIndustry
+        row.companySize = prospect.companySize
         if (prospect.warmth) row.warmth = prospect.warmth
+        if (prospect.attrs && Object.keys(prospect.attrs).length) {
+          row.attrs = { ...(row.attrs ?? {}), ...prospect.attrs }
+        }
+        row.context = prospect.context?.length ? prospect.context : factsFromProspect(prospect)
         row.updatedAt = now
         contactIds.push(row.id)
         continue
@@ -1902,12 +1979,19 @@ export async function enrollHubSpotContacts(
   if (!conn || conn.status !== 'connected') return { ok: false, error: 'HubSpot is not connected' }
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
-  let prospects: ContextProspect[]
+  let pull: Awaited<ReturnType<typeof pullHubSpotContacts>>
+  let wait = false
   try {
-    prospects = (await fetchHubSpotContacts(secrets.accessToken, 200, demo)).filter(hasReachableContact)
+    const loaded = await hubSpotPullForOrg(store, orgId, secrets.accessToken, demo)
+    pull = loaded.pull
+    wait = loaded.wait
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
   }
+  if (wait && pull.recentlyPending > 0) {
+    return { ok: false, error: hubspotEnrichmentWaitMessage(pull.recentlyPending) }
+  }
+  const prospects = pull.reachable
   if (!prospects.length) return { ok: false, error: 'No HubSpot contacts with an email, phone, or LinkedIn URL' }
   const ranked = [...prospects].sort((a, b) => warmthRank(a.warmth) - warmthRank(b.warmth))
   const wanted = new Set(externalIds)
@@ -1926,7 +2010,6 @@ export async function enrollHubSpotContacts(
   const enrollIds = store.db.contacts
     .filter((c) => {
       if (!upserted.contactIds.includes(c.id)) return false
-      if (enrolledAtOf(c) != null) return false
       if (!byWarmth) return true
       return warmth.includes(c.warmth ?? 'unknown')
     })

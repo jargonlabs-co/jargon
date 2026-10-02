@@ -65,6 +65,24 @@ describe('scoreLead', () => {
     const scored = scoreLead({ seed: 'no-company@x.com', company: 'Unknown company', title: 'Contact' })
     assert.equal(scored.signals.some((line) => /unknown company/i.test(line)), false)
   })
+
+  it('ranks Lusha intent above people with no signals and shows those facts', () => {
+    const hot = scoreLead({
+      seed: 'ada@acme.com',
+      company: 'Acme',
+      title: 'VP Sales',
+      facts: ['Intent: outbound dialers', 'VP'],
+      attrs: { intent_score: 82, gtm_initiative: ['Intent: outbound dialers'], seniority: 'VP' }
+    })
+    const cold = scoreLead({
+      seed: 'bo@orbit.com',
+      company: 'Orbit',
+      title: 'VP Sales'
+    })
+    assert.equal(hot.motion, 'inbound')
+    assert.ok(hot.score > cold.score)
+    assert.ok(hot.signals.some((line) => /intent/i.test(line)))
+  })
 })
 
 describe('rankLeads', () => {
@@ -129,5 +147,27 @@ describe('rankLeads', () => {
       ranked.map((row) => row.priority?.band).sort(),
       ['high', 'low', 'medium']
     )
+  })
+
+  it('ranks HubSpot people with Lusha intent first and shows those signals', () => {
+    const ranked = rankLeads(
+      [
+        { email: 'cold@x.com', company: 'Acme', title: 'VP Sales' },
+        {
+          email: 'hot@x.com',
+          company: 'Orbit',
+          title: 'VP Sales',
+          attrs: {
+            intent_score: 90,
+            gtm_initiative: ['Intent: sales engagement'],
+            seniority: 'VP'
+          }
+        }
+      ],
+      leadIdentity
+    )
+    assert.equal(ranked[0]?.email, 'hot@x.com')
+    assert.equal(ranked[0]?.priority?.motion, 'inbound')
+    assert.ok(ranked[0]?.priority?.signals.some((line) => /Intent: sales engagement/i.test(line)))
   })
 })

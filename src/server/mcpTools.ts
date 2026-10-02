@@ -429,9 +429,8 @@ export function registerJargonTools(
     'deploy_tool',
     {
       ...display('Set up a new outbound workspace', HINTS.write),
-      _meta: EMAIL_WORKSPACE_TOOL_META,
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens the flow, already ranked. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from the connected source. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from HubSpot fields (including Lusha signals), then save_research. That enrolls everyone and opens the flow. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from Lusha/HubSpot signals on the connected source. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -824,7 +823,7 @@ export function registerJargonTools(
     {
       ...display('Open your outbound workspace', HINTS.read),
       description:
-        'Reopen the outbound workspace in Claude on the flow (Contacts, Sequence, Tasks). Call after import_list, deploy_tool, or writing drafts. Use show_tasks only when they want to work what is due.',
+        'Reopen the outbound workspace in Claude on the flow (Contacts, Sequence, Tasks). Call after save_research or when they want to reopen work. Do not call this after deploy_tool while HubSpot enrichment is still pending. Use show_tasks only when they want to work what is due.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -1163,7 +1162,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. People already on the sequence are skipped. Manual steps become their to-dos.',
+        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. People already on the sequence are updated (new email/phone/LinkedIn steps are added). Manual steps become their to-dos.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         summary: Summary,
@@ -1214,7 +1213,7 @@ export function registerJargonTools(
     {
       ...display('Pull CRM contacts by warmth', HINTS.read),
       description:
-        'Pull contacts from the connected HubSpot portal that have an email, phone, or LinkedIn URL. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals. Sorted best-first. Does not enroll them. Do not regroup by warmth.'
+        'Pull contacts from the connected HubSpot portal that have an email, phone, or LinkedIn URL. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals from Lusha/HubSpot fields (intent, seniority, hiring). Sorted best-first. Does not enroll them. If pendingEnrichment is set, enrichment is still writing contact info — call this again before enroll_hubspot or save_research. Do not regroup by warmth.'
     },
     async () => {
       const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)
@@ -1359,7 +1358,7 @@ export function registerJargonTools(
     {
       ...display('Save a draft message', HINTS.write),
       description:
-        'Save researched, personalized copy for one contact. summary is the sentence on Claude\'s Allow card. Use channel call for a talk track, email/linkedin for send copy. Prefer save_research to write the whole list in one Allow. Pass stepId or day for follow-ups.',
+        'Save researched, personalized copy for one contact. summary is the sentence on Claude\'s Allow card. Use channel call for a talk track, email/linkedin for send copy. Write from HubSpot/Lusha contact and company fields — do not invent enrichment. Prefer save_research to write the whole list in one Allow. Pass stepId or day for follow-ups.',
       inputSchema: SaveDraftInput
     },
     async ({ contactId, body, subject, channel, stepId, day }) =>
@@ -1371,7 +1370,7 @@ export function registerJargonTools(
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens the flow. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
+        'Required after import_list / deploy_tool. Write personalized talk tracks, email copy, and LinkedIn notes from HubSpot contact and company fields (Lusha enrichment) — this enrolls the cadence and opens the flow. Do not invent funding, hiring, or tenure. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: SaveResearchInput
     },

@@ -104,28 +104,66 @@ export type LeadIdentity = {
   company: string
   title?: string
   facts?: string[]
+  attrs?: Record<string, unknown> | null
+}
+
+function asStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map((item) => item.trim())
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return value.split(/[;|,]/).map((item) => item.trim()).filter(Boolean)
+  }
+  return []
+}
+
+function firstAttr(attrs: Record<string, unknown> | null | undefined, keys: string[]): string {
+  if (!attrs) return ''
+  for (const key of keys) {
+    const value = attrs[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+/** Rankable lines from Lusha/HubSpot/warehouse attrs — never invented. */
+export function signalLinesFromAttrs(
+  attrs?: Record<string, unknown> | null,
+  warmth?: string | null
+): string[] {
+  const facts: string[] = []
+  const push = (line: string) => {
+    const text = line.trim()
+    if (text && !facts.includes(text)) facts.push(text)
+  }
+  for (const role of asStringList(attrs?.hiring)) push(`Hiring: ${role}`)
+  for (const line of asStringList(attrs?.gtm_initiative)) push(line)
+  if (!facts.some((line) => /\bintent\b/i.test(line))) {
+    const topics = firstAttr(attrs, ['intent_topics', 'lusha_intent_topics'])
+    for (const topic of asStringList(topics).slice(0, 3)) push(`Intent: ${topic}`)
+  }
+  const signal = firstAttr(attrs, ['lusha_latest_signal', 'latest_signal'])
+  if (signal) push(signal)
+  const seniority = firstAttr(attrs, ['seniority', 'lusha_seniority', 'hs_seniority'])
+  if (seniority) push(seniority)
+  const funding = firstAttr(attrs, ['funding_stage', 'lusha_funding_stage'])
+  if (funding) push(`Funding: ${funding}`)
+  const tech = firstAttr(attrs, ['technologies', 'lusha_technologies'])
+  if (tech) {
+    const first = asStringList(tech)[0]
+    if (first) push(`Uses ${first}`)
+  }
+  if (warmth === 'hot') push('Recent activity')
+  else if (warmth === 'warm') push('Active this quarter')
+  return facts.slice(0, 3)
 }
 
 function factLines(contact: {
   warmth?: string | null
   attrs?: Record<string, unknown> | null
 }): string[] {
-  const facts: string[] = []
-  const hiring = contact.attrs?.hiring
-  if (Array.isArray(hiring)) {
-    for (const role of hiring) {
-      if (typeof role === 'string' && role.trim()) facts.push(`Hiring: ${role.trim()}`)
-    }
-  }
-  const gtm = contact.attrs?.gtm_initiative
-  if (Array.isArray(gtm)) {
-    for (const line of gtm) {
-      if (typeof line === 'string' && line.trim()) facts.push(line.trim())
-    }
-  }
-  if (contact.warmth === 'hot') facts.push('Recent activity')
-  else if (contact.warmth === 'warm') facts.push('Active this quarter')
-  return facts.slice(0, 2)
+  return signalLinesFromAttrs(contact.attrs, contact.warmth)
 }
 
 /** Score a reachable contact from HubSpot, Railway, warehouse, or an imported list. */
@@ -149,7 +187,8 @@ export function leadIdentity(contact: {
     seed,
     company: contact.company ?? '',
     title: contact.title ?? undefined,
-    facts: factLines(contact)
+    facts: factLines(contact),
+    attrs: contact.attrs ?? undefined
   }
 }
 
@@ -171,19 +210,53 @@ function cleanTitle(title: string | undefined): string {
   return value
 }
 
+function numAttr(attrs: Record<string, unknown> | null | undefined, keys: string[]): number {
+  if (!attrs) return 0
+  for (const key of keys) {
+    const value = attrs[key]
+    const n = typeof value === 'number' ? value : Number(String(value ?? '').trim())
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 0
+}
+
+function intentBoost(score: number): number {
+  if (score <= 0) return 0
+  if (score <= 10) return Math.round(score * 4)
+  return Math.min(40, Math.round(score * 0.4))
+}
+
+function hasBuyingIntent(facts: string[], attrs?: Record<string, unknown> | null): boolean {
+  if (numAttr(attrs, ['intent_score', 'intent_count', 'lusha_signal_score']) > 0) return true
+  return facts.some((line) => /\bintent\b|buying signal/i.test(line))
+}
+
 export function scoreLead(input: {
   seed: string
   company: string
   title?: string
   facts?: string[]
+  attrs?: Record<string, unknown> | null
 }): Omit<LeadPriority, 'rank' | 'band'> {
   const h = hashSeed(input.seed.trim().toLowerCase())
   const company = cleanCompany(input.company)
   const title = cleanTitle(input.title)
-  const motion: LeadMotion = h % 5 < 2 ? 'inbound' : 'outbound'
-  const base = (h % 70) + 20
-  const score = motion === 'inbound' ? Math.min(99, base + 12) : base
-  const facts = (input.facts ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 2)
+  const facts = (input.facts ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 3)
+  const inboundFromSignals = hasBuyingIntent(facts, input.attrs)
+  const motion: LeadMotion = inboundFromSignals ? 'inbound' : h % 5 < 2 ? 'inbound' : 'outbound'
+  let score = 22 + (h % 8)
+  const intentScore = numAttr(input.attrs, ['intent_score', 'lusha_signal_score'])
+  const intentCount = numAttr(input.attrs, ['intent_count'])
+  if (intentScore) score += intentBoost(intentScore)
+  else if (intentCount) score += Math.min(32, Math.round(intentCount * 8))
+  if (isSalesExecTitle(title)) score += 14
+  else if (title) score += 4
+  if (company) score += 2
+  if (facts.some((line) => /^hiring:/i.test(line))) score += 8
+  if (facts.some((line) => /^funding:/i.test(line))) score += 6
+  if (inboundFromSignals && !intentScore && !intentCount) score += 10
+  if (motion === 'inbound' && !inboundFromSignals) score += 12
+  score = Math.max(1, Math.min(99, score))
   if (facts.length) return { score, motion, signals: facts }
   const who = title && company ? `${title} at ${company}` : title || company
   return { score, motion, signals: who ? [who] : [] }

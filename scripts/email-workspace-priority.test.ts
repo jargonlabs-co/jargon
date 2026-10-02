@@ -104,5 +104,9 @@ describe('workspace priority', () => {
       [...ws.contacts].map((row) => row.priority?.rank).sort((a, b) => (a ?? 0) - (b ?? 0)),
       [1, 2, 3]
     )
+    assert.deepEqual(
+      [...ws.contacts].map((row) => row.priority?.band).sort(),
+      ['high', 'low', 'medium']
+    )
   })
 })

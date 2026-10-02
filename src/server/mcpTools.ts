@@ -114,17 +114,26 @@ function workspaceOk(
   projectId: string,
   sandbox: boolean,
   focus?: McpTab,
-  userId?: string
+  userId?: string,
+  opts?: { embed?: boolean }
 ) {
-  const ws = getEmailWorkspace(store, config, orgId, projectId, {
-    sandbox,
-    focus,
-    userId
-  })
-  if (!ws) return fail('Project not found')
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(ws) }],
-    _meta: EMAIL_WORKSPACE_TOOL_META
+  try {
+    const ws = getEmailWorkspace(store, config, orgId, projectId, {
+      sandbox,
+      focus,
+      userId
+    })
+    if (!ws) return fail('Project not found')
+    const body: {
+      content: Array<{ type: 'text'; text: string }>
+      _meta?: typeof EMAIL_WORKSPACE_TOOL_META
+    } = {
+      content: [{ type: 'text', text: JSON.stringify(ws) }]
+    }
+    if (opts?.embed !== false) body._meta = EMAIL_WORKSPACE_TOOL_META
+    return body
+  } catch (err) {
+    return fail(err)
   }
 }
 
@@ -889,7 +898,8 @@ export function registerJargonTools(
       inputSchema: z.object({ projectId: z.string() }),
       _meta: { ui: { visibility: ['app'] } }
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId)
+    async ({ projectId }) =>
+      workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId, { embed: false })
   )
 
   const UpdateSequenceInput = z.object({

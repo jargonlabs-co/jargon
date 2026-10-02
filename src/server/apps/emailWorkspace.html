@@ -334,7 +334,14 @@
       padding: 6px 2px; border-bottom: 2px solid transparent;
     }
     .todo-filters button.on { color: var(--accent); border-bottom-color: var(--accent); }
-    .todos { display: grid; gap: 8px; }
+    .todos { display: grid; gap: 18px; }
+    .todo-group { display: grid; gap: 8px; }
+    .todo-group-h {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      padding: 0 2px;
+    }
+    .todo-group-h strong { font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+    .todo-group-h span { font-size: 11px; color: var(--muted); font-weight: 600; }
     .todo {
       display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
       width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line);
@@ -1717,6 +1724,74 @@ function dueLabel(task) {
     `;
   }
 
+  function priorityBand(rank, total) {
+    if (!rank || rank < 1 || total < 1) return 'low';
+    if (total === 1) return 'high';
+    if (total === 2) return rank === 1 ? 'high' : 'medium';
+    const highEnd = Math.max(1, Math.ceil(total / 3));
+    const mediumEnd = highEnd + Math.max(1, Math.ceil((total - highEnd) / 2));
+    if (rank <= highEnd) return 'high';
+    if (rank <= mediumEnd) return 'medium';
+    return 'low';
+  }
+
+  function bandOf(contact, rankedCount) {
+    const p = priorityOf(contact);
+    if (!p) return '';
+    if (p.band === 'high' || p.band === 'now') return 'high';
+    if (p.band === 'medium' || p.band === 'week') return 'medium';
+    if (p.band === 'low' || p.band === 'later') return 'low';
+    return priorityBand(p.rank, rankedCount);
+  }
+
+  function rankedContactCount() {
+    return (ws.contacts || []).filter(priorityOf).length;
+  }
+
+  function groupedTasks(tasks) {
+    const ranked = rankedContactCount();
+    if (!ranked || !tasks.some((t) => priorityOf(contactById(t.contactId)))) {
+      return [{ key: '', label: '', tasks }];
+    }
+    const buckets = {
+      low: { key: 'low', label: 'Low priority', tasks: [] },
+      medium: { key: 'medium', label: 'Medium priority', tasks: [] },
+      high: { key: 'high', label: 'High priority', tasks: [] },
+    };
+    for (const task of tasks) {
+      const band = bandOf(contactById(task.contactId), ranked) || 'low';
+      buckets[band].tasks.push(task);
+    }
+    return [buckets.low, buckets.medium, buckets.high].filter((group) => group.tasks.length);
+  }
+
+  function bandStats(tasks) {
+    const groups = groupedTasks(tasks);
+    if (!groups.some((group) => group.key)) return '';
+    return `
+      <div class="statrow">
+        ${groups.map((group) => `<div><strong>${group.tasks.length}</strong><span>${esc(group.key)}</span></div>`).join('')}
+      </div>
+    `;
+  }
+
+  function todoRow(task) {
+    const contact = contactById(task.contactId);
+    const signal = signalLine(contact);
+    const who = [task.contactName, contact?.title, contact?.company].filter(Boolean).join(' · ');
+    return `
+      <button type="button" class="todo ${task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
+        <span class="box" data-skip="${esc(task.id)}" title="Skip"></span>
+        <span>
+          <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
+          <div class="preview">${esc(who || task.contactName)}</div>
+          ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
+        </span>
+        <span class="todo-due"><span>Due</span>${esc(dueDate(task))}</span>
+      </button>
+    `;
+  }
+
   function personButton(c, oneOff) {
     const signal = signalLine(c);
     const pill = motionPill(c) || `<div class="pill">${esc(c.warmth ? warmthKey(c) : (oneOff ? statusLabel(ws, c) : contactNextLabel(c)))}</div>`;
@@ -2288,8 +2363,9 @@ function dueLabel(task) {
         return renderWork(current);
       }
     }
+    const groups = groupedTasks(tasks);
     return `
-      ${priorityStats(ws.contacts || [])}
+      ${bandStats(tasks) || priorityStats(ws.contacts || [])}
       <div class="todo-filters">
         ${[['all', 'All'], ['email', 'Emails'], ['call', 'Calls'], ['linkedin', 'LinkedIn']].map(([key, label]) => `
           <button type="button" class="${taskChannel === key ? 'on' : ''}" data-task-channel="${key}">${label} <span class="count">${counts[key]}</span></button>
@@ -2297,22 +2373,12 @@ function dueLabel(task) {
       </div>
       ${!tasks.length ? `<p class="empty">${all.length ? 'Nothing in this channel.' : 'No to-dos yet. Ask Claude to enroll people into this sequence.'}</p>` : `
         <div class="todos">
-          ${tasks.map((task) => {
-            const contact = contactById(task.contactId);
-            const signal = signalLine(contact);
-            const who = [task.contactName, contact?.title, contact?.company].filter(Boolean).join(' · ');
-            return `
-            <button type="button" class="todo ${task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
-              <span class="box" data-skip="${esc(task.id)}" title="Skip"></span>
-              <span>
-                <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
-                <div class="preview">${esc(who || task.contactName)}</div>
-                ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
-              </span>
-              <span class="todo-due"><span>Due</span>${esc(dueDate(task))}</span>
-            </button>
-          `;
-          }).join('')}
+          ${groups.map((group) => `
+            <section class="todo-group">
+              ${group.label ? `<div class="todo-group-h"><strong>${esc(group.label)}</strong><span>${group.tasks.length}</span></div>` : ''}
+              ${group.tasks.map(todoRow).join('')}
+            </section>
+          `).join('')}
         </div>
       `}
     `;
@@ -2584,8 +2650,7 @@ function dueLabel(task) {
     } catch (err) {
       notice = err?.message || 'Could not draw the workspace';
       noticeTone = 'err';
-      ws = null;
-      render();
+      try { render(); } catch (_) { /* keep the payload */ }
     }
     return true;
   }
@@ -2605,14 +2670,14 @@ function dueLabel(task) {
   await app.connect();
   themeFromHost();
   render();
-  if (!ws) {
+  if (!ws && toolProjectId) {
     try {
       const fetched = parseToolResult(await app.callServerTool({
-        name: toolProjectId ? 'show_email_workspace' : 'resume_workspace',
-        arguments: toolProjectId ? { projectId: toolProjectId } : {}
+        name: 'load_email_workspace',
+        arguments: { projectId: toolProjectId }
       }));
-      if (!acceptWorkspace(fetched) && fetched?.error) {
-        notice = fetched.error;
+      if (!acceptWorkspace(fetched)) {
+        notice = fetched?.error || 'Could not load the workspace';
         noticeTone = 'err';
         render();
       }

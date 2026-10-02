@@ -29,12 +29,27 @@ export function salesExecContactIds(rows: Array<{ id: string; title: string }>):
 
 export type LeadMotion = 'inbound' | 'outbound'
 
+export type PriorityBand = 'low' | 'medium' | 'high'
+
 /** View-only ranking. Not stored on the contact and not written back to a CRM. */
 export type LeadPriority = {
   rank: number
   score: number
   motion: LeadMotion
   signals: string[]
+  band: PriorityBand
+}
+
+/** Split a ranked list into low / medium / high priority. Rank 1 is high. */
+export function priorityBand(rank: number | undefined, total: number): PriorityBand {
+  if (!rank || rank < 1 || total < 1) return 'low'
+  if (total === 1) return 'high'
+  if (total === 2) return rank === 1 ? 'high' : 'medium'
+  const highEnd = Math.max(1, Math.ceil(total / 3))
+  const mediumEnd = highEnd + Math.max(1, Math.ceil((total - highEnd) / 2))
+  if (rank <= highEnd) return 'high'
+  if (rank <= mediumEnd) return 'medium'
+  return 'low'
 }
 
 export type LeadIdentity = {
@@ -74,7 +89,7 @@ function cleanTitle(title: string | undefined): string {
   return value
 }
 
-export function scoreLead(input: { seed: string; company: string; title?: string }): Omit<LeadPriority, 'rank'> {
+export function scoreLead(input: { seed: string; company: string; title?: string }): Omit<LeadPriority, 'rank' | 'band'> {
   const h = hashSeed(input.seed.trim().toLowerCase())
   const company = cleanCompany(input.company)
   const title = cleanTitle(input.title)
@@ -108,7 +123,7 @@ export function rankLeads<T extends object>(
   rows: T[],
   identity: (row: T) => LeadIdentity | null
 ): Array<T & { priority?: LeadPriority }> {
-  const scored: Array<{ index: number; row: T; score: Omit<LeadPriority, 'rank'> }> = []
+  const scored: Array<{ index: number; row: T; score: Omit<LeadPriority, 'rank' | 'band'> }> = []
   rows.forEach((row, index) => {
     const id = identity(row)
     if (!id?.seed.trim()) return
@@ -117,7 +132,8 @@ export function rankLeads<T extends object>(
   scored.sort((a, b) => b.score.score - a.score.score || a.index - b.index)
   const rankOf = new Map<T, LeadPriority>()
   scored.forEach((item, i) => {
-    rankOf.set(item.row, { ...item.score, rank: i + 1 })
+    const rank = i + 1
+    rankOf.set(item.row, { ...item.score, rank, band: priorityBand(rank, scored.length) })
   })
   const ranked = rows.filter((row) => rankOf.has(row)).sort((a, b) => rankOf.get(a)!.rank - rankOf.get(b)!.rank)
   const rest = rows.filter((row) => !rankOf.has(row))

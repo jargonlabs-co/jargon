@@ -4,6 +4,7 @@ import {
   isPriorityPipelinePrompt,
   isSalesExecTitle,
   leadIdentity,
+  priorityBand,
   rankLeads,
   salesExecContactIds,
   scoreLead
@@ -90,5 +91,28 @@ describe('rankLeads', () => {
     assert.equal(ranked[0]?.id, 'a')
     assert.equal(ranked[0]?.priority?.rank, 1)
     assert.equal(ranked[1]?.priority, undefined)
+  })
+
+  it('assigns low / medium / high from rank', () => {
+    assert.equal(priorityBand(1, 1), 'high')
+    assert.equal(priorityBand(1, 2), 'high')
+    assert.equal(priorityBand(2, 2), 'medium')
+    assert.deepEqual([1, 2, 3].map((rank) => priorityBand(rank, 3)), ['high', 'medium', 'low'])
+    assert.deepEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((rank) => priorityBand(rank, 8)),
+      ['high', 'high', 'high', 'medium', 'medium', 'medium', 'low', 'low']
+    )
+    const ranked = rankLeads(
+      [
+        { email: 'a@x.com', company: 'A' },
+        { email: 'b@y.com', company: 'B' },
+        { email: 'c@z.com', company: 'C' }
+      ],
+      leadIdentity
+    )
+    assert.deepEqual(
+      ranked.map((row) => row.priority?.band).sort(),
+      ['high', 'low', 'medium']
+    )
   })
 })

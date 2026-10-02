@@ -27,7 +27,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=loadfix1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=slimws1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -60,6 +60,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=flowfirst1',
   'ui://jargon/email-workspace.html?v=todobands1',
   'ui://jargon/email-workspace.html?v=prioritylmh1',
+  'ui://jargon/email-workspace.html?v=loadfix1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -324,6 +325,21 @@ export function getEmailWorkspace(
       called: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('call')).length,
       linkedin: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('linkedin')).length
     }
+  }
+}
+
+/** Short payload for Claude chat. The in-chat app loads the full workspace separately. */
+export function workspaceBrief(ws: EmailWorkspace) {
+  return {
+    projectId: ws.projectId,
+    name: ws.name,
+    contactCount: ws.contactCount,
+    focus: ws.focus,
+    defaultTab: ws.defaultTab,
+    researchPending: ws.researchPending,
+    nextAction: ws.nextAction,
+    taskStats: ws.taskStats,
+    stats: ws.stats
   }
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { ServerConfig } from '../src/server/config.ts'
-import { getEmailWorkspace } from '../src/server/emailWorkspace.ts'
+import { getEmailWorkspace, workspaceBrief } from '../src/server/emailWorkspace.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Project } from '../src/server/types.ts'
 
@@ -108,5 +108,10 @@ describe('workspace priority', () => {
       [...ws.contacts].map((row) => row.priority?.band).sort(),
       ['high', 'low', 'medium']
     )
+    const brief = workspaceBrief(ws)
+    assert.equal(brief.projectId, 'proj_1')
+    assert.equal('contacts' in brief, false)
+    assert.equal('messages' in brief, false)
+    assert.ok(JSON.stringify(brief).length < 4000)
   })
 })

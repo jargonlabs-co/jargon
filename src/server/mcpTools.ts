@@ -50,7 +50,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
 import { toE164 } from './providers/twilio'
 import { platformGmailReady } from './providers/gmail'
-import { getEmailWorkspace } from './emailWorkspace'
+import { getEmailWorkspace, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 import { isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
@@ -124,11 +124,12 @@ function workspaceOk(
       userId
     })
     if (!ws) return fail('Project not found')
+    const forModel = opts?.embed === false ? ws : workspaceBrief(ws)
     const body: {
       content: Array<{ type: 'text'; text: string }>
       _meta?: typeof EMAIL_WORKSPACE_TOOL_META
     } = {
-      content: [{ type: 'text', text: JSON.stringify(ws) }]
+      content: [{ type: 'text', text: JSON.stringify(forModel, null, 2) }]
     }
     if (opts?.embed !== false) body._meta = EMAIL_WORKSPACE_TOOL_META
     return body

@@ -440,7 +440,7 @@ function parseToolResult(result) {
 }
 
 function isWorkspacePayload(parsed) {
-  return Boolean(parsed && parsed.projectId && (parsed.view || Array.isArray(parsed.contacts) || Array.isArray(parsed.tasks)));
+  return Boolean(parsed && parsed.projectId && Array.isArray(parsed.contacts) && Array.isArray(parsed.tasks));
 }
 
 function sendError(parsed) {
@@ -2655,11 +2655,41 @@ function dueLabel(task) {
     return true;
   }
 
+  let fetching = false;
+
+  async function fetchWorkspace() {
+    if (!toolProjectId || fetching) return;
+    fetching = true;
+    try {
+      const fetched = parseToolResult(await app.callServerTool({
+        name: 'load_email_workspace',
+        arguments: { projectId: toolProjectId }
+      }));
+      if (!acceptWorkspace(fetched) && !ws) {
+        notice = fetched?.error || 'Could not load the workspace';
+        noticeTone = 'err';
+        render();
+      }
+    } catch (err) {
+      if (!ws) {
+        notice = err?.message || 'Could not load the workspace';
+        noticeTone = 'err';
+        render();
+      }
+    } finally {
+      fetching = false;
+    }
+  }
+
   app.ontoolinput = rememberProject;
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
     if (parsed?.projectId) toolProjectId = parsed.projectId;
     if (acceptWorkspace(parsed)) return;
+    if (!ws && toolProjectId) {
+      void fetchWorkspace();
+      return;
+    }
     if (parsed?.error && !ws) {
       notice = parsed.error;
       noticeTone = 'err';
@@ -2670,23 +2700,7 @@ function dueLabel(task) {
   await app.connect();
   themeFromHost();
   render();
-  if (!ws && toolProjectId) {
-    try {
-      const fetched = parseToolResult(await app.callServerTool({
-        name: 'load_email_workspace',
-        arguments: { projectId: toolProjectId }
-      }));
-      if (!acceptWorkspace(fetched)) {
-        notice = fetched?.error || 'Could not load the workspace';
-        noticeTone = 'err';
-        render();
-      }
-    } catch (err) {
-      notice = err?.message || 'Could not load the workspace';
-      noticeTone = 'err';
-      render();
-    }
-  }
+  if (!ws && toolProjectId) void fetchWorkspace();
 })();
   </script>
 </body>

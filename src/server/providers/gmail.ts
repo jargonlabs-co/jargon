@@ -111,6 +111,75 @@ export async function refreshGmailAccessToken(
   }
 }
 
+/** Claude's app bridge has been seen dropping U+0020 in tool args; the widget sends NBSP instead. */
+export function restoreCopiedSpaces(text: string): string {
+  return String(text ?? '').replace(/\u00A0/g, ' ')
+}
+
+export function escapeEmailHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Turn outbound copy into HTML so iOS Mail keeps spaces, paragraphs, and wrapping. */
+export function plainTextToEmailHtml(body: string): string {
+  const text = restoreCopiedSpaces(body).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const paragraphs = text.split(/\n{2,}/)
+  const inner = paragraphs
+    .map((p) => {
+      const html = escapeEmailHtml(p).replace(/\n/g, '<br>\n')
+      return `<p style="margin:0 0 1em 0;word-spacing:normal;">${html || '&nbsp;'}</p>`
+    })
+    .join('\n')
+  return `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#ffffff;word-spacing:normal;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#222;">
+${inner}
+</body>
+</html>`
+}
+
+function foldBase64(value: string): string {
+  return value.replace(/(.{76})/g, '$1\r\n').trim()
+}
+
+function encodeSubject(value: string): string {
+  const cleaned = restoreCopiedSpaces(value).replace(/[\r\n]+/g, ' ')
+  if (/^[\x20-\x7E]*$/.test(cleaned)) return cleaned
+  return `=?UTF-8?B?${Buffer.from(cleaned, 'utf8').toString('base64')}?=`
+}
+
+export function buildGmailRawMime(input: { to: string; subject: string; body: string }): string {
+  const plain = restoreCopiedSpaces(input.body)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n/g, '\r\n')
+  const html = plainTextToEmailHtml(input.body)
+  const boundary = 'jargon_alt_001'
+  return [
+    `To: ${input.to.trim()}`,
+    `Subject: ${encodeSubject(input.subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    foldBase64(Buffer.from(plain, 'utf8').toString('base64')),
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    foldBase64(Buffer.from(html, 'utf8').toString('base64')),
+    `--${boundary}--`,
+    ''
+  ].join('\r\n')
+}
+
 export async function sendGmailMessage(input: {
   accessToken: string
   to: string
@@ -123,16 +192,7 @@ export async function sendGmailMessage(input: {
     return { id: `demo_mail_${Date.now()}`, mode: 'demo' }
   }
 
-  const raw = [
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset="UTF-8"',
-    '',
-    input.body
-  ].join('\r\n')
-
-  const encoded = Buffer.from(raw)
+  const encoded = Buffer.from(buildGmailRawMime(input), 'utf8')
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')

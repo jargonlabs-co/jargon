@@ -58,7 +58,7 @@
       width: 100%; border: 1px solid var(--line); border-radius: 8px;
       background: var(--bg); padding: 8px 10px;
     }
-    textarea { min-height: 110px; resize: vertical; }
+    textarea { min-height: 110px; resize: vertical; white-space: pre-wrap; }
     .people { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .person {
       display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
@@ -391,6 +391,63 @@ function esc(s) {
   ));
 }
 
+/** Keep copy out of innerHTML so a host sanitizer cannot eat spaces in the composer. */
+function toFill(s) {
+  const bytes = new TextEncoder().encode(String(s ?? ''));
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromFill(s) {
+  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
+  const bin = atob(String(s || '').replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function filledInput(id, value, extra) {
+  return `<input id="${id}" type="text" data-fill="${toFill(value)}" ${extra || ''} />`;
+}
+
+function filledTextarea(id, value) {
+  return `<textarea id="${id}" data-fill="${toFill(value)}"></textarea>`;
+}
+
+function applyFills(scope) {
+  (scope || document).querySelectorAll('[data-fill]').forEach((el) => {
+    try { el.value = fromFill(el.getAttribute('data-fill')); } catch (_) { /* keep empty */ }
+    el.removeAttribute('data-fill');
+  });
+}
+
+/** U+0020 has been stripped from Claude app tool arguments; NBSP survives JSON-RPC. */
+function wireCopy(value) {
+  return typeof value === 'string' ? value.replace(/ /g, '\u00A0') : value;
+}
+
+function wireToolArgs(args) {
+  if (!args || typeof args !== 'object') return args;
+  const next = { ...args };
+  if (typeof next.subject === 'string') next.subject = wireCopy(next.subject);
+  if (typeof next.body === 'string') next.body = wireCopy(next.body);
+  if (Array.isArray(next.steps)) {
+    next.steps = next.steps.map((step) => {
+      if (!step || typeof step !== 'object') return step;
+      const row = { ...step };
+      if (typeof row.subject === 'string') row.subject = wireCopy(row.subject);
+      if (typeof row.body === 'string') row.body = wireCopy(row.body);
+      return row;
+    });
+  }
+  return next;
+}
+
+function callTool(req) {
+  return app.callServerTool({ ...req, arguments: wireToolArgs(req.arguments) });
+}
+
 function interpolate(template, contact) {
   if (!template) return '';
   const first = (contact.name || '').split(/\s+/)[0] || contact.name || '';
@@ -696,7 +753,7 @@ function dueLabel(task) {
 
   async function reload() {
     if (!ws?.projectId) return;
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'load_email_workspace',
       arguments: { projectId: ws.projectId },
     });
@@ -736,7 +793,7 @@ function dueLabel(task) {
       mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
     }));
     busy = true; render();
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'run_update_sequence',
       arguments: { projectId: ws.projectId, goal: ws.goal, steps },
     });
@@ -797,11 +854,11 @@ function dueLabel(task) {
     const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
-      ? await app.callServerTool({
+      ? await callTool({
           name: 'run_update_draft',
           arguments: { messageId: existing.id, subject, body },
         })
-      : await app.callServerTool({
+      : await callTool({
           name: 'run_save_draft',
           arguments: { contactId: contact.id, subject, body, channel: 'email', stepId: step?.id },
         });
@@ -820,14 +877,14 @@ function dueLabel(task) {
     try {
       let result;
       if (existing && existing.status !== 'sent') {
-        const patched = parseToolResult(await app.callServerTool({
+        const patched = parseToolResult(await callTool({
           name: 'run_update_draft',
           arguments: { messageId: existing.id, subject, body },
         }));
         if (patched?.error) { busy = false; setNotice(patched.error, 'err'); return; }
-        result = await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } });
+        result = await callTool({ name: 'run_send_draft', arguments: { messageId: existing.id } });
       } else {
-        const saved = parseToolResult(await app.callServerTool({
+        const saved = parseToolResult(await callTool({
           name: 'run_save_draft',
           arguments: { contactId: contact.id, subject, body, channel: 'email', stepId: currentDraftFields(contact).stepId },
         }));
@@ -836,7 +893,7 @@ function dueLabel(task) {
           setNotice(saved?.error || 'Could not save the email.', 'err');
           return;
         }
-        result = await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
+        result = await callTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
       }
       busy = false;
       const parsed = parseToolResult(result);
@@ -867,11 +924,11 @@ function dueLabel(task) {
     const existing = selectedEmailMessage(contact);
     busy = true; render();
     const result = existing
-      ? await app.callServerTool({
+      ? await callTool({
           name: 'run_update_draft',
           arguments: { messageId: existing.id, subject, body, sendAt, status: 'queued' },
         })
-      : await app.callServerTool({
+      : await callTool({
           name: 'run_send_message',
           arguments: { contactId: contact.id, subject, body, channel: 'email', status: 'queued', sendAt },
         });
@@ -886,7 +943,7 @@ function dueLabel(task) {
     const step = draftSteps.find((s) => s.id === stepId);
     if (step) step.mode = mode === 'auto' ? 'auto' : 'manual';
     busy = true; render();
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'run_set_step_mode',
       arguments: { projectId: ws.projectId, stepId, mode: mode === 'auto' ? 'auto' : 'manual' },
     });
@@ -921,7 +978,7 @@ function dueLabel(task) {
     busy = true; render();
     const args = { projectId: ws.projectId };
     if (ids?.length) args.contactIds = ids;
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'run_start_sequence',
       arguments: args,
     });
@@ -947,7 +1004,7 @@ function dueLabel(task) {
 
   async function unenrollContact(contact) {
     busy = true; render();
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'run_unenroll_contact',
       arguments: { contactId: contact.id },
     });
@@ -963,7 +1020,7 @@ function dueLabel(task) {
     const task = (ws.tasks || []).find((t) => t.id === selectedTaskId);
     if (!task) { stepTask(1); return; }
     busy = true; render();
-    const result = await app.callServerTool({
+    const result = await callTool({
       name: 'run_skip_task',
       arguments: { contactId: task.contactId, stepId: task.stepId },
     });
@@ -1136,13 +1193,13 @@ function dueLabel(task) {
     busy = true; render();
     try {
       await hangupPlivo();
-      const token = parseToolResult(await app.callServerTool({ name: 'run_voice_token', arguments: {} }));
+      const token = parseToolResult(await callTool({ name: 'run_voice_token', arguments: {} }));
       if (token?.error) { setNotice(token.error, 'err'); return; }
       if (token?.mode !== 'plivo' || !token.accessToken) {
         setNotice(token?.error || 'Calling is not available for this account.', 'err');
         return;
       }
-      const started = parseToolResult(await app.callServerTool({
+      const started = parseToolResult(await callTool({
         name: 'run_start_call',
         arguments: { contactId: contact.id, to: number },
       }));
@@ -1162,7 +1219,7 @@ function dueLabel(task) {
           to: number,
           callId: call.id,
           onAccept: () => {
-            void app.callServerTool({
+            void callTool({
               name: 'run_report_call_progress',
               arguments: { callId: call.id, phase: 'connected' },
             }).then(() => reload());
@@ -1178,7 +1235,7 @@ function dueLabel(task) {
             }
           },
           onError: (message) => {
-            void app.callServerTool({
+            void callTool({
               name: 'run_report_call_progress',
               arguments: { callId: call.id, phase: 'failed' },
             }).catch(() => undefined);
@@ -1188,7 +1245,7 @@ function dueLabel(task) {
         watchOpenCall();
       } catch (err) {
         await hangupPlivo();
-        void app.callServerTool({
+        void callTool({
           name: 'run_report_call_progress',
           arguments: { callId: call.id, phase: 'failed' },
         }).catch(() => undefined);
@@ -1207,11 +1264,11 @@ function dueLabel(task) {
     const call = ws.openCall && ws.openCall.contactId === contact.id ? ws.openCall : null;
     busy = true; render();
     const result = call && call.phase !== 'completed'
-      ? await app.callServerTool({
+      ? await callTool({
           name: 'run_complete_call',
           arguments: { callId: call.id, disposition: status },
         })
-      : await app.callServerTool({
+      : await callTool({
           name: 'run_disposition',
           arguments: { contactId: contact.id, status, channel: 'call' },
         });
@@ -1234,11 +1291,11 @@ function dueLabel(task) {
     const existing = latestChannelMessage(contact.id, 'linkedin');
     busy = true; render();
     const result = existing
-      ? await app.callServerTool({
+      ? await callTool({
           name: 'run_update_draft',
           arguments: { messageId: existing.id, body },
         })
-      : await app.callServerTool({
+      : await callTool({
           name: 'run_save_draft',
           arguments: { contactId: contact.id, body, channel: 'linkedin', stepId: step?.id },
         });
@@ -1262,21 +1319,21 @@ function dueLabel(task) {
     busy = true; render();
     try {
     if (existing && existing.status !== 'sent') {
-      const patched = parseToolResult(await app.callServerTool({
+      const patched = parseToolResult(await callTool({
         name: 'run_update_draft',
         arguments: { messageId: existing.id, body },
       }));
       if (patched?.error) { busy = false; setNotice(patched.error, 'err'); return; }
     }
     const result = existing && existing.status !== 'sent'
-      ? await app.callServerTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
-      : await app.callServerTool({
+      ? await callTool({ name: 'run_send_draft', arguments: { messageId: existing.id } })
+      : await callTool({
           name: 'run_save_draft',
           arguments: { contactId: contact.id, body, channel: 'linkedin', stepId: step?.id },
         }).then(async (savedResult) => {
           const saved = parseToolResult(savedResult);
           if (saved?.error || !saved?.message?.id) return savedResult;
-          return app.callServerTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
+          return callTool({ name: 'run_send_draft', arguments: { messageId: saved.message.id } });
         });
     busy = false;
     const parsed = parseToolResult(result);
@@ -1545,13 +1602,13 @@ function dueLabel(task) {
         </div>
         <p class="sub">Shared fallback. Personalized drafts per contact win when you start the sequence.</p>
         <label>Send on day</label>
-        <input id="edit-day" type="text" value="${esc(step.day)}" />
+        ${filledInput('edit-day', step.day)}
         <label>Label</label>
-        <input id="edit-label" type="text" value="${esc(step.label || '')}" />
+        ${filledInput('edit-label', step.label || '')}
         <label>Subject</label>
-        <input id="edit-subject" type="text" value="${esc(step.subject || '')}" />
+        ${filledInput('edit-subject', step.subject || '')}
         <label>Body</label>
-        <textarea id="edit-body">${esc(step.body || '')}</textarea>
+        ${filledTextarea('edit-body', step.body || '')}
       </div>
     `;
   }
@@ -1634,9 +1691,9 @@ function dueLabel(task) {
           </div>
         ` : ''}
         <label>Subject</label>
-        <input id="draft-subject" type="text" value="${esc(subject)}" />
+        ${filledInput('draft-subject', subject)}
         <label>Body</label>
-        <textarea id="draft-body">${esc(body)}</textarea>
+        ${filledTextarea('draft-body', body)}
         <div class="row">
           <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
           <button class="btn accent" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Send</button>
@@ -1927,7 +1984,7 @@ function dueLabel(task) {
       <div class="composer">
         <div class="to">${esc(contact.name)} · ${esc(contact.linkedinUrl || 'No LinkedIn URL')}</div>
         <label>Message</label>
-        <textarea id="li-body">${esc(body)}</textarea>
+        ${filledTextarea('li-body', body)}
         <div class="row">
           <button class="btn accent" id="send-li" data-contact-id="${esc(contact.id)}" ${busy || sent ? 'disabled' : ''}>${sent ? 'Sent' : 'Send'}</button>
           <button class="btn" id="save-li" ${busy || sent ? 'disabled' : ''}>Save draft</button>
@@ -2314,13 +2371,13 @@ function dueLabel(task) {
           <p class="sub">${step.mode === 'auto' ? 'Sends on day ' + Number(step.day || 0) + ' without a to-do.' : 'Becomes a to-do assigned to you.'}</p>
         ` : `<p class="sub">Becomes a to-do assigned to you. You place the ${step.channel === 'call' ? 'call' : 'LinkedIn note'} from To-dos.</p>`}
         <label>Day</label>
-        <input id="edit-day" type="text" value="${esc(step.day)}" />
+        ${filledInput('edit-day', step.day)}
         <label>Label</label>
-        <input id="edit-label" type="text" value="${esc(step.label || '')}" />
-        ${step.channel !== 'call' ? `<label>Subject</label><input id="edit-subject" type="text" value="${esc(step.subject || '')}" />` : ''}
+        ${filledInput('edit-label', step.label || '')}
+        ${step.channel !== 'call' ? `<label>Subject</label>${filledInput('edit-subject', step.subject || '')}` : ''}
         <label>${step.channel === 'call' ? 'Talk track' : 'Body'}</label>
         ${tokens ? `<div class="token-row">${tokens}</div>` : ''}
-        <textarea id="edit-body">${esc(step.body || '')}</textarea>
+        ${filledTextarea('edit-body', step.body || '')}
         <div class="step-foot">
           <button class="btn" id="write" ${busy ? 'disabled' : ''}>Write with Claude</button>
           <button class="btn accent" id="save-seq" ${busy ? 'disabled' : ''}>Save step</button>
@@ -2427,6 +2484,7 @@ function dueLabel(task) {
   }
 
   function bindWorkspace() {
+    applyFills(root);
     root.querySelector('#open')?.addEventListener('click', openWorkspace);
     root.querySelector('#full')?.addEventListener('click', () => app.requestDisplayMode({ mode: 'fullscreen' }));
     root.querySelectorAll('.page-tab').forEach((el) => el.addEventListener('click', () => {
@@ -2677,7 +2735,7 @@ function dueLabel(task) {
     if (!toolProjectId || fetching) return;
     fetching = true;
     try {
-      const fetched = parseToolResult(await app.callServerTool({
+      const fetched = parseToolResult(await callTool({
         name: 'load_email_workspace',
         arguments: { projectId: toolProjectId }
       }));

@@ -203,10 +203,12 @@ export function interpolationVars(contact: {
 export function interpolateTemplate(template: string, contact: Parameters<typeof interpolationVars>[0]): string {
   if (!template) return template
   const vars = interpolationVars(contact)
-  return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, raw: string) => {
-    const key = raw.trim()
-    return vars[key] ?? vars[key.replace(/^attrs\./, '')] ?? ''
-  })
+  return template
+    .replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, raw: string) => {
+      const key = raw.trim()
+      return vars[key] ?? vars[key.replace(/^attrs\./, '')] ?? ''
+    })
+    .replace(/\u00A0/g, ' ')
 }
 
 export function catalogFromContacts(

@@ -96,7 +96,7 @@ function createServer(): McpServer {
     {
       ...display('Open your billing page', HINTS.send),
       description:
-        'Return a URL to upgrade, buy credits, or open the billing portal. Do not collect card details — send the user to this URL.',
+        'Return a URL to upgrade, buy credits, or open the billing portal. Do not collect card details — send the user to this URL (the web dashboard). This is the only reason to send them to jargonlabs.co besides contacting support.',
       inputSchema: z.object({
         summary: Summary,
         intent: z.enum(['upgrade', 'topup', 'portal']),
@@ -156,7 +156,7 @@ function createServer(): McpServer {
     'list_projects',
     {
       ...display('List your outbound workspaces', HINTS.read),
-      description: 'List Jargon workspaces for this API key. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.'
+      description: 'List Jargon workspaces for this API key. Do not share dashboardUrl — reopen one in Claude with show_email_workspace.'
     },
     async () => {
       try {
@@ -172,7 +172,7 @@ function createServer(): McpServer {
     {
       ...display('Open one outbound workspace', HINTS.read),
       description:
-        'Get one workspace. Share dashboardUrl with the user (https://jargonlabs.co/tools/…). Never prefix dashboardPath with www.jargonlabs.co — that host is the API.',
+        'Get one workspace. Do not share dashboardUrl. Reopen it in Claude with show_email_workspace.',
       inputSchema: z.object({ id: z.string() })
     },
     async ({ id }) => {
@@ -212,7 +212,7 @@ function createServer(): McpServer {
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. State goal / step count / day span in that text; do not write the full sequence in chat. Does not open Tasks — research each contact next, then save_research (enrolls + opens Tasks). After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. State goal / step count / day span in that text; do not write the full sequence in chat. Does not open Tasks — research each contact next, then save_research (enrolls + opens Tasks). Do not share a web workspace URL — work stays in Claude.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -239,7 +239,7 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from HubSpot/Lusha fields, then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. After success, share dashboardUrl (https://jargonlabs.co/tools/…) — never www.jargonlabs.co/tools.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from HubSpot/Lusha fields, then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z

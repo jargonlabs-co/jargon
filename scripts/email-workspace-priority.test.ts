@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { ServerConfig } from '../src/server/config.ts'
-import { getEmailWorkspace, workspaceBrief } from '../src/server/emailWorkspace.ts'
+import {
+  getEmailWorkspace,
+  JARGON_MCP_INSTRUCTIONS,
+  withoutDashboard,
+  workspaceBrief
+} from '../src/server/emailWorkspace.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Project } from '../src/server/types.ts'
 
@@ -124,6 +129,38 @@ describe('workspace priority', () => {
     assert.equal(brief.projectId, 'proj_1')
     assert.equal('contacts' in brief, false)
     assert.equal('messages' in brief, false)
+    assert.equal('dashboardUrl' in brief, false)
+    assert.equal('dashboardPath' in brief, false)
     assert.ok(JSON.stringify(brief).length < 4000)
+  })
+})
+
+describe('Claude chat should not link the web workspace', () => {
+  it('tells Claude to keep work in chat and send people to the dashboard only for billing, plans, or support', () => {
+    assert.equal(/dashboardUrl is the full web tool/i.test(JARGON_MCP_INSTRUCTIONS), false)
+    assert.equal(/After success, share dashboardUrl/i.test(JARGON_MCP_INSTRUCTIONS), false)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /Never share dashboardUrl/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /create_billing_link/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /jargonlabs\.co\/billing/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /contact support/)
+  })
+
+  it('strips web-workspace links from model JSON but keeps billingUrl', () => {
+    const stripped = withoutDashboard({
+      projectId: 'proj_1',
+      dashboardUrl: 'https://jargonlabs.co/tools/proj_1',
+      dashboardPath: '/tools/proj_1',
+      billingUrl: 'https://jargonlabs.co/billing',
+      project: {
+        id: 'proj_1',
+        dashboardUrl: 'https://jargonlabs.co/tools/proj_1',
+        dashboardPath: '/tools/proj_1'
+      }
+    })
+    assert.deepEqual(stripped, {
+      projectId: 'proj_1',
+      billingUrl: 'https://jargonlabs.co/billing',
+      project: { id: 'proj_1' }
+    })
   })
 })

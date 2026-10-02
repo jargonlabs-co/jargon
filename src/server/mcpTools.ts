@@ -50,7 +50,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
 import { toE164 } from './providers/twilio'
 import { platformGmailReady } from './providers/gmail'
-import { getEmailWorkspace, workspaceBrief } from './emailWorkspace'
+import { getEmailWorkspace, withoutDashboard, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 import { isPriorityContact, isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
@@ -93,7 +93,7 @@ function display(title: string, hints: (typeof HINTS)[keyof typeof HINTS]) {
 }
 
 function ok(data: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
+  return { content: [{ type: 'text' as const, text: JSON.stringify(withoutDashboard(data), null, 2) }] }
 }
 
 function fail(err: unknown) {
@@ -103,8 +103,12 @@ function fail(err: unknown) {
   }
 }
 
-function failCharge(charge: { error: string }) {
-  return fail(charge.error)
+function failCharge(charge: { error: string; billingUrl?: string }) {
+  return fail(
+    charge.billingUrl
+      ? `${charge.error} Open ${charge.billingUrl} to update billing or your plan, or to contact support.`
+      : charge.error
+  )
 }
 
 function workspaceOk(
@@ -171,7 +175,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
+        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
       })
     }
   )
@@ -226,7 +230,7 @@ export function registerJargonTools(
     {
       ...display('Open your billing page', HINTS.send),
       description:
-        'Return a URL to upgrade the plan, buy credit top-ups, or open the billing portal. Claude must not collect card details — send the user to this URL.',
+        'Return a URL to upgrade the plan, buy credit top-ups, or open the billing portal. Claude must not collect card details — send the user to this URL (the web dashboard). This is the only reason to send them to jargonlabs.co besides contacting support.',
       inputSchema: BillingLinkInput
     },
     async ({ intent, plan, packId }) => execCreateBillingLink(intent, plan, packId)
@@ -287,7 +291,7 @@ export function registerJargonTools(
     'list_projects',
     {
       ...display('List your outbound workspaces', HINTS.read),
-      description: 'List workspaces for this account. Share each project.dashboardUrl (https://jargonlabs.co/tools/…), not www.'
+      description: 'List workspaces for this account. Do not share dashboardUrl — reopen one in Claude with show_email_workspace.'
     },
     async () => ok({ projects: listPublicProjects(store, actor.orgId, config.appUrl) })
   )
@@ -297,7 +301,7 @@ export function registerJargonTools(
     {
       ...display('Open one outbound workspace', HINTS.read),
       description:
-        'Get one workspace. Share dashboardUrl with the user (https://jargonlabs.co/tools/…). Never prefix dashboardPath with www.jargonlabs.co — that host is the API.',
+        'Get one workspace. Do not share dashboardUrl. Reopen it in Claude with show_email_workspace.',
       inputSchema: z.object({ id: z.string() })
     },
     async ({ id }) => {
@@ -408,7 +412,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens the flow with personalized copy.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens the flow with personalized copy. Do not share a web workspace URL.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)
@@ -430,7 +434,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from HubSpot fields (including Lusha signals), then save_research. That enrolls everyone and opens the flow. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from Lusha/HubSpot signals on the connected source. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from HubSpot fields (including Lusha signals), then save_research. That enrolls everyone and opens the flow. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from Lusha/HubSpot signals on the connected source. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -673,7 +677,7 @@ export function registerJargonTools(
     {
       ...display('Start a call', HINTS.send),
       description:
-        'Start a call in the in-chat dialer. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits. Do not send the user to dashboardUrl to dial.',
+        'Start a call in the in-chat dialer. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits. Do not send the user to the web dashboard to dial.',
       inputSchema: StartCallInput
     },
     async ({ contactId, to }) => execStartCall(contactId, to)

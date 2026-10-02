@@ -64,9 +64,22 @@ export async function jargonFetch(method: string, path: string, opts: CallOpts =
   return json
 }
 
+function withoutDashboard(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(withoutDashboard)
+  if (data && typeof data === 'object') {
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (key === 'dashboardUrl' || key === 'dashboardPath') continue
+      next[key] = withoutDashboard(value)
+    }
+    return next
+  }
+  return data
+}
+
 export function toolResult(data: unknown) {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }]
+    content: [{ type: 'text' as const, text: JSON.stringify(withoutDashboard(data), null, 2) }]
   }
 }
 

@@ -352,6 +352,20 @@ export function workspaceBrief(ws: EmailWorkspace) {
   }
 }
 
+/** Drop web-workspace links from model-facing MCP JSON. Keep billingUrl. */
+export function withoutDashboard(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(withoutDashboard)
+  if (data && typeof data === 'object') {
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (key === 'dashboardUrl' || key === 'dashboardPath') continue
+      next[key] = withoutDashboard(value)
+    }
+    return next
+  }
+  return data
+}
+
 export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   view: 'email_workspace',
   surface: 'sequence',
@@ -749,7 +763,9 @@ Ownership — do not compete with Jargon on structure:
 - After the sequence is saved, follow nextAction: ask once whether to run this workspace on a schedule. Default every Sunday at 6pm. Create the Claude scheduled task only after they confirm with Schedule, then call note_schedule_choice. An Allow click on a Jargon tool does not create that schedule.
 - Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. The flow opens. Use show_tasks only when they want to work what is due.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
-- Phone calls stay in the in-chat dialer. Do not send the user to dashboardUrl to place a call.
+- Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.
+- Never share dashboardUrl, dashboardPath, or a jargonlabs.co/tools/… link. After a sequence is created, keep the user in Claude (show_email_workspace / show_tasks). Do not tell them to open the web workspace.
+- Send the user to the web dashboard only to update billing or plans (call create_billing_link, or https://jargonlabs.co/billing) or to contact support (https://jargonlabs.co).
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.
 - One-off / a handful / just send these → Contacts with a composer. save_research or save_draft then send_draft. Do not enroll unless they asked for a cadence.
 - Inbox / mailbox / replies / what's been sent → the message log. Not the send path for a cadence.
@@ -757,6 +773,4 @@ Ownership — do not compete with Jargon on structure:
 Path:
 1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table). Prefer that over deploy_tool without contacts.
 2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. State the goal, audience, and any requested step count / day span in that text — do not outline the full cadence in chat.
-3. When HubSpot has Lusha enrichment (email, phone, or LinkedIn, plus company fields), write the copy and save_research. The flow opens after that. dashboardUrl is the full web tool (billing, Connect Claude, huge lists).
-
-Never prefix dashboardPath with www.jargonlabs.co.`
+3. When HubSpot has Lusha enrichment (email, phone, or LinkedIn, plus company fields), write the copy and save_research. The flow opens after that in Claude. Do not link the web workspace.`

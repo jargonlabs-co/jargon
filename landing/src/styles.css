@@ -466,44 +466,6 @@ button {
   max-width: 720px;
 }
 
-/* ——— Pillars ——— */
-
-.pillar-list {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: clamp(28px, 4vw, 48px);
-  margin-top: 8px;
-}
-
-.pillar-list li {
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.pillar-num {
-  display: block;
-  font-family: var(--mono, 'IBM Plex Mono', ui-monospace, monospace);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: var(--accent);
-  margin-bottom: 18px;
-}
-
-.pillar-list h3 {
-  font-size: 1.25rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  margin-bottom: 10px;
-}
-
-.pillar-list p {
-  color: var(--text-muted);
-  font-size: 1rem;
-  line-height: 1.55;
-}
-
 .eyebrow {
   font-size: 12px;
   font-weight: 600;
@@ -2189,11 +2151,6 @@ button {
 
   .metric-row {
     grid-template-columns: repeat(3, 1fr);
-  }
-
-  .pillar-list {
-    grid-template-columns: 1fr;
-    gap: 28px;
   }
 
   .capability-list {

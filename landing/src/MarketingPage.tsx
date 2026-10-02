@@ -150,45 +150,6 @@ export function MarketingPage() {
           </div>
         </Reveal>
 
-        <Reveal className="section pillars-section" as="section">
-          <div className="section-inner" id="pillars">
-            <div className="section-copy centered">
-              <p className="eyebrow">Three pillars</p>
-              <h2>Your data. Custom software. Tools the team can run.</h2>
-              <p>
-                Jargon is for sales teams who want durable software on their stack — and for the
-                GTM Engineers who ship it.
-              </p>
-            </div>
-            <ul className="pillar-list">
-              <li>
-                <span className="pillar-num">01</span>
-                <h3>Your data layer</h3>
-                <p>
-                  Build on the systems you already trust — CRM, data warehouse, and context layer —
-                  so every tool speaks your source of truth, not a generic list.
-                </p>
-              </li>
-              <li>
-                <span className="pillar-num">02</span>
-                <h3>Custom software</h3>
-                <p>
-                  Describe the motion. Jargon ships a functional UI — dialers, queues, sequencers —
-                  with calling, email, and LinkedIn included, not stitched on later.
-                </p>
-              </li>
-              <li>
-                <span className="pillar-num">03</span>
-                <h3>Built for how you ship</h3>
-                <p>
-                  GTM Engineers deploy from Claude Code. Sales connects Claude and runs the same
-                  tools — from chat or the browser — without an engineering backlog.
-                </p>
-              </li>
-            </ul>
-          </div>
-        </Reveal>
-
         <Reveal className="section product-section" as="section">
           <div className="section-inner split" id="data">
             <div className="section-copy">

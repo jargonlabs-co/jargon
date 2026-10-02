@@ -645,10 +645,7 @@ function dueLabel(task) {
 
   function applySurface() {
     const land = ws?.focus || ws?.defaultTab;
-    const enrolled = (ws?.taskStats?.enrolled || 0) > 0;
-    if (land === 'sequence' || land === 'contacts') tab = 'flows';
-    else if (land === 'tasks' || land === 'queue' || enrolled) tab = 'todos';
-    else tab = 'flows';
+    tab = land === 'tasks' ? 'todos' : 'flows';
     workFocus = false;
   }
 
@@ -2611,7 +2608,7 @@ function dueLabel(task) {
   if (!ws) {
     try {
       const fetched = parseToolResult(await app.callServerTool({
-        name: toolProjectId ? 'show_tasks' : 'resume_workspace',
+        name: toolProjectId ? 'show_email_workspace' : 'resume_workspace',
         arguments: toolProjectId ? { projectId: toolProjectId } : {}
       }));
       if (!acceptWorkspace(fetched) && fetched?.error) {

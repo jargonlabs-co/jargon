@@ -3,7 +3,8 @@ import { describe, it } from 'node:test'
 import {
   isPriorityPipelinePrompt,
   isSalesExecTitle,
-  rankHubSpotLeads,
+  leadIdentity,
+  rankLeads,
   salesExecContactIds,
   scoreLead
 } from '../src/shared/priorityOverlay'
@@ -50,18 +51,14 @@ describe('scoreLead', () => {
   })
 })
 
-describe('rankHubSpotLeads', () => {
+describe('rankLeads', () => {
   it('sorts higher scores first and numbers the ranks', () => {
     const people = Array.from({ length: 24 }, (_, i) => ({
       email: `person${i}@example.com`,
       company: `Company ${i}`,
       title: 'VP Sales'
     }))
-    const ranked = rankHubSpotLeads(people, (row) => ({
-      seed: row.email,
-      company: row.company,
-      title: row.title
-    }))
+    const ranked = rankLeads(people, leadIdentity)
     const scores = ranked.map((row) => row.priority?.score ?? 0)
     assert.deepEqual(ranked.map((row) => row.priority?.rank), people.map((_, i) => i + 1))
     assert.deepEqual(scores, [...scores].sort((a, b) => b - a))
@@ -70,12 +67,26 @@ describe('rankHubSpotLeads', () => {
     assert.equal(motions.has('outbound'), true)
   })
 
-  it('leaves non-hubspot rows unranked after the queue', () => {
+  it('ranks HubSpot, Railway, and imported rows together', () => {
+    const rows = [
+      { id: 'hs', source: 'hubspot', email: 'a@x.com', company: 'Acme', title: 'VP Sales' },
+      { id: 'pg', source: 'postgres', email: 'b@y.com', company: 'Orbit', title: 'CRO' },
+      { id: 'imp', source: 'import', email: 'c@z.com', company: 'Harbor', title: 'Head of Growth' }
+    ]
+    const ranked = rankLeads(rows, leadIdentity)
+    assert.equal(ranked.every((row) => row.priority?.rank), true)
+    assert.deepEqual(
+      ranked.map((row) => row.priority?.rank).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      [1, 2, 3]
+    )
+  })
+
+  it('leaves rows without an identity unranked after the queue', () => {
     const rows = [
       { id: 'a', seed: 'a@x.com', company: 'A' },
       { id: 'b', seed: null, company: 'B' }
     ]
-    const ranked = rankHubSpotLeads(rows, (row) => (row.seed ? { seed: row.seed, company: row.company } : null))
+    const ranked = rankLeads(rows, (row) => (row.seed ? { seed: row.seed, company: row.company } : null))
     assert.equal(ranked[0]?.id, 'a')
     assert.equal(ranked[0]?.priority?.rank, 1)
     assert.equal(ranked[1]?.priority, undefined)

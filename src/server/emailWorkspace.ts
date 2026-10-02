@@ -9,7 +9,6 @@ import {
   dashboardFor,
   findOrgProject,
   getPublicSequence,
-  listPublicContacts,
   listPublicMessages,
   toPublicCall,
   toPublicContact,
@@ -18,7 +17,7 @@ import {
   type PublicMessage,
   type PublicStep
 } from './publicApi'
-import { isPriorityPipelinePrompt, rankHubSpotLeads, type LeadPriority } from '../shared/priorityOverlay'
+import { isPriorityPipelinePrompt, leadIdentity, rankLeads, type LeadPriority } from '../shared/priorityOverlay'
 import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
 import {
   buildWorkspaceTasks,
@@ -28,7 +27,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=priority2'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=flowfirst1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -57,6 +56,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=engage6',
   'ui://jargon/email-workspace.html?v=warmth1',
   'ui://jargon/email-workspace.html?v=priority1',
+  'ui://jargon/email-workspace.html?v=priority2',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -70,7 +70,7 @@ export type WorkspaceContact = PublicContact & {
   nextChannel?: Channel | null
   preview?: { subject: string; body: string }
   linkedinPreview?: { body: string }
-  /** Present for HubSpot contacts. Computed for the app; not a CRM field. */
+  /** Present when the contact can be scored. Computed for the app; not a CRM field. */
   priority?: LeadPriority
 }
 
@@ -176,23 +176,10 @@ export function getEmailWorkspace(
   const steps = sequence.steps.filter((step): step is PublicStep => Boolean(step))
   const dashboard = dashboardFor(project.id, config.appUrl)
   const projectRows = store.db.contacts.filter((c) => c.projectId === projectId)
-  const hubspotQueue = projectRows.some((c) => c.source === 'hubspot')
-  const rankedRows = hubspotQueue
-    ? rankHubSpotLeads(projectRows, (contact) =>
-        contact.source === 'hubspot'
-          ? {
-              seed: (contact.email || contact.externalId || contact.id).trim().toLowerCase(),
-              company: contact.company,
-              title: contact.title
-            }
-          : null
-      ).slice(0, 50)
-    : null
-  const listed = rankedRows
-    ? { contacts: rankedRows.map(toPublicContact), total: projectRows.length }
-    : listPublicContacts(store, projectId, { limit: 50, offset: 0 })
+  const rankedRows = rankLeads(projectRows, leadIdentity).slice(0, 50)
+  const listed = { contacts: rankedRows.map(toPublicContact), total: projectRows.length }
   const priorityById = new Map(
-    (rankedRows ?? []).flatMap((contact) => (contact.priority ? [[contact.id, contact.priority] as const] : []))
+    rankedRows.flatMap((contact) => (contact.priority ? [[contact.id, contact.priority] as const] : []))
   )
   const messages = listPublicMessages(store, {
     orgId,
@@ -284,7 +271,7 @@ export function getEmailWorkspace(
   const nextAction = researchPending
     ? surface === 'one_off'
       ? `Research each contact and save_research personalized email copy for project ${project.id}. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
-      : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. That enrolls everyone and opens Tasks. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
+      : `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${project.id} with talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step. That enrolls everyone and opens the flow. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
     : schedulePending
       ? scheduleAsk(project.id)
       : undefined
@@ -712,7 +699,7 @@ export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account on
 
 Priority pipeline: when the user asks to pull HubSpot contacts and build a priority pipeline, including "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week", call deploy_tool with that sentence as workspace and no contact table. Do not call resume_workspace first. Then call show_tasks with the projectId. Stop. The To-dos list is already ranked, inbound and outbound mixed. Do not save_research and do not ask to schedule.
 
-On any other new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. If HubSpot is connected, call list_crm_contacts. Each contact has priority.rank, priority.motion (inbound or outbound), and priority.signals. The queue is already sorted, best first, with inbound and outbound mixed. enroll_hubspot with people "all" enrolls that list. Do not regroup by warmth and do not drop cold contacts.
+On any other new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals — HubSpot, Railway, or an imported list. The queue is sorted best first, inbound and outbound mixed. If HubSpot is connected, call list_crm_contacts and enroll everyone with enroll_hubspot people "all". Do not regroup by warmth and do not drop cold contacts.
 
 Bring a list through Claude when HubSpot is not connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument.
 
@@ -726,9 +713,9 @@ Ownership — do not compete with Jargon on structure:
 - User provides a list (another Claude connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not show Tasks yet.
 - Immediately research each company and prospect. Then save_research with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every step. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
-- save_research enrolls everyone and opens Tasks with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
+- save_research enrolls everyone and opens the flow with that copy. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy.
 - After the sequence is saved, follow nextAction: ask once whether to run this workspace on a schedule. Default every Sunday at 6pm. Create the Claude scheduled task only after they confirm with Schedule, then call note_schedule_choice. An Allow click on a Jargon tool does not create that schedule.
-- Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Then open To-dos with show_tasks.
+- Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. The flow opens. Use show_tasks only when they want to work what is due.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Phone calls stay in the in-chat dialer. Do not send the user to dashboardUrl to place a call.
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.
@@ -738,6 +725,6 @@ Ownership — do not compete with Jargon on structure:
 Path:
 1. Ingest with import_list (contacts from chat, CSV, another connector, or a pasted table). Prefer that over deploy_tool without contacts.
 2. On Claude's Allow card, summary is the sentence the user reads. Never pass a contacts array or nested spec — put people in workspace as a markdown table or CSV. State the goal, audience, and any requested step count / day span in that text — do not outline the full cadence in chat.
-3. Research each company/prospect now and save_research the copy. Tasks opens only after that. dashboardUrl is the full web tool (billing, Connect Claude, huge lists).
+3. Research each company/prospect now and save_research the copy. The flow opens after that. dashboardUrl is the full web tool (billing, Connect Claude, huge lists).
 
 Never prefix dashboardPath with www.jargonlabs.co.`

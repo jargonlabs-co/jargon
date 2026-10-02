@@ -65,7 +65,7 @@ export function ChangelogPage({ signedIn, onLogin, onSignUp, onOpenApp }: Props)
         </a>
         <nav className="nav-links">
           <a href="/#deploy">Build</a>
-          <a href="/#run">Use</a>
+          <a href="/#run">Deploy</a>
           <a href="/#data">Connect</a>
           <a href="/#use-cases">Use cases</a>
           <a href="/changelog" aria-current="page">

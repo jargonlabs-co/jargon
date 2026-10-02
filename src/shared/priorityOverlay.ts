@@ -29,12 +29,31 @@ export function salesExecContactIds(rows: Array<{ id: string; title: string }>):
 
 export type LeadMotion = 'inbound' | 'outbound'
 
-/** View-only ranking for HubSpot contacts. Not stored on the contact and not written back to HubSpot. */
+/** View-only ranking. Not stored on the contact and not written back to a CRM. */
 export type LeadPriority = {
   rank: number
   score: number
   motion: LeadMotion
   signals: string[]
+}
+
+export type LeadIdentity = {
+  seed: string
+  company: string
+  title?: string
+}
+
+/** Score any contact — HubSpot, Railway, import, or demo book. */
+export function leadIdentity(contact: {
+  email?: string | null
+  externalId?: string | null
+  id?: string | null
+  company?: string | null
+  title?: string | null
+}): LeadIdentity | null {
+  const seed = (contact.email || contact.externalId || contact.id || '').trim().toLowerCase()
+  if (!seed) return null
+  return { seed, company: contact.company ?? '', title: contact.title ?? undefined }
 }
 
 function hashSeed(value: string): number {
@@ -85,9 +104,9 @@ export function scoreLead(input: { seed: string; company: string; title?: string
   return { score, motion, signals }
 }
 
-export function rankHubSpotLeads<T extends object>(
+export function rankLeads<T extends object>(
   rows: T[],
-  identity: (row: T) => { seed: string; company: string; title?: string } | null
+  identity: (row: T) => LeadIdentity | null
 ): Array<T & { priority?: LeadPriority }> {
   const scored: Array<{ index: number; row: T; score: Omit<LeadPriority, 'rank'> }> = []
   rows.forEach((row, index) => {

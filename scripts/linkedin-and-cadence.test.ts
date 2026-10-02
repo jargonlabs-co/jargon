@@ -87,5 +87,15 @@ describe('compileWorkspaceSpec step spans', () => {
       spec.steps.map((s) => s.day),
       [0, 0, 2]
     )
+    assert.deepEqual(
+      spec.steps.map((s) => s.channel),
+      ['email', 'call', 'linkedin']
+    )
+  })
+
+  it('puts phone into a generic sequence even when the prompt does not name call', () => {
+    const spec = compileWorkspaceSpec('Create a 7-step sequence over 10 days for AEs')
+    assert.ok(spec.steps.some((s) => s.channel === 'call'), 'expected a call step in the ladder')
+    assert.ok(spec.channels.includes('call'))
   })
 })

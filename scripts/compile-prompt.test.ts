@@ -100,5 +100,20 @@ describe('compileWorkspaceSpec freeform step span', () => {
     assert.equal(spec.steps.length, 7)
     assert.equal(spec.steps[0].day, 0)
     assert.equal(spec.steps.at(-1)?.day, 10)
+    assert.ok(spec.steps.some((step) => step.channel === 'call'))
+  })
+
+  it('puts call steps back when an LLM override drops them', () => {
+    const spec = compileWorkspaceSpec('Build a 7-step sequence over 10 days for VP Sales', {
+      goal: 'Book a meeting',
+      channels: ['email'],
+      steps: [
+        { day: 0, channel: 'email', label: 'Intro' },
+        { day: 2, channel: 'email', label: 'Follow-up' },
+        { day: 5, channel: 'email', label: 'Bump' }
+      ]
+    })
+    assert.ok(spec.channels.includes('call'))
+    assert.ok(spec.steps.some((step) => step.channel === 'call'))
   })
 })

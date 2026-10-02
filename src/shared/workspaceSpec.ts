@@ -30,15 +30,17 @@ const KINDS: ProjectKind[] = ['dialer', 'sequencer', 'cadence', 'list', 'today',
 export function compileWorkspaceSpec(prompt: string, override?: DeploySpecInput): WorkspaceSpec {
   const t = prompt.toLowerCase()
   const intent = matchOutboundIntent(prompt, override?.kind)
-  const channels = uniqueChannels(override?.channels) ?? intent.channels
+  const channels =
+    mergeChannelLists(uniqueChannels(override?.channels), intent.channels) ?? intent.channels
   const primarySurface = override?.primarySurface ?? refinePrimarySurface(t, channels, intent.primarySurface)
   const goal = override?.goal?.trim() || intent.goal
   const segment = override?.segment?.trim() || inferSegment(prompt)
-  const steps = override?.steps?.length
+  const rawSteps = override?.steps?.length
     ? normalizeSteps(override.steps, goal)
     : buildSteps(channels, goal, prompt)
+  const steps = ensureStepsCoverChannels(rawSteps, channels, goal, prompt)
   const kind = override?.kind ?? refineKind(t, channels, primarySurface, intent.kind)
-  return { goal, segment, primarySurface, channels, steps, kind }
+  return { goal, segment, primarySurface, channels: channelsFromSteps(steps, channels), steps, kind }
 }
 
 export function specToAnswers(spec: WorkspaceSpec): Record<string, string> {
@@ -95,6 +97,7 @@ export function inferMcpSurface(input: {
   const executionList =
     channels.includes('call') ||
     channels.includes('linkedin') ||
+    steps.some((step) => step.channel === 'call' || step.channel === 'linkedin') ||
     input.primarySurface === 'dial' ||
     input.primarySurface === 'linkedin' ||
     input.primarySurface === 'queue' ||
@@ -111,18 +114,17 @@ export function inferMcpSurface(input: {
   return 'sequence'
 }
 
-/** Contacts after import, Sequence while designing, Tasks after enroll. */
+/** Contacts after import, Flow after a sequence exists, Tasks only when asked. */
 export function inferMcpDefaultTab(input: {
   surface: McpSurface
   focus?: McpTab
-  enrolled: boolean
+  enrolled?: boolean
 }): McpTab {
   if (input.focus) return input.focus
   if (input.surface === 'one_off') return 'contacts'
   if (input.surface === 'inbox') return 'inbox'
-  // Sequenced work lives on Tasks — including dialers. Queue is still a tab.
-  if (input.enrolled || input.surface === 'tasks') return 'tasks'
-  if (input.surface === 'queue') return 'queue'
+  if (input.surface === 'tasks') return 'tasks'
+  if (input.surface === 'queue' || input.surface === 'sequence') return 'sequence'
   return 'contacts'
 }
 
@@ -450,6 +452,68 @@ function copyFor(
     subject: 'Quick idea for {{company}}',
     body: `Hi {{first_name}},\n\nNoticed {{company}} and thought it was worth a 12-min look toward ${goalText}.\n\n— (${tone})`
   }
+}
+
+export function channelsFromSteps(
+  steps: Array<{ channel: Channel }>,
+  fallback?: Channel[]
+): Channel[] {
+  const out: Channel[] = []
+  for (const step of steps) {
+    if (!out.includes(step.channel)) out.push(step.channel)
+  }
+  if (out.length) return out
+  return fallback?.length ? [...fallback] : ['email']
+}
+
+function mergeChannelLists(preferred?: Channel[], extra?: Channel[]): Channel[] | undefined {
+  const out: Channel[] = []
+  for (const list of [preferred, extra]) {
+    if (!list?.length) continue
+    for (const channel of list) {
+      if (!out.includes(channel)) out.push(channel)
+    }
+  }
+  return out.length ? out : undefined
+}
+
+/** If channels include call/LinkedIn but the ladder is email-only, put those steps back. */
+function ensureStepsCoverChannels(
+  steps: WorkspaceSpecStep[],
+  channels: Channel[],
+  goal: string,
+  prompt: string
+): WorkspaceSpecStep[] {
+  if (!channels.length || channels.every((channel) => steps.some((step) => step.channel === channel))) {
+    return steps
+  }
+  const tone = /casual|friendly|warm/.test(prompt.toLowerCase()) ? 'Warm & brief' : 'Direct & concise'
+  const ladder = parseExplicitDayLadder(prompt)
+  if (ladder?.length) {
+    return ladder.slice(0, 8).map((step, i) => ({
+      day: step.day,
+      channel: step.channel,
+      label: defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
+      ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
+    }))
+  }
+  const span = parseStepSpan(prompt)
+  if (span) return expandStepSpan(channels, span.count, span.days, goal, tone)
+
+  const covered = new Set(steps.map((step) => step.channel))
+  let day = steps.length ? Math.max(...steps.map((step) => step.day)) + 2 : 0
+  const extras: WorkspaceSpecStep[] = []
+  for (const channel of channels) {
+    if (covered.has(channel)) continue
+    extras.push({
+      day,
+      channel,
+      label: defaultLabel(channel, steps.length + extras.length === 0 ? 'intro' : 'followup'),
+      ...copyFor(channel, steps.length + extras.length === 0 ? 'intro' : 'followup', goal, tone)
+    })
+    day += 2
+  }
+  return [...steps, ...extras].slice(0, 8)
 }
 
 function uniqueChannels(raw?: unknown): Channel[] | undefined {

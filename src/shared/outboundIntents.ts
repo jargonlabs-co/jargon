@@ -84,6 +84,7 @@ const MULTI: IntentDef = {
   patterns: [
     { re: /\bmulti[ -]?channel\b/, weight: 5 },
     { re: /\bcadence\b/, weight: 4 },
+    { re: /\bsequenc(?:e|er|ing)\b/, weight: 4 },
     { re: /\boutbound (?:sequence|cadence|motion|campaign)\b/, weight: 4 },
     { re: /\btoday(?:'s)? (?:tasks?|queue|list)\b/, weight: 3 },
     { re: /\bdaily (?:tasks?|queue)\b/, weight: 3 },
@@ -183,8 +184,8 @@ function scoreIntents(t: string): Record<OutboundIntentId, number> {
       if (re.test(t)) scores[intent.id] += weight
     }
   }
-  // "email cadence" / "linkedin sequence" should not also boost generic multi from "cadence"/"sequence".
-  if (/\bemail[ -]?cadence\b/.test(t)) scores.multi = Math.max(0, scores.multi - 4)
+  // "email sequence/cadence" / "linkedin sequence" should not also boost generic multi.
+  if (/\bemail[ -]?(?:sequenc|cadence|drip)\b/.test(t)) scores.multi = Math.max(0, scores.multi - 4)
   if (/\blinkedin[ -]?(?:sequenc|cadence)\b/.test(t)) {
     scores.multi = Math.max(0, scores.multi - 4)
     scores.email = Math.max(0, scores.email - 2)

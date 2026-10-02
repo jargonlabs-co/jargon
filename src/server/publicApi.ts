@@ -25,10 +25,10 @@ import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
-import { formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
+import { channelsFromSteps, formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
-import { isPriorityPipelinePrompt, rankHubSpotLeads, type LeadPriority } from '../shared/priorityOverlay'
+import { isPriorityPipelinePrompt, leadIdentity, rankLeads, type LeadPriority } from '../shared/priorityOverlay'
 import { warmthRank, type Warmth } from '../shared/warmth'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
@@ -436,7 +436,7 @@ export async function deployPublicTool(
         linkedinUrl: c.linkedinUrl || undefined
       }))
       body.nextAction = willEnrollLater
-        ? `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${projectId} with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step (pass stepId). Do not paste the JSON into chat — save_research enrolls everyone and opens Tasks. Do not leave {{first_name}} placeholders as the send copy.`
+        ? `Research each of the ${listed.total} contacts and their companies now. Then call save_research for project ${projectId} with personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step (pass stepId). Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
         : `Research each contact and save_research personalized email copy for project ${projectId}. Do not start a sequence.`
     }
     if (isPriorityPipelinePrompt(prompt)) {
@@ -1068,7 +1068,10 @@ export function updatePublicSequence(
   store.update((db) => {
     const next = db.projects.find((p) => p.id === projectId)
     if (!next) return
-    next.spec = { ...spec, channels: spec.channels.length ? spec.channels : next.spec?.channels ?? ['email'] }
+    next.spec = {
+      ...spec,
+      channels: channelsFromSteps(steps, spec.channels.length ? spec.channels : next.spec?.channels)
+    }
     next.answers = { ...next.answers, goal: next.spec.goal }
     next.updatedAt = now
     const sequence = db.sequences.find((s) => s.projectId === projectId)
@@ -1747,7 +1750,7 @@ export async function listHubSpotContactsForEnroll(
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
     const prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
-    const contacts = rankHubSpotLeads(
+    const contacts = rankLeads(
       prospects.map((p) => ({
         externalId: p.externalId,
         name: p.name,
@@ -1758,11 +1761,7 @@ export async function listHubSpotContactsForEnroll(
         linkedinUrl: p.linkedinUrl || '',
         warmth: (p.warmth ?? 'unknown') as NonNullable<Contact['warmth']>
       })),
-      (contact) => ({
-        seed: (contact.email || contact.externalId).trim().toLowerCase(),
-        company: contact.company,
-        title: contact.title
-      })
+      leadIdentity
     )
     return {
       ok: true,
@@ -1833,7 +1832,8 @@ function warmthCounts(contacts: Array<{ warmth?: Warmth }>): Record<Warmth, numb
 }
 
 const DEFAULT_WARMTH_RULE = 'Enroll hot and warm. List cold contacts without enrolling them.'
-const RANKED_QUEUE_RULE = 'Enroll the full HubSpot list. The queue is already ranked by research signals.'
+const RANKED_QUEUE_RULE = 'Enroll everyone. The queue is already ranked by research signals.'
+const LEGACY_HUBSPOT_RULE = 'Enroll the full HubSpot list. The queue is already ranked by research signals.'
 
 export function saveWorkspaceBrief(
   store: DataStore,
@@ -1848,23 +1848,17 @@ export function saveWorkspaceBrief(
     const contacts = db.contacts.filter((c) => c.projectId === projectId)
     const counts = warmthCounts(contacts)
     const goal = patch?.goal ?? project.brief?.goal ?? project.spec?.goal ?? project.answers.goal ?? ''
-    const hubspot = contacts.filter((c) => c.source === 'hubspot')
-    const ranked = hubspot.length
-      ? rankHubSpotLeads(hubspot, (contact) => ({
-          seed: (contact.email || contact.externalId || contact.id).trim().toLowerCase(),
-          company: contact.company,
-          title: contact.title
-        }))
-      : []
+    const ranked = contacts.length ? rankLeads(contacts, leadIdentity) : []
     const inbound = ranked.filter((contact) => contact.priority?.motion === 'inbound').length
     const outbound = ranked.filter((contact) => contact.priority?.motion === 'outbound').length
     const storedRule = patch?.warmthRule ?? project.brief?.warmthRule
     const warmthRule =
-      hubspot.length && (!storedRule || storedRule === DEFAULT_WARMTH_RULE)
+      contacts.length &&
+      (!storedRule || storedRule === DEFAULT_WARMTH_RULE || storedRule === LEGACY_HUBSPOT_RULE)
         ? RANKED_QUEUE_RULE
         : (storedRule ?? DEFAULT_WARMTH_RULE)
-    const summary = hubspot.length
-      ? `${project.name}: ${goal || 'outbound'}. Priority queue from HubSpot: ${inbound} inbound, ${outbound} outbound, best call first.`
+    const summary = contacts.length
+      ? `${project.name}: ${goal || 'outbound'}. Priority queue: ${inbound} inbound, ${outbound} outbound, best call first.`
       : `${project.name}: ${goal || 'outbound'}. ${warmthRule} ${counts.hot} hot, ${counts.warm} warm, ${counts.cold} cold.`
     brief = {
       goal,

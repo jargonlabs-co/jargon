@@ -53,7 +53,7 @@ import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
-import { isPriorityPipelinePrompt } from '../shared/priorityOverlay'
+import { isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
 import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
@@ -161,7 +161,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to pull HubSpot contacts and build a priority pipeline, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat, call resume_workspace first. If HubSpot is connected, list_crm_contacts and enroll everyone with enroll_hubspot people "all". The list is already ranked, inbound and outbound mixed. Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
+        'If the user asks to pull HubSpot contacts and build a priority pipeline, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked, inbound and outbound mixed, from any source. If HubSpot is connected, list_crm_contacts and enroll everyone with enroll_hubspot people "all". Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
       })
     }
   )
@@ -398,7 +398,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens Tasks with personalized copy.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens the flow with personalized copy.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)
@@ -421,7 +421,7 @@ export function registerJargonTools(
       ...display('Set up a new outbound workspace', HINTS.write),
       _meta: EMAIL_WORKSPACE_TOOL_META,
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens Tasks. Exception: a HubSpot priority pipeline (for example "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week") is the sentence alone, no table. That enrolls HubSpot contacts and opens To-dos already ranked. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens the flow, already ranked. Exception: a HubSpot priority pipeline (for example "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week") is the sentence alone, no table. That enrolls HubSpot contacts and opens To-dos already ranked. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -467,7 +467,8 @@ export function registerJargonTools(
     'list_contacts',
     {
       ...display('List the people in a workspace', HINTS.read),
-      description: 'List contacts in one workspace.',
+      description:
+        'List contacts in one workspace. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals. Sorted best-first.',
       inputSchema: z.object({
         projectId: z.string(),
         status: ContactStatus.optional(),
@@ -478,7 +479,8 @@ export function registerJargonTools(
     },
     async ({ projectId, ...query }) => {
       if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
-      return ok(listPublicContacts(store, projectId, query))
+      const listed = listPublicContacts(store, projectId, query)
+      return ok({ ...listed, contacts: rankLeads(listed.contacts, leadIdentity) })
     }
   )
 
@@ -811,7 +813,7 @@ export function registerJargonTools(
     {
       ...display('Open your outbound workspace', HINTS.read),
       description:
-        'Reopen the outbound workspace in Claude (Contacts, Sequence, Tasks). Call after import_list, deploy_tool, or writing drafts. After a cadence is started, prefer show_tasks.',
+        'Reopen the outbound workspace in Claude on the flow (Contacts, Sequence, Tasks). Call after import_list, deploy_tool, or writing drafts. Use show_tasks only when they want to work what is due.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -958,7 +960,7 @@ export function registerJargonTools(
       sandbox
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'sequence', actor.userId)
   }
 
   async function execSaveDraft(
@@ -1053,7 +1055,7 @@ export function registerJargonTools(
       enroll
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'tasks' : 'contacts', actor.userId)
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'sequence' : 'contacts', actor.userId)
   }
 
   async function execUpdateDraft(
@@ -1191,7 +1193,7 @@ export function registerJargonTools(
         sandbox
       )
       if (!result.ok) return fail(result.error)
-      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'sequence', actor.userId)
     }
   )
 
@@ -1357,7 +1359,7 @@ export function registerJargonTools(
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens Tasks. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
+        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens the flow. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: SaveResearchInput
     },

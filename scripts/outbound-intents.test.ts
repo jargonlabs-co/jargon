@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { matchOutboundIntent } from '../src/shared/outboundIntents'
-import { compileWorkspaceSpec, workspaceKindLabel } from '../src/shared/workspaceSpec'
+import { compileWorkspaceSpec, inferMcpDefaultTab, workspaceKindLabel } from '../src/shared/workspaceSpec'
 
 describe('matchOutboundIntent channel tools', () => {
   it('compiles LinkedIn-only requests to a LinkedIn queue', () => {
@@ -39,6 +39,14 @@ describe('matchOutboundIntent channel tools', () => {
     assert.equal(workspaceKindLabel(spec), 'Multi-channel cadence')
   })
 
+  it('treats a generic sequence as multi-channel so phone steps populate', () => {
+    const spec = compileWorkspaceSpec('Build a 7-step sequence over 10 days for VP Sales')
+    assert.ok(spec.channels.includes('call'))
+    assert.ok(spec.steps.some((step) => step.channel === 'call'))
+    assert.equal(spec.steps.length, 7)
+    assert.deepEqual(new Set(spec.steps.map((step) => step.channel)), new Set(['email', 'call', 'linkedin']))
+  })
+
   it('honors exclusive single-channel phrasing', () => {
     assert.deepEqual(matchOutboundIntent('Only LinkedIn for my ABM list').channels, ['linkedin'])
     assert.deepEqual(matchOutboundIntent('Just phone outreach for churn risks').channels, ['call'])
@@ -50,6 +58,13 @@ describe('matchOutboundIntent channel tools', () => {
   it('orders named multi-channel prompts by mention', () => {
     const match = matchOutboundIntent('LinkedIn then email then call for CSMs')
     assert.deepEqual(match.channels, ['linkedin', 'email', 'call'])
+  })
+
+  it('lands sequenced work on the flow, not to-dos', () => {
+    assert.equal(inferMcpDefaultTab({ surface: 'queue', enrolled: true }), 'sequence')
+    assert.equal(inferMcpDefaultTab({ surface: 'sequence', enrolled: true }), 'sequence')
+    assert.equal(inferMcpDefaultTab({ surface: 'tasks' }), 'tasks')
+    assert.equal(inferMcpDefaultTab({ surface: 'queue', focus: 'tasks' }), 'tasks')
   })
 
   it('extracts segment for channel tools', () => {

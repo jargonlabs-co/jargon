@@ -3,6 +3,7 @@ import { uid } from '../crypto'
 import type { DataStore } from '../store'
 import { buildProspectContext, prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
+import { hasReachableContact } from '../../shared/priorityOverlay'
 import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
 import { setProjectCatalog } from '../fieldCatalogSync'
 
@@ -112,16 +113,15 @@ function mapRow(
   const name = pickString(row, [cols.name, 'full_name', 'contact_name'])
   if (!name) return null
 
-  const company =
-    pickString(row, [cols.company, 'company_name', 'account_name', 'employer']) ||
-    'Unknown company'
-  const title = pickString(row, [cols.title, 'job_title', 'current_title']) || 'Contact'
+  const company = pickString(row, [cols.company, 'company_name', 'account_name', 'employer'])
+  const title = pickString(row, [cols.title, 'job_title', 'current_title'])
   const email = pickString(row, [cols.email, 'work_email', 'business_email'])
   const phone = pickString(row, [cols.phone, 'phone_number', 'mobile'])
   const city = pickString(row, [cols.city, 'location', 'city_state'])
   const linkedinUrl = normalizeLinkedInUrl(
     pickString(row, [cols.linkedinUrl, 'linkedin', 'profile_url', 'linkedin_profile_url'])
   )
+  if (!hasReachableContact({ name, email, phone, linkedinUrl })) return null
   const companyDomain = pickString(row, [cols.companyDomain, 'domain', 'website'])
   const companyIndustry = pickString(row, [cols.companyIndustry, 'industry'])
   const companySize = pickString(row, [cols.companySize, 'employee_count', 'headcount'])
@@ -228,9 +228,7 @@ function mapRow(
     name,
     company,
     title,
-    email:
-      email ||
-      `${name.toLowerCase().replace(/\s+/g, '.')}@${companyDomain || 'example.com'}`,
+    email,
     phone: phone || '',
     city,
     accountName: company,

@@ -17,7 +17,13 @@ import {
   type PublicMessage,
   type PublicStep
 } from './publicApi'
-import { isPriorityPipelinePrompt, leadIdentity, rankLeads, type LeadPriority } from '../shared/priorityOverlay'
+import {
+  isPriorityContact,
+  isPriorityPipelinePrompt,
+  leadIdentity,
+  rankLeads,
+  type LeadPriority
+} from '../shared/priorityOverlay'
 import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
 import {
   buildWorkspaceTasks,
@@ -181,7 +187,7 @@ export function getEmailWorkspace(
   if (!sequence) return null
   const steps = sequence.steps.filter((step): step is PublicStep => Boolean(step))
   const dashboard = dashboardFor(project.id, config.appUrl)
-  const projectRows = store.db.contacts.filter((c) => c.projectId === projectId)
+  const projectRows = store.db.contacts.filter((c) => c.projectId === projectId && isPriorityContact(c))
   const rankedRows = rankLeads(projectRows, leadIdentity).slice(0, 50)
   const listed = { contacts: rankedRows.map(toPublicContact), total: projectRows.length }
   const priorityById = new Map(
@@ -721,11 +727,11 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
 
 export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account on managed infrastructure: email, phone, and LinkedIn are sent by Jargon (customers do not bring API keys). Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Claude researches people and companies and writes send copy and talk tracks via save_research. Tasks then opens with personalized work.
 
-Priority pipeline: when the user asks to pull HubSpot contacts and build a priority pipeline, including "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week", call deploy_tool with that sentence as workspace and no contact table. Do not call resume_workspace first. Then call show_tasks with the projectId. Stop. The To-dos list is already ranked, inbound and outbound mixed. Do not save_research and do not ask to schedule.
+Priority pipeline: when the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with that sentence as workspace and no contact table. Hydrate whoever is already connected — Railway, Postgres, HubSpot — or a list they paste. Do not call resume_workspace first. Then call show_tasks with the projectId. Stop. Only people with an email, phone, or LinkedIn URL are ranked. Do not save_research and do not ask to schedule. Do not enroll HubSpot if the workspace already has people from another source.
 
-On any other new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals — HubSpot, Railway, or an imported list. The queue is sorted best first, inbound and outbound mixed. If HubSpot is connected, call list_crm_contacts and enroll everyone with enroll_hubspot people "all". Do not regroup by warmth and do not drop cold contacts.
+On any other new chat, call resume_workspace before import_list or deploy_tool. If a workspace already exists, continue it. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals from any source. The queue is sorted best first. Do not regroup by warmth and do not drop cold contacts.
 
-Bring a list through Claude when HubSpot is not connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument.
+Bring a list through Claude when no warehouse or CRM is connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument. If they name a source (Railway, HubSpot, a pasted table), use that source only.
 
 One workspace, three jobs. The in-chat UI is always Contacts, Sequence, and Tasks (plus Inbox for replies, or Queue for a live dialer). Do not treat those as different apps.
 

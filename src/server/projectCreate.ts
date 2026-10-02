@@ -6,11 +6,7 @@ import type { DeploySpecInput, ProjectKind } from './types'
 import { compileWorkspaceSpec } from '../shared/workspaceSpec'
 import type { BillingService } from './billing/types'
 import { assertCanCreateTool, PlanLimitError } from './planLimits'
-import {
-  fetchHubSpotContacts,
-  writeDemoContactsToProject,
-  writeHubSpotContactsToProjects
-} from './providers/hubspot'
+import { fetchHubSpotContacts, writeHubSpotContactsToProjects } from './providers/hubspot'
 import {
   fetchPostgresProspects,
   readPostgresSecrets,
@@ -165,11 +161,9 @@ export async function createProjectRecord(
           })
         }
       }
-    } catch {
-      writeDemoContactsToProject(store, orgId, projectId, 20)
+    } catch (err) {
+      console.warn('[jargon] HubSpot contacts load failed', err)
     }
-  } else {
-    writeDemoContactsToProject(store, orgId, projectId, 20)
   }
 
   return projectId

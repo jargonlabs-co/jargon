@@ -28,7 +28,14 @@ import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { channelsFromSteps, formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
-import { isPriorityPipelinePrompt, leadIdentity, rankLeads, type LeadPriority } from '../shared/priorityOverlay'
+import {
+  hasReachableContact,
+  isPriorityContact,
+  isPriorityPipelinePrompt,
+  leadIdentity,
+  rankLeads,
+  type LeadPriority
+} from '../shared/priorityOverlay'
 import { warmthRank, type Warmth } from '../shared/warmth'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
@@ -1749,7 +1756,7 @@ export async function listHubSpotContactsForEnroll(
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
-    const prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
+    const prospects = (await fetchHubSpotContacts(secrets.accessToken, 200, demo)).filter(hasReachableContact)
     const contacts = rankLeads(
       prospects.map((p) => ({
         externalId: p.externalId,
@@ -1845,7 +1852,7 @@ export function saveWorkspaceBrief(
   store.update((db) => {
     const project = db.projects.find((p) => p.id === projectId && p.orgId === orgId)
     if (!project) return
-    const contacts = db.contacts.filter((c) => c.projectId === projectId)
+    const contacts = db.contacts.filter((c) => c.projectId === projectId && isPriorityContact(c))
     const counts = warmthCounts(contacts)
     const goal = patch?.goal ?? project.brief?.goal ?? project.spec?.goal ?? project.answers.goal ?? ''
     const ranked = contacts.length ? rankLeads(contacts, leadIdentity) : []
@@ -1897,10 +1904,11 @@ export async function enrollHubSpotContacts(
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   let prospects: ContextProspect[]
   try {
-    prospects = await fetchHubSpotContacts(secrets.accessToken, 200, demo)
+    prospects = (await fetchHubSpotContacts(secrets.accessToken, 200, demo)).filter(hasReachableContact)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'HubSpot request failed' }
   }
+  if (!prospects.length) return { ok: false, error: 'No HubSpot contacts with an email, phone, or LinkedIn URL' }
   const ranked = [...prospects].sort((a, b) => warmthRank(a.warmth) - warmthRank(b.warmth))
   const wanted = new Set(externalIds)
   const listed = byWarmth ? ranked : ranked.filter((p) => wanted.has(p.externalId))

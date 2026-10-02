@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  hasReachableContact,
+  isFixtureContact,
+  isPriorityContact,
   isPriorityPipelinePrompt,
   isSalesExecTitle,
   leadIdentity,
@@ -14,9 +17,21 @@ describe('priority pipeline prompt', () => {
   const prompt =
     'pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week'
 
-  it('recognizes the HubSpot priority pipeline ask', () => {
+  it('recognizes a priority pipeline from any source', () => {
     assert.equal(isPriorityPipelinePrompt(prompt), true)
+    assert.equal(isPriorityPipelinePrompt('build a priority pipeline for this week'), true)
+    assert.equal(isPriorityPipelinePrompt('prioritize these Railway contacts'), true)
     assert.equal(isPriorityPipelinePrompt('build an email cadence for webinar leads'), false)
+  })
+
+  it('keeps reachable people and drops fixture or empty HubSpot rows', () => {
+    assert.equal(hasReachableContact({ email: 'ada@acme.com' }), true)
+    assert.equal(hasReachableContact({ phone: '+1 415 555 0142' }), true)
+    assert.equal(hasReachableContact({ linkedinUrl: 'https://www.linkedin.com/in/ada' }), true)
+    assert.equal(hasReachableContact({ email: '123@unknown.invalid', name: 'HubSpot contact 4' }), false)
+    assert.equal(isFixtureContact({ source: 'seed', email: 'ada@acme.com' }), true)
+    assert.equal(isPriorityContact({ source: 'postgres', email: 'bo@orbit.com' }), true)
+    assert.equal(isPriorityContact({ source: 'hubspot', email: '99@unknown.invalid' }), false)
   })
 
   it('keeps sales exec titles and skips a thin match', () => {
@@ -55,7 +70,7 @@ describe('scoreLead', () => {
 describe('rankLeads', () => {
   it('sorts higher scores first and numbers the ranks', () => {
     const people = Array.from({ length: 24 }, (_, i) => ({
-      email: `person${i}@example.com`,
+      email: `person${i}@acme.com`,
       company: `Company ${i}`,
       title: 'VP Sales'
     }))

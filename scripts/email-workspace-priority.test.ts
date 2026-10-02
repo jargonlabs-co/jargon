@@ -59,12 +59,14 @@ const config = {
   plivo: { authId: '', authToken: '' }
 } as ServerConfig
 
-function contact(partial: Pick<Contact, 'id' | 'source' | 'email' | 'company' | 'title'>): Contact {
+function contact(
+  partial: Pick<Contact, 'id' | 'source' | 'email' | 'company' | 'title'> & Partial<Pick<Contact, 'phone' | 'name'>>
+): Contact {
   return {
     orgId: 'org_1',
     projectId: 'proj_1',
-    name: partial.email,
-    phone: '',
+    name: partial.name ?? partial.email,
+    phone: partial.phone ?? '',
     city: '',
     status: 'queued',
     stepIndex: 0,
@@ -76,7 +78,7 @@ function contact(partial: Pick<Contact, 'id' | 'source' | 'email' | 'company' | 
 }
 
 describe('workspace priority', () => {
-  it('ranks seed, postgres, and HubSpot contacts together', () => {
+  it('ranks Railway, import, and HubSpot contacts and drops empty rows', () => {
     const db = emptyDb()
     db.projects.push({
       id: 'proj_1',
@@ -92,13 +94,23 @@ describe('workspace priority', () => {
       updatedAt: 1
     } as Project)
     db.contacts.push(
-      contact({ id: 'c1', source: 'seed', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }),
+      contact({ id: 'c1', source: 'manual', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }),
       contact({ id: 'c2', source: 'postgres', email: 'bo@orbit.com', company: 'Orbit', title: 'CRO' }),
-      contact({ id: 'c3', source: 'hubspot', email: 'cy@harbor.com', company: 'Harbor', title: 'Head of Growth' })
+      contact({ id: 'c3', source: 'hubspot', email: 'cy@harbor.com', company: 'Harbor', title: 'Head of Growth' }),
+      contact({
+        id: 'c4',
+        source: 'hubspot',
+        name: 'HubSpot contact 4',
+        email: '99@unknown.invalid',
+        company: 'Unknown company',
+        title: 'Contact'
+      }),
+      contact({ id: 'c5', source: 'seed', email: 'fake@acme.com', company: 'Acme', title: 'VP Sales' })
     )
     const ws = getEmailWorkspace(memoryStore(db), config, 'org_1', 'proj_1')
     assert.ok(ws)
     assert.equal(ws.contacts.length, 3)
+    assert.equal(ws.contacts.some((row) => row.id === 'c4' || row.id === 'c5'), false)
     assert.equal(ws.contacts.every((row) => row.priority?.rank), true)
     assert.deepEqual(
       [...ws.contacts].map((row) => row.priority?.rank).sort((a, b) => (a ?? 0) - (b ?? 0)),

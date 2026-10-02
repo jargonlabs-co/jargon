@@ -53,7 +53,7 @@ import { platformGmailReady } from './providers/gmail'
 import { getEmailWorkspace, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
-import { isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
+import { isPriorityContact, isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
 import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
@@ -171,7 +171,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to pull HubSpot contacts and build a priority pipeline, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked, inbound and outbound mixed, from any source. If HubSpot is connected, list_crm_contacts and enroll everyone with enroll_hubspot people "all". Otherwise import a list with import_list or deploy_tool. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
+        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace.'
       })
     }
   )
@@ -431,7 +431,7 @@ export function registerJargonTools(
       ...display('Set up a new outbound workspace', HINTS.write),
       _meta: EMAIL_WORKSPACE_TOOL_META,
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate HubSpot/Railway. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens the flow, already ranked. Exception: a HubSpot priority pipeline (for example "pull in sales exec contacts from my list of target accounts in hubspot. build a priority pipeline for this week") is the sentence alone, no table. That enrolls HubSpot contacts and opens To-dos already ranked. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open Tasks — follow nextAction: research each contact, then save_research. That enrolls everyone and opens the flow, already ranked. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from the connected source. Do not save_research. dashboardUrl is the full web tool — never prefix dashboardPath with www.jargonlabs.co.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -490,7 +490,8 @@ export function registerJargonTools(
     async ({ projectId, ...query }) => {
       if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
       const listed = listPublicContacts(store, projectId, query)
-      return ok({ ...listed, contacts: rankLeads(listed.contacts, leadIdentity) })
+      const contacts = listed.contacts.filter(isPriorityContact)
+      return ok({ ...listed, contacts: rankLeads(contacts, leadIdentity), total: contacts.length })
     }
   )
 
@@ -1162,7 +1163,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". "all" enrolls the full portal list; the app ranks it with inbound and outbound mixed. People already on the sequence are skipped. Manual steps become their to-dos.',
+        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. People already on the sequence are skipped. Manual steps become their to-dos.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: z.object({
         summary: Summary,
@@ -1213,7 +1214,7 @@ export function registerJargonTools(
     {
       ...display('Pull CRM contacts by warmth', HINTS.read),
       description:
-        'Pull contacts from the connected HubSpot portal. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals. Sorted best-first. Does not enroll them. Do not regroup by warmth.'
+        'Pull contacts from the connected HubSpot portal that have an email, phone, or LinkedIn URL. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals. Sorted best-first. Does not enroll them. Do not regroup by warmth.'
     },
     async () => {
       const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)

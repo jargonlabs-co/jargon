@@ -2,6 +2,7 @@ import { uid } from '../crypto'
 import type { ServerConfig } from '../config'
 import { createOAuthState, oauthRedirectUri, type ProviderSecrets } from '../connections'
 import type { DataStore } from '../store'
+import { hasReachableContact } from '../../shared/priorityOverlay'
 import { prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
@@ -67,15 +68,14 @@ export async function fetchHubSpotContacts(
   demo: boolean
 ): Promise<ContextProspect[]> {
   const capped = Math.min(Math.max(limit, 1), 200)
-  if (demo || accessToken === 'demo-hubspot-token') {
-    return demoHubSpotContacts(capped)
-  }
+  if (demo || accessToken === 'demo-hubspot-token') return []
 
   const props = await hubspotPropertyNames(accessToken)
-  const rows: Array<{ id: string; properties?: Record<string, string | null> }> = []
+  const found: ContextProspect[] = []
   let after: string | undefined
-  while (rows.length < capped) {
-    const pageSize = Math.min(100, capped - rows.length)
+  let scanned = 0
+  while (found.length < capped && scanned < 500) {
+    const pageSize = Math.min(100, 500 - scanned)
     const url = new URL(HUBSPOT_CONTACTS)
     url.searchParams.set('limit', String(pageSize))
     url.searchParams.set('properties', props.join(','))
@@ -87,11 +87,16 @@ export async function fetchHubSpotContacts(
       paging?: { next?: { after?: string } }
     }
     const page = json.results ?? []
-    rows.push(...page)
+    for (const row of page) {
+      scanned += 1
+      const prospect = contactFromHubSpot(row, scanned)
+      if (hasReachableContact(prospect)) found.push(prospect)
+      if (found.length >= capped) break
+    }
     after = json.paging?.next?.after
     if (!after || !page.length) break
   }
-  return rows.map((row, i) => contactFromHubSpot(row, i))
+  return found
 }
 
 export function hubspotAuthUrl(
@@ -152,13 +157,14 @@ export async function exchangeHubSpotCode(
 
 function contactFromHubSpot(
   row: { id: string; properties?: Record<string, string | null> },
-  index: number
+  _index: number
 ): ContextProspect {
   const p = row.properties ?? {}
   const first = (p.firstname ?? '').trim()
   const last = (p.lastname ?? '').trim()
-  const name = `${first} ${last}`.trim() || p.email || `HubSpot contact ${index + 1}`
-  const company = (p.company ?? '').trim() || 'Unknown company'
+  const email = (p.email ?? '').trim()
+  const name = `${first} ${last}`.trim() || email
+  const company = (p.company ?? '').trim()
   const linkedin = normalizeLinkedInUrl(p.hs_linkedin_url ?? p.hs_linkedinid)
   const industry = (p.industry ?? '').trim()
   const size = (p.numberofemployees ?? '').trim()
@@ -192,8 +198,8 @@ function contactFromHubSpot(
     externalId: row.id,
     name,
     company,
-    title: (p.jobtitle ?? '').trim() || 'Contact',
-    email: (p.email ?? '').trim() || `${row.id}@unknown.invalid`,
+    title: (p.jobtitle ?? '').trim(),
+    email,
     phone: (p.phone ?? '').trim() || (p.mobilephone ?? '').trim() || '',
     city: (p.city ?? '').trim() || '',
     accountName: company,
@@ -322,7 +328,12 @@ export function writeHubSpotContactsToProjects(
       (p) => p.orgId === orgId && (!projectId || p.id === projectId)
     )
     for (const project of projects) {
-      const contacts = prospectsToContacts(orgId, project.id, prospects, 'hubspot')
+      const contacts = prospectsToContacts(
+        orgId,
+        project.id,
+        prospects.filter(hasReachableContact),
+        'hubspot'
+      )
       db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
       db.contacts.push(...contacts)
       setProjectCatalog(db, project.id)

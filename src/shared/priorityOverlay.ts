@@ -1,8 +1,55 @@
-/** HubSpot pull that should open the ranked To-dos pipeline, not a research step. */
+/** Ranked To-dos from whatever list is connected — HubSpot, Railway, warehouse, or an import. */
 export function isPriorityPipelinePrompt(prompt: string): boolean {
   const t = prompt.toLowerCase()
-  const fromCrm = /\bhubspot\b/.test(t) || /\btarget accounts?\b/.test(t)
-  return fromCrm && /\bpriority pipeline\b/.test(t)
+  if (/\bpriority pipeline\b/.test(t)) return true
+  return /\bpriorit(?:y|ize|ise)\b/.test(t) && /\b(contacts?|leads?|queue|to-?dos?)\b/.test(t)
+}
+
+const FAKE_EMAIL = /@unknown\.invalid$|\.invalid$|@example\.com$/i
+
+export function isRealEmail(email?: string | null): boolean {
+  const value = (email ?? '').trim()
+  if (!value || !value.includes('@')) return false
+  const domain = value.split('@')[1] ?? ''
+  if (!domain || FAKE_EMAIL.test(value) || /\.test$/i.test(domain)) return false
+  return true
+}
+
+export function hasReachableContact(contact: {
+  email?: string | null
+  phone?: string | null
+  linkedinUrl?: string | null
+  name?: string | null
+}): boolean {
+  const name = (contact.name ?? '').trim()
+  if (/^hubspot contact \d+$/i.test(name)) return false
+  const phone = (contact.phone ?? '').replace(/\D/g, '')
+  const linkedin = (contact.linkedinUrl ?? '').trim()
+  return isRealEmail(contact.email) || phone.length >= 10 || /linkedin\.com/i.test(linkedin)
+}
+
+export function isFixtureContact(contact: {
+  source?: string | null
+  externalId?: string | null
+  email?: string | null
+}): boolean {
+  if (contact.source === 'seed') return true
+  const externalId = (contact.externalId ?? '').toLowerCase()
+  if (externalId.startsWith('demo_') || externalId.startsWith('seed_demo_')) return true
+  const domain = (contact.email ?? '').trim().toLowerCase().split('@')[1] ?? ''
+  return domain.endsWith('.test')
+}
+
+/** Real person from any source, with an email, phone, or LinkedIn URL. */
+export function isPriorityContact(contact: {
+  email?: string | null
+  phone?: string | null
+  linkedinUrl?: string | null
+  name?: string | null
+  source?: string | null
+  externalId?: string | null
+}): boolean {
+  return hasReachableContact(contact) && !isFixtureContact(contact)
 }
 
 export function wantsSalesExecs(prompt: string): boolean {
@@ -56,19 +103,54 @@ export type LeadIdentity = {
   seed: string
   company: string
   title?: string
+  facts?: string[]
 }
 
-/** Score any contact — HubSpot, Railway, import, or demo book. */
+function factLines(contact: {
+  warmth?: string | null
+  attrs?: Record<string, unknown> | null
+}): string[] {
+  const facts: string[] = []
+  const hiring = contact.attrs?.hiring
+  if (Array.isArray(hiring)) {
+    for (const role of hiring) {
+      if (typeof role === 'string' && role.trim()) facts.push(`Hiring: ${role.trim()}`)
+    }
+  }
+  const gtm = contact.attrs?.gtm_initiative
+  if (Array.isArray(gtm)) {
+    for (const line of gtm) {
+      if (typeof line === 'string' && line.trim()) facts.push(line.trim())
+    }
+  }
+  if (contact.warmth === 'hot') facts.push('Recent activity')
+  else if (contact.warmth === 'warm') facts.push('Active this quarter')
+  return facts.slice(0, 2)
+}
+
+/** Score a reachable contact from HubSpot, Railway, warehouse, or an imported list. */
 export function leadIdentity(contact: {
   email?: string | null
+  phone?: string | null
+  linkedinUrl?: string | null
+  name?: string | null
+  source?: string | null
   externalId?: string | null
   id?: string | null
   company?: string | null
   title?: string | null
+  warmth?: string | null
+  attrs?: Record<string, unknown> | null
 }): LeadIdentity | null {
+  if (!isPriorityContact(contact)) return null
   const seed = (contact.email || contact.externalId || contact.id || '').trim().toLowerCase()
   if (!seed) return null
-  return { seed, company: contact.company ?? '', title: contact.title ?? undefined }
+  return {
+    seed,
+    company: contact.company ?? '',
+    title: contact.title ?? undefined,
+    facts: factLines(contact)
+  }
 }
 
 function hashSeed(value: string): number {
@@ -89,34 +171,22 @@ function cleanTitle(title: string | undefined): string {
   return value
 }
 
-export function scoreLead(input: { seed: string; company: string; title?: string }): Omit<LeadPriority, 'rank' | 'band'> {
+export function scoreLead(input: {
+  seed: string
+  company: string
+  title?: string
+  facts?: string[]
+}): Omit<LeadPriority, 'rank' | 'band'> {
   const h = hashSeed(input.seed.trim().toLowerCase())
   const company = cleanCompany(input.company)
   const title = cleanTitle(input.title)
   const motion: LeadMotion = h % 5 < 2 ? 'inbound' : 'outbound'
   const base = (h % 70) + 20
   const score = motion === 'inbound' ? Math.min(99, base + 12) : base
-  const inbound = [
-    'Demo request this week',
-    'Replied after viewing pricing',
-    'Asked for a follow-up from a webinar',
-    'Form fill on the product page',
-    company ? `${company} requested a walkthrough` : 'Requested a walkthrough',
-    'Booked time, then went quiet'
-  ]
-  const outbound = [
-    'No prior conversation',
-    company ? `Hiring on the GTM team at ${company}` : 'Hiring on the GTM team',
-    title ? `New ${title} in seat` : 'New leader in seat',
-    company ? `${company} raised recently` : 'Raised recently',
-    'Evaluating outbound tools',
-    'Posted about pipeline coverage'
-  ]
-  const pool = motion === 'inbound' ? inbound : outbound
-  const first = pool[h % pool.length] ?? pool[0]
-  const second = pool[(h + 2) % pool.length] ?? first
-  const signals = first === second ? [first] : [first, second]
-  return { score, motion, signals }
+  const facts = (input.facts ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 2)
+  if (facts.length) return { score, motion, signals: facts }
+  const who = title && company ? `${title} at ${company}` : title || company
+  return { score, motion, signals: who ? [who] : [] }
 }
 
 export function rankLeads<T extends object>(

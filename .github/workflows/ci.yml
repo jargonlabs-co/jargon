@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            landing/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: landing
+      - name: Typecheck API
+        run: npx tsc --noEmit -p .
+      - name: Typecheck website
+        run: npx tsc --noEmit -p .
+        working-directory: landing
+      - name: Tests
+        run: npm test

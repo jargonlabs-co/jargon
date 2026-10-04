@@ -4,9 +4,7 @@ import {
   addSuppression,
   addSuppressions,
   callBlockReason,
-  checkCallingHours,
   findSuppression,
-  normalizeTimeZone,
   readUnsubscribeToken,
   unsubscribeUrl
 } from '../src/server/compliance.ts'
@@ -203,47 +201,13 @@ describe('unsubscribe links', () => {
   })
 })
 
-describe('calling hours', () => {
-  // 2026-03-04 is a Wednesday, standard time (ET = UTC-5, PT = UTC-8).
-  const at = (utcHour: number) => new Date(Date.UTC(2026, 2, 4, utcHour, 0))
-
-  it('uses the contact timezone when known', () => {
-    const c = { phone: '+14155550100', attrs: { timezone: 'America/Los_Angeles' } }
-    assert.equal(checkCallingHours(c, at(16), {}).ok, true) // 8:00 PT
-    assert.equal(checkCallingHours(c, at(15), {}).ok, false) // 7:00 PT
-    assert.equal(checkCallingHours(c, at(4), {}).ok, true) // 20:00 PT
-    assert.equal(checkCallingHours(c, at(5), {}).ok, false) // 21:00 PT
-  })
-
-  it('reads HubSpot timezone values', () => {
-    assert.equal(normalizeTimeZone('america_slash_new_york'), 'America/New_York')
-    assert.equal(normalizeTimeZone('America/Chicago'), 'America/Chicago')
-    assert.equal(normalizeTimeZone('not a zone'), null)
-  })
-
-  it('requires the window in both ET and PT for US numbers without a timezone', () => {
-    const c = { phone: '(212) 555-0100', attrs: {} }
-    assert.equal(checkCallingHours(c, at(16), {}).ok, true) // 11 ET / 8 PT
-    assert.equal(checkCallingHours(c, at(14), {}).ok, false) // 9 ET / 6 PT
-    assert.equal(checkCallingHours(c, at(2), {}).ok, false) // 21 ET / 18 PT
-  })
-
-  it('needs a timezone for non-US numbers', () => {
-    const result = checkCallingHours({ phone: '+442071234567', attrs: {} }, at(12), {})
-    assert.equal(result.ok, false)
-  })
-
-  it('honors JARGON_CALL_WINDOW', () => {
-    const c = { phone: '+14155550100', attrs: { timezone: 'America/Los_Angeles' } }
-    assert.equal(checkCallingHours(c, at(15), { JARGON_CALL_WINDOW: '7-20' }).ok, true)
-  })
-
-  it('combines do-not-call and hours in callBlockReason', () => {
-    const c = contact({ attrs: { timezone: 'America/Los_Angeles' } })
+describe('pre-dial checks', () => {
+  it('allows a call at any hour and blocks only do-not-call', () => {
+    const c = contact({ attrs: {} })
     const db = migrateDatabase({})
-    assert.equal(callBlockReason(db, c, at(18)), null)
+    assert.equal(callBlockReason(db, c), null)
     db.suppressions.push({ id: 's', orgId: 'org_a', kind: 'phone', value: '+14155550100', reason: 'do_not_call', createdAt: 0 })
-    assert.match(callBlockReason(db, c, at(18)) ?? '', /do-not-call/)
+    assert.match(callBlockReason(db, c) ?? '', /do-not-call/)
   })
 })
 

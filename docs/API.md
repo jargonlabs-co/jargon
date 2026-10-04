@@ -118,7 +118,7 @@ Prefer **`/disposition`** for outcomes that are not tied to an open call.
 
 ## Compliance
 
-Every send checks the suppression list first. Blocked sends return `409` with `code: "outbound_blocked"` and no credits are charged. Calls are also blocked outside 8:00–21:00 recipient local time (`JARGON_CALL_WINDOW`). The timezone comes from `attrs.timezone` or HubSpot `hs_timezone`; US numbers without one must be inside the window in both ET and PT. Each email gets a one-click unsubscribe link and `List-Unsubscribe` headers, and a HubSpot `hs_email_optout` also blocks email. Hard bounces are suppressed for every org.
+Every send checks the suppression list first. Blocked sends return `409` with `code: "outbound_blocked"` and no credits are charged. Calls have no time-of-day window; only the do-not-call list blocks them. Each email gets a one-click unsubscribe link and `List-Unsubscribe` headers, and a HubSpot `hs_email_optout` also blocks email. Hard bounces are suppressed for every org.
 
 | Method | Path | Body / notes |
 |--------|------|----------------|

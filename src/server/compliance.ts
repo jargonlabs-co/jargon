@@ -235,103 +235,13 @@ export function emailFooter(input: { unsubscribeUrl: string; postalAddress?: str
   return lines.join('\n')
 }
 
-// ——— Calling hours ———
-
-/** Local-time window for outbound calls, from JARGON_CALL_WINDOW="8-21" (start inclusive, end exclusive). */
-export function callWindowHours(env: NodeJS.ProcessEnv = process.env): { start: number; end: number } {
-  const match = /^(\d{1,2})-(\d{1,2})$/.exec(env.JARGON_CALL_WINDOW?.trim() ?? '')
-  if (match) {
-    const start = Number(match[1])
-    const end = Number(match[2])
-    if (start >= 0 && end <= 24 && start < end) return { start, end }
-  }
-  return { start: 8, end: 21 }
-}
-
-function validTimeZone(tz: string): string | null {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz })
-    return tz
-  } catch {
-    return null
-  }
-}
-
-/** Accepts IANA names and HubSpot's `america_slash_new_york` style. */
-export function normalizeTimeZone(raw: unknown): string | null {
-  const text = typeof raw === 'string' ? raw.trim() : ''
-  if (!text) return null
-  if (validTimeZone(text)) return text
-  const fromHubSpot = text
-    .toLowerCase()
-    .split('_slash_')
-    .map((part) =>
-      part
-        .split('_')
-        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-        .join('_')
-    )
-    .join('/')
-  return validTimeZone(fromHubSpot)
-}
-
-const TIMEZONE_ATTRS = ['timezone', 'time_zone', 'timeZone', 'hs_timezone', 'tz']
-
-export function contactTimeZone(contact: Pick<Contact, 'attrs'>): string | null {
-  for (const key of TIMEZONE_ATTRS) {
-    const tz = normalizeTimeZone(contact.attrs?.[key])
-    if (tz) return tz
-  }
-  return null
-}
-
-function localHour(tz: string, now: Date): number {
-  const hour = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' })
-    .formatToParts(now)
-    .find((p) => p.type === 'hour')?.value
-  return Number(hour)
-}
-
-/**
- * Known timezone: use it. US/Canada number without one: require the window in
- * both Eastern and Pacific time. Anything else needs a timezone on the contact.
- */
-export function checkCallingHours(
-  contact: Pick<Contact, 'phone' | 'attrs'>,
-  now = new Date(),
-  env: NodeJS.ProcessEnv = process.env
-): { ok: true } | { ok: false; reason: string } {
-  const { start, end } = callWindowHours(env)
-  const inWindow = (tz: string) => {
-    const h = localHour(tz, now)
-    return h >= start && h < end
-  }
-  const label = `${start}:00–${end}:00`
-  const tz = contactTimeZone(contact)
-  if (tz) {
-    return inWindow(tz)
-      ? { ok: true }
-      : { ok: false, reason: `Outside calling hours (${label} in ${tz})` }
-  }
-  const phone = toE164(contact.phone ?? '')
-  if (phone?.startsWith('+1')) {
-    return inWindow('America/New_York') && inWindow('America/Los_Angeles')
-      ? { ok: true }
-      : { ok: false, reason: `Outside calling hours (${label} local). Add a timezone to the contact to widen the window` }
-  }
-  return { ok: false, reason: 'Add a timezone to this contact before calling a non-US number' }
-}
-
 /** Every pre-dial check. Returns a user-facing reason when the call must not happen. */
 export function callBlockReason(
   db: Pick<Database, 'suppressions'>,
-  contact: Contact,
-  now = new Date()
+  contact: Contact
 ): string | null {
   const suppressed = findSuppression(db, contact.orgId, 'call', contact)
-  if (suppressed) return suppressionMessage(suppressed)
-  const hours = checkCallingHours(contact, now)
-  return hours.ok ? null : hours.reason
+  return suppressed ? suppressionMessage(suppressed) : null
 }
 
 export class OutboundBlockedError extends Error {

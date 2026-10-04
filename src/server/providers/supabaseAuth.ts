@@ -64,18 +64,52 @@ export async function findAuthUserByEmail(
   return null
 }
 
+export class EmailNotConfirmedError extends Error {
+  readonly code = 'email_not_confirmed'
+  constructor() {
+    super('Confirm your email first. Check your inbox for the link from Jargon.')
+  }
+}
+
+export function verificationRedirect(config: ServerConfig): string {
+  return `${config.appUrl}/login?verified=1`
+}
+
 /**
- * Create a confirmed Auth user (server-side) then return a session via password sign-in.
+ * Create the Auth user. With verification required, Supabase emails a confirmation
+ * link and no session is returned; otherwise the user is confirmed and signed in.
  * Supabase Auth is the source of truth for credentials — not Railway jargon_state.
  */
 export async function signUpWithPassword(
   config: ServerConfig,
-  input: { email: string; password: string; name?: string }
-): Promise<{ accessToken: string; supabaseUser: SupabaseUser }> {
+  input: { email: string; password: string; name?: string; orgName?: string }
+): Promise<
+  | { verificationRequired: false; accessToken: string; supabaseUser: SupabaseUser }
+  | { verificationRequired: true; supabaseUser: SupabaseUser }
+> {
   const email = input.email.trim().toLowerCase()
   const existing = await findAuthUserByEmail(config, email)
   if (existing) {
     throw new Error('Email already registered. Sign in instead.')
+  }
+  const metadata = { name: input.name ?? email.split('@')[0], orgName: input.orgName }
+
+  if (config.supabase.requireEmailVerification) {
+    const { data, error } = await getSupabaseAnon(config).auth.signUp({
+      email,
+      password: input.password,
+      options: { emailRedirectTo: verificationRedirect(config), data: metadata }
+    })
+    if (error) {
+      if (isAlreadyRegisteredError(error.message)) throw new Error('Email already registered. Sign in instead.')
+      throw new Error(error.message)
+    }
+    if (!data.user) throw new Error('Sign up failed')
+    if (data.session) {
+      console.warn('[jargon] Supabase returned a session on sign-up: turn on "Confirm email" in Supabase Auth settings')
+      return { verificationRequired: false, accessToken: data.session.access_token, supabaseUser: data.user }
+    }
+    return { verificationRequired: true, supabaseUser: data.user }
   }
 
   const admin = getSupabaseAdmin(config)
@@ -83,7 +117,7 @@ export async function signUpWithPassword(
     email,
     password: input.password,
     email_confirm: true,
-    user_metadata: { name: input.name ?? email.split('@')[0] }
+    user_metadata: metadata
   })
   if (error) {
     if (isAlreadyRegisteredError(error.message)) {
@@ -93,7 +127,17 @@ export async function signUpWithPassword(
   }
   if (!data.user) throw new Error('Sign up failed')
 
-  return signInWithPassword(config, { email, password: input.password })
+  return { verificationRequired: false, ...(await signInWithPassword(config, { email, password: input.password })) }
+}
+
+/** Re-send the sign-up confirmation email. Silent when the address is unknown or already confirmed. */
+export async function resendVerificationEmail(config: ServerConfig, email: string): Promise<void> {
+  const { error } = await getSupabaseAnon(config).auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+    options: { emailRedirectTo: verificationRedirect(config) }
+  })
+  if (error) throw new Error(error.message)
 }
 
 export async function signInWithPassword(
@@ -105,7 +149,12 @@ export async function signInWithPassword(
     email: input.email.trim().toLowerCase(),
     password: input.password
   })
-  if (error) throw new Error(error.message)
+  if (error) {
+    if ((error as { code?: string }).code === 'email_not_confirmed' || /email not confirmed/i.test(error.message)) {
+      throw new EmailNotConfirmedError()
+    }
+    throw new Error(error.message)
+  }
   if (!data.session?.access_token || !data.user) throw new Error('Invalid credentials')
   return { accessToken: data.session.access_token, supabaseUser: data.user }
 }
@@ -144,25 +193,5 @@ export async function getSupabaseUserFromToken(
   const client = getSupabaseAnon(config)
   const { data, error } = await client.auth.getUser(accessToken)
   if (error || !data.user) return null
-  return data.user
-}
-
-/** Ensure a Supabase auth user exists (for bootstrap / legacy migrate). */
-export async function ensureSupabaseUser(
-  config: ServerConfig,
-  input: { email: string; password: string; name?: string }
-): Promise<SupabaseUser> {
-  const existing = await findAuthUserByEmail(config, input.email)
-  if (existing) return existing
-
-  const admin = getSupabaseAdmin(config)
-  const { data, error } = await admin.auth.admin.createUser({
-    email: input.email.trim().toLowerCase(),
-    password: input.password,
-    email_confirm: true,
-    user_metadata: { name: input.name ?? input.email.split('@')[0] }
-  })
-  if (error) throw new Error(error.message)
-  if (!data.user) throw new Error('Could not create Supabase user')
   return data.user
 }

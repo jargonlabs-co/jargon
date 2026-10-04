@@ -108,10 +108,26 @@ Response: `{ contact, next }` where `next` is the same shape as `queue/next`.
 | `POST` | `/contacts/:id/calls` | Start dial session |
 | `POST` | `/calls/:id/complete` | `{ disposition }` (call-scoped outcome) |
 | `POST` | `/contacts/:id/notes` | `{ note }` |
+| `POST` | `/contacts/enrichment` | `{ projectId?, contacts: [{ email \| linkedinUrl \| crm_id \| contactId, ...fields }] }` (v1 only). Merges by key; extra fields become `attrs`, blank identity fields are filled. Returns `{ matched, updated, unmatched, enrolled }`. |
 | `PATCH` | `/contacts/:id` | Partial contact update |
-| `GET` | `/voice/token` | Browser softphone credentials when voice is live (Plivo endpoint or Twilio JWT) |
+| `GET` | `/voice/token` | Browser softphone credentials when voice is live (Plivo JWT) |
 
 Prefer **`/disposition`** for outcomes that are not tied to an open call.
+
+---
+
+## Compliance
+
+Every send checks the suppression list first. Blocked sends return `409` with `code: "outbound_blocked"` and no credits are charged. Calls are also blocked outside 8:00–21:00 recipient local time (`JARGON_CALL_WINDOW`). The timezone comes from `attrs.timezone` or HubSpot `hs_timezone`; US numbers without one must be inside the window in both ET and PT. Each email gets a one-click unsubscribe link and `List-Unsubscribe` headers, and a HubSpot `hs_email_optout` also blocks email. Hard bounces are suppressed for every org.
+
+| Method | Path | Body / notes |
+|--------|------|----------------|
+| `GET` | `/suppressions` (website: `/account/suppressions`) | This org's list |
+| `POST` | `/suppressions` | `{ kind: "email"\|"domain"\|"phone"\|"linkedin", value? , values?: string[] (≤5000), reason? }` |
+| `DELETE` | `/suppressions/:id` | Remove an org entry |
+| `GET` / `PATCH` | `/account/compliance` | `{ postalAddress }` shown in the email footer |
+
+Website session only (not `/v1`): `GET /account/export` downloads every record for the org as JSON, without credentials. `DELETE /account` with `{ confirm: "<workspace name>" }` permanently deletes the org; API keys get `403`, and an active paid plan returns `409` with `billingUrl`.
 
 ---
 

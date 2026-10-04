@@ -1,6 +1,8 @@
-import { uid } from '../crypto'
+import { encryptJson, uid } from '../crypto'
 import type { ServerConfig } from '../config'
-import { createOAuthState, oauthRedirectUri, type ProviderSecrets } from '../connections'
+import { isProduction } from '../env'
+import { createOAuthState, oauthRedirectUri, readSecrets, type ProviderSecrets } from '../connections'
+import type { Connection } from '../types'
 import type { DataStore } from '../store'
 import { hasReachableContact, isRealEmail } from '../../shared/priorityOverlay'
 import { prospectsToContacts, factsFromProspect, type ContextProspect } from './prospects'
@@ -30,7 +32,9 @@ const HUBSPOT_BASE_PROPS = [
   'website',
   'createdate',
   'lastmodifieddate',
-  'associatedcompanyid'
+  'associatedcompanyid',
+  'hs_email_optout',
+  'hs_timezone'
 ]
 /** Contacts modified this recently with no email/phone/LinkedIn are treated as in-flight enrichment. */
 export const RECENT_HUBSPOT_MS = 30 * 60 * 1000
@@ -64,6 +68,21 @@ const HUBSPOT_COMPANY_BASE_PROPS = [
   'annualrevenue',
   'description'
 ]
+/** Already mapped onto the contact (company, domain, industry, size, revenue) or bookkeeping. */
+const HUBSPOT_COMPANY_SKIP = [
+  'name',
+  'domain',
+  'industry',
+  'numberofemployees',
+  'annualrevenue',
+  'createdate',
+  'lastmodifieddate',
+  'hs_createdate',
+  'hs_lastmodifieddate',
+  'hs_object_id'
+]
+/** Company properties get their own budget so contact fields can't crowd them out. */
+const MAX_COMPANY_ATTRS = 20
 
 async function hubspotPropertyNames(accessToken: string): Promise<string[]> {
   const names = [...HUBSPOT_BASE_PROPS]
@@ -346,11 +365,71 @@ export function hubspotAuthUrl(
   return url.toString()
 }
 
+export function isDemoHubSpot(config: ServerConfig, conn: Connection): boolean {
+  return readSecrets(conn).accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
+}
+
+/** A live access token; HubSpot's expire after 30 minutes, so this refreshes and saves when needed. */
+export async function hubspotAccessToken(
+  store: DataStore,
+  config: ServerConfig,
+  conn: Connection,
+  fetcher: typeof fetch = fetch
+): Promise<string> {
+  const secrets = readSecrets(conn)
+  if (isDemoHubSpot(config, conn)) return secrets.accessToken
+  if (secrets.accessToken && (!secrets.expiresAt || secrets.expiresAt - 60_000 > Date.now())) {
+    return secrets.accessToken
+  }
+  const markError = () =>
+    store.update((db) => {
+      const row = db.connections.find((c) => c.id === conn.id)
+      if (!row) return
+      row.status = 'error'
+      row.error = 'Reconnect HubSpot'
+      row.updatedAt = Date.now()
+    })
+  if (!secrets.refreshToken) {
+    markError()
+    throw new Error('HubSpot needs to be reconnected in Jargon (Account → Data).')
+  }
+  const res = await fetcher(HUBSPOT_TOKEN, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: config.hubspot.clientId,
+      client_secret: config.hubspot.clientSecret,
+      redirect_uri: oauthRedirectUri(config, 'hubspot'),
+      refresh_token: secrets.refreshToken
+    })
+  })
+  if (!res.ok) {
+    if (res.status === 400 || res.status === 401) markError()
+    throw new Error(`HubSpot token refresh failed (${res.status}). Reconnect HubSpot in Jargon (Account → Data).`)
+  }
+  const json = (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number }
+  const next: ProviderSecrets = {
+    ...secrets,
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token || secrets.refreshToken,
+    expiresAt: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined
+  }
+  store.update((db) => {
+    const row = db.connections.find((c) => c.id === conn.id)
+    if (!row) return
+    row.secretsCipher = encryptJson(next)
+    row.updatedAt = Date.now()
+  })
+  return next.accessToken
+}
+
 export async function exchangeHubSpotCode(
   config: ServerConfig,
   code: string
 ): Promise<ProviderSecrets & { accountLabel: string }> {
   if (code === 'demo' || !config.hubspot.clientId) {
+    if (isProduction()) throw new Error('HubSpot OAuth is not configured on this server')
     return {
       accessToken: 'demo-hubspot-token',
       accountLabel: 'HubSpot (demo portal)'
@@ -416,9 +495,17 @@ export function prospectFromHubSpotRow(
     'website',
     'createdate',
     'lastmodifieddate',
-    'associatedcompanyid'
+    'associatedcompanyid',
+    'hs_email_optout',
+    'hs_timezone'
   ])
   Object.assign(attrs, lushaAttrsFromHubSpot(p, companyP))
+  const companyAttrs = Object.entries(extraAttrs(companyP as Record<string, unknown>, HUBSPOT_COMPANY_SKIP))
+  for (const [key, value] of companyAttrs.slice(0, MAX_COMPANY_ATTRS)) {
+    if (attrs[`company_${key}`] === undefined) attrs[`company_${key}`] = value
+  }
+  if ((p.hs_email_optout ?? '').trim().toLowerCase() === 'true') attrs.email_opt_out = true
+  if ((p.hs_timezone ?? '').trim()) attrs.hs_timezone = p.hs_timezone
   const lastActivityAt = hubspotTime(p.notes_last_contacted) ?? hubspotTime(p.hs_last_sales_activity_timestamp)
   const lastReplyAt = hubspotTime(p.hs_sales_email_last_replied)
   const warmth = scoreWarmth({
@@ -589,99 +676,6 @@ function linkedinValue(raw: string | null | undefined): string | undefined {
 
 function digits(value: string): number {
   return value.replace(/\D/g, '').length
-}
-
-function demoHubSpotContacts(limit: number): ContextProspect[] {
-  const rows: Array<[string, string, string, string, string]> = [
-    ['Jordan Hale', 'Northwind Logistics', 'VP Sales', 'jordan.hale@northwind.test', 'Chicago'],
-    ['Priya Shah', 'Prairie Health', 'Head of Growth', 'priya.shah@prairie.test', 'Minneapolis'],
-    ['Marcus Lee', 'Lakeside CRM', 'CRO', 'marcus.lee@lakeside.test', 'Austin'],
-    ['Sofia Grant', 'Clearstack', 'VP Revenue', 'sofia.grant@clearstack.test', 'San Francisco'],
-    ['Noah Ortiz', 'Harbor AI', 'Head of Sales', 'noah.ortiz@harborai.test', 'Seattle'],
-    ['Ava Kim', 'OrbitOps', 'GTM Lead', 'ava.kim@orbitops.test', 'Denver'],
-    ['Leo Patel', 'Ledgerly', 'VP Sales', 'leo.patel@ledgerly.test', 'New York'],
-    ['Maya Brooks', 'Vaultline', 'Head of Demand Gen', 'maya.brooks@vaultline.test', 'Boston'],
-    ['Chris Nguyen', 'Paynest', 'RevOps Lead', 'chris.nguyen@paynest.test', 'Remote'],
-    ['Elena Diaz', 'Summit Grid', 'BDR Manager', 'elena.diaz@summitgrid.test', 'Atlanta'],
-    ['Sam Cohen', 'Copperline', 'Founder', 'sam.cohen@copperline.test', 'Austin'],
-    ['Tess Walsh', 'Nimbus CRM', 'VP Marketing', 'tess.walsh@nimbuscrm.test', 'Chicago'],
-    ['Hugo Singh', 'Relaystack', 'Head of Sales', 'hugo.singh@relaystack.test', 'Detroit'],
-    ['Ivy Chen', 'Brightloop', 'SDR Manager', 'ivy.chen@brightloop.test', 'Remote'],
-    ['Jules Ross', 'Forgecloud', 'CRO', 'jules.ross@forgecloud.test', 'San Francisco'],
-    ['Amara Price', 'Midtown SaaS Co', 'VP Go-To-Market', 'amara.price@midtown.test', 'Atlanta'],
-    ['Blake Nguyen', 'Peachtree Logistics', 'Head of Growth', 'blake.nguyen@peachtree.test', 'Atlanta'],
-    ['Cora Shah', 'Buckhead Analytics', 'VP Sales', 'cora.shah@buckhead.test', 'Atlanta'],
-    ['Devon Lee', 'Perimeter Health Tech', 'Head of Sales', 'devon.lee@perimeter.test', 'Atlanta'],
-    ['Eden Grant', 'Atlantic Freight', 'RevOps Lead', 'eden.grant@atlantic.test', 'Savannah']
-  ]
-  const now = Date.now()
-  return Array.from({ length: Math.min(limit, rows.length) }, (_, i) => {
-    const [name, company, title, email, city] = rows[i]
-    const band = i % 3
-    const warmth = band === 0 ? 'hot' : band === 1 ? 'warm' : 'cold'
-    const lifecycle = warmth === 'hot' ? 'opportunity' : warmth === 'warm' ? 'marketingqualifiedlead' : 'subscriber'
-    const lastActivityAt = warmth === 'hot' ? now - 2 * 86_400_000 : warmth === 'warm' ? now - 40 * 86_400_000 : now - 200 * 86_400_000
-    return {
-      externalId: `demo_${i + 1}`,
-      name,
-      company,
-      title,
-      email,
-      phone: `+1555555${String(100 + i).padStart(4, '0')}`,
-      city,
-      accountName: company,
-      companyIndustry: 'Software',
-      companySize: '50-200',
-      warmth: scoreWarmth({ lifecycleStage: lifecycle, lastActivityAt }, now),
-      attrs: { lifecyclestage: lifecycle, lastActivityAt, warmth }
-    }
-  })
-}
-
-/** Mock queue for demos when HubSpot is not connected. */
-export function getDemoProspects(limit = 20): ContextProspect[] {
-  return demoHubSpotContacts(limit)
-}
-
-export function writeDemoContactsToProject(
-  store: DataStore,
-  orgId: string,
-  projectId: string,
-  limit = 20
-): number {
-  const prospects = getDemoProspects(limit)
-  let count = 0
-  store.update((db) => {
-    const project = db.projects.find((p) => p.id === projectId && p.orgId === orgId)
-    if (!project) return
-    const contacts = prospectsToContacts(orgId, project.id, prospects, 'seed')
-    db.contacts = db.contacts.filter((c) => c.projectId !== project.id)
-    db.contacts.push(...contacts)
-    setProjectCatalog(db, project.id)
-    project.answers = {
-      ...project.answers,
-      data_source: 'book',
-      prospect_source: 'book',
-      prospect_count: String(contacts.length),
-      segment: project.answers.segment || 'Outbound book'
-    }
-    project.updatedAt = Date.now()
-    const campaign = db.campaigns.find((x) => x.projectId === project.id && x.state === 'ACTIVE')
-    if (campaign) {
-      campaign.total = contacts.length
-      campaign.updatedAt = Date.now()
-    }
-    db.activities.unshift({
-      id: uid('act'),
-      orgId,
-      projectId: project.id,
-      kind: 'sync',
-      summary: `Loaded ${contacts.length} contacts into the queue`,
-      createdAt: Date.now()
-    })
-    count = contacts.length
-  })
-  return count
 }
 
 export function finishHubSpotOAuthHtml(config: ServerConfig, ok: boolean, message: string): string {

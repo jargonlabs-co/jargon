@@ -15,9 +15,8 @@ railway up --service jargon-api -d -y   # deploy latest code with Postgres suppo
 Then verify:
 
 ```bash
-curl -s https://jargon-api-production.up.railway.app/health | jq '.storage, .userCount'
+curl -s https://jargon-api-production.up.railway.app/health | jq '.storage'
 # "postgres"
-# 1
 ```
 
 ### Dashboard alternative
@@ -38,10 +37,12 @@ On boot the API creates table `jargon_state` automatically. Check `/health`:
 
 ```json
 {
-  "storage": "postgres",
-  "userCount": 1
+  "ok": true,
+  "storage": "postgres"
 }
 ```
+
+Run **exactly one replica** of the API. Each boot claims the state row; a second replica takes it over and the first stops itself (exit 0).
 
 ## Create your account
 
@@ -63,14 +64,11 @@ npm run jargon -- login --email you@company.com --password 'your-password'
 curl -X POST "$JARGON_API_URL/auth/register" \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@company.com","password":"your-password","orgName":"Acme"}'
+# In production this returns 202 {"verificationRequired":true}: click the emailed link, then log in.
 ```
 
 Requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` on the API service.
 
-## Demo tenant
-
-On boot the API ensures `demo@jargon.app` / `jargon-demo` exists in **Supabase Auth**
-and links a workspace row in app state. Passwords are not stored in Railway.
 ## Local dev with Postgres
 
 ```bash
@@ -79,6 +77,40 @@ export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres
 npm run api
 ```
 
+## Backups and restore
+
+Three layers:
+
+1. **Railway volume backups** (Postgres service → Backups). Turn these on. They are the only layer that survives losing the database.
+2. **Automatic snapshots** in `jargon_state_snapshots`: one at every API boot (state as the previous deploy left it) and one daily. 14 of each are kept.
+3. **Off-site exports** with `npm run db:state`.
+
+```bash
+export DATABASE_URL='<product Postgres public URL>'
+npm run db:state -- list                          # snapshots
+npm run db:state -- export                        # current state → data/backups/*.json.gz
+npm run db:state -- export --snapshot 42          # a snapshot → file
+npm run db:state -- verify --file data/backups/jargon-state-….json.gz
+```
+
+Exports contain every org's data (secrets stay encrypted with `JARGON_ENCRYPTION_KEY`). Store them somewhere private.
+
+**Restore** (overwrites live state, saves a `pre-restore` snapshot first):
+
+```bash
+npm run db:state -- restore --snapshot 42 --yes   # or --file <export>
+```
+
+The running API notices within ~30s and stops itself. Then restart the API service in Railway.
+
+**Restore drill** (before launch, then monthly): create a scratch Postgres, run `restore --file <latest export> --yes --database-url <scratch URL>`, point a local `npm run api` at it with the same `JARGON_ENCRYPTION_KEY`, and check that you can sign in and see your tools and connections.
+
 ## Schema
 
-See [postgres-schema.sql](./postgres-schema.sql). State is stored as JSONB in one row (`id = main`) — same shape as the local JSON file, so no separate user-table migration is required yet.
+See [postgres-schema.sql](./postgres-schema.sql). Each record (user, org, contact, message, …) is a row in `jargon_records`, keyed by collection and id and tagged with `org_id`. `jargon_state` (`id = main`) holds the ownership epoch and storage flag. Its `data` column is the pre-migration state, kept untouched as a fallback. The first boot on this code migrates automatically.
+
+Look up one org's data:
+
+```sql
+SELECT collection, count(*) FROM jargon_records WHERE org_id = 'org_…' GROUP BY 1;
+```

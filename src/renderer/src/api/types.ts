@@ -21,7 +21,7 @@ export interface FieldDef {
   origin: FieldOrigin
 }
 export type PrimarySurface = 'queue' | 'dial' | 'inbox' | 'linkedin' | 'sequence'
-export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres' | 'railway'
+export type ConnectionProvider = 'hubspot' | 'heyreach' | 'postgres' | 'railway' | 'gmail' | 'outlook'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface WorkspaceSpecStep {
@@ -165,7 +165,7 @@ export interface CallSession {
   phase: CallPhase
   disposition?: ContactStatus
   providerCallSid?: string
-  mode: 'demo' | 'plivo' | 'twilio'
+  mode: 'demo' | 'plivo'
   startedAt: number
   connectedAt?: number
   endedAt?: number

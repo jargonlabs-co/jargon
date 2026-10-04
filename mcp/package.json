@@ -1,7 +1,7 @@
 {
   "name": "@jargon_labs/mcp",
-  "version": "0.1.0",
-  "description": "Jargon GTM execution MCP server — Claude Code / Claude Desktop",
+  "version": "0.2.0",
+  "description": "Deprecated: use the hosted Jargon connector at https://api.jargonlabs.co/mcp",
   "type": "module",
   "bin": {
     "jargon-mcp": "./dist/index.js"

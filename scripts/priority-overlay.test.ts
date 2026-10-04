@@ -12,6 +12,7 @@ import {
   salesExecContactIds,
   scoreLead
 } from '../src/shared/priorityOverlay'
+import { interpolateTemplate } from '../src/shared/fieldCatalog'
 
 describe('priority pipeline prompt', () => {
   const prompt =
@@ -96,9 +97,22 @@ describe('rankLeads', () => {
     const scores = ranked.map((row) => row.priority?.score ?? 0)
     assert.deepEqual(ranked.map((row) => row.priority?.rank), people.map((_, i) => i + 1))
     assert.deepEqual(scores, [...scores].sort((a, b) => b - a))
-    const motions = new Set(ranked.map((row) => row.priority?.motion))
-    assert.equal(motions.has('inbound'), true)
-    assert.equal(motions.has('outbound'), true)
+    assert.deepEqual(new Set(ranked.map((row) => row.priority?.motion)), new Set(['outbound']), 'no signal, no inbound label')
+  })
+
+  it('reads intent from any vendor column name, and fills {{attrs.*}} with the canonical name', () => {
+    const bombora = { email: 'a@x.com', company: 'Acme', title: 'Director', attrs: { 'Bombora Composite Score': 75, Surging_Topics: 'Sales engagement; Dialers' } }
+    const sixsense = { email: 'b@x.com', company: 'Orbit', title: 'Director', attrs: { '6sense_intent_score': '60', tech_stack: ['Salesforce'] } }
+    const cold = { email: 'c@x.com', company: 'Harbor', title: 'Director' }
+    const ranked = rankLeads([cold, bombora, sixsense], leadIdentity)
+    assert.equal(ranked[2]?.email, 'c@x.com')
+    for (const row of ranked.slice(0, 2)) assert.equal(row.priority?.motion, 'inbound')
+    assert.ok(ranked.find((r) => r.email === 'a@x.com')?.priority?.signals.includes('Intent: Sales engagement'))
+    assert.ok(ranked.find((r) => r.email === 'b@x.com')?.priority?.signals.includes('Uses Salesforce'))
+    assert.equal(
+      interpolateTemplate('Score {{attrs.intent_score}} on {{intent_topics}}', { name: 'Ana', attrs: bombora.attrs }),
+      'Score 75 on Sales engagement; Dialers'
+    )
   })
 
   it('ranks HubSpot, Railway, and imported rows together', () => {

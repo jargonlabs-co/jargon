@@ -184,6 +184,24 @@ export function AccountApp({
     }
   }
 
+  async function disconnect(provider: string) {
+    if (preview) {
+      setToast(`Would disconnect ${provider}`)
+      return
+    }
+    setBusy(`disconnect-${provider}`)
+    setError(null)
+    try {
+      await api.disconnect(provider)
+      setToast('Mailbox disconnected')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Disconnect failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function syncHubSpot() {
     if (preview) {
       setToast('Would reload HubSpot contacts')
@@ -401,6 +419,7 @@ export function AccountApp({
               onPgTable={setPgTable}
               onSelectedKey={setSelectedKey}
               onConnect={(provider) => void connect(provider)}
+              onDisconnect={(provider) => void disconnect(provider)}
               onSyncHubSpot={() => void syncHubSpot()}
               onBindRailway={() => void bindRailway()}
               onSyncRailway={() => void syncRailway()}
@@ -422,8 +441,10 @@ export function AccountApp({
           {page === 'settings' ? (
             <SettingsPage
               orgName={orgName}
+              workspaceName={org.name}
               email={user.email}
               busy={busy}
+              preview={preview}
               onOrgName={setOrgName}
               onSaveOrg={() => void saveOrg()}
               onSignOut={() => void signOut()}

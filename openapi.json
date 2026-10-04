@@ -17,7 +17,8 @@
     { "name": "Account" },
     { "name": "Workspaces" },
     { "name": "Queue" },
-    { "name": "Execute" }
+    { "name": "Execute" },
+    { "name": "Compliance" }
   ],
   "paths": {
     "/me": {
@@ -713,6 +714,163 @@
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
+    },
+    "/contacts/enrichment": {
+      "post": {
+        "operationId": "upsertEnrichment",
+        "tags": ["Execute"],
+        "summary": "Merge enrichment onto existing contacts",
+        "description": "Each row is matched by contactId, CRM id (crm_id / hubspot_id), email, or LinkedIn URL within your org. Extra fields become attrs (overwriting), blank email/phone/title/company fields are filled, and context lines are appended. Contacts that now have every requested field are enrolled if the sequence is running.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["contacts"],
+                "properties": {
+                  "projectId": { "type": "string", "description": "Limit matching to one project" },
+                  "contacts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": { "type": "object", "additionalProperties": true }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["matched", "updated", "unmatched", "enrolled"],
+                  "properties": {
+                    "matched": { "type": "integer" },
+                    "updated": { "type": "integer" },
+                    "enrolled": { "type": "integer" },
+                    "unmatched": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["row", "key"],
+                        "properties": { "row": { "type": "integer" }, "key": { "type": "string" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/suppressions": {
+      "get": {
+        "operationId": "listSuppressions",
+        "tags": ["Compliance"],
+        "summary": "This org's do-not-contact list. Global hard bounces apply but are not listed.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["suppressions"],
+                  "properties": {
+                    "suppressions": { "type": "array", "items": { "$ref": "#/components/schemas/Suppression" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "addSuppressions",
+        "tags": ["Compliance"],
+        "summary": "Block emails, domains, phone numbers (do-not-call), or LinkedIn URLs. Cancels queued messages they cover.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AddSuppressionsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["added", "invalid"],
+                  "properties": {
+                    "added": { "type": "array", "items": { "$ref": "#/components/schemas/Suppression" } },
+                    "invalid": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/suppressions/{id}": {
+      "delete": {
+        "operationId": "removeSuppression",
+        "tags": ["Compliance"],
+        "summary": "Remove an org suppression",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "204": { "description": "Removed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/account/compliance": {
+      "get": {
+        "operationId": "getCompliance",
+        "tags": ["Compliance"],
+        "summary": "Sender postal address shown in the email footer",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComplianceSettings" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "patch": {
+        "operationId": "updateCompliance",
+        "tags": ["Compliance"],
+        "summary": "Set the sender postal address (CAN-SPAM)",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComplianceSettings" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComplianceSettings" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
     }
   },
   "components": {
@@ -1115,7 +1273,7 @@
           "contactCount": { "type": "integer" },
           "dashboardPath": {
             "type": "string",
-            "description": "Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with www.jargonlabs.co."
+            "description": "Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with the API host."
           },
           "dashboardUrl": {
             "type": "string",
@@ -1389,7 +1547,7 @@
             "enum": ["dialing", "ringing", "connected", "completed", "failed"]
           },
           "disposition": { "$ref": "#/components/schemas/ContactStatus" },
-          "mode": { "type": "string", "enum": ["demo", "plivo", "twilio"] },
+          "mode": { "type": "string", "enum": ["demo", "plivo"] },
           "startedAt": { "type": "integer" },
           "connectedAt": { "type": "integer" },
           "endedAt": { "type": "integer" }
@@ -1403,6 +1561,40 @@
           "status": { "$ref": "#/components/schemas/ContactStatus" },
           "note": { "type": "string" },
           "advanceStep": { "type": "boolean" }
+        }
+      },
+      "Suppression": {
+        "type": "object",
+        "required": ["id", "orgId", "kind", "value", "reason", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "orgId": { "type": ["string", "null"] },
+          "kind": { "type": "string", "enum": ["email", "domain", "phone", "linkedin"] },
+          "value": { "type": "string" },
+          "reason": { "type": "string", "enum": ["unsubscribed", "bounced", "complaint", "do_not_call", "manual"] },
+          "source": { "type": "string" },
+          "createdAt": { "type": "integer" }
+        }
+      },
+      "AddSuppressionsRequest": {
+        "type": "object",
+        "required": ["kind"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "type": "string", "enum": ["email", "domain", "phone", "linkedin"] },
+          "value": { "type": "string" },
+          "values": { "type": "array", "maxItems": 5000, "items": { "type": "string" } },
+          "reason": {
+            "type": "string",
+            "enum": ["unsubscribed", "do_not_call", "manual"],
+            "description": "Defaults to do_not_call for phone, manual otherwise"
+          }
+        }
+      },
+      "ComplianceSettings": {
+        "type": "object",
+        "properties": {
+          "postalAddress": { "type": ["string", "null"], "maxLength": 300 }
         }
       }
     }

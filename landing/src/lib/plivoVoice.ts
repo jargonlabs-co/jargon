@@ -1,4 +1,5 @@
 import type { DialerVoice, DialerVoiceConnectOpts } from '../../../src/renderer/src/lib/dialerVoice'
+import { installPlivoSdpFix, plivoBrowserCallTarget } from '../../../src/shared/plivoSdp'
 
 type PlivoClient = {
   client: {
@@ -49,6 +50,7 @@ async function ensureClient(opts: {
   const username = opts.username?.trim()
   const password = opts.password ?? ''
   const sessionKey = accessToken ? `jwt:${accessToken.slice(0, 24)}` : `pwd:${username}`
+  installPlivoSdpFix()
   if (sdk && loggedInKey === sessionKey) return sdk
   if (sdk) {
     try {
@@ -66,7 +68,10 @@ async function ensureClient(opts: {
     debug: 'ERROR',
     permOnClick: true,
     closeProtection: true,
-    enableTracking: true
+    enableTracking: true,
+    enableIPV6: false,
+    usePlivoStunServer: false,
+    codecs: ['OPUS', 'PCMU']
   })
   bindClient(next)
   await new Promise<void>((resolve, reject) => {
@@ -115,7 +120,7 @@ async function connect(opts: DialerVoiceConnectOpts): Promise<void> {
   }
   const client = await ensureClient({ accessToken, username, password })
   active = opts
-  const started = client.client.call(opts.to, {
+  const started = client.client.call(plivoBrowserCallTarget(opts.to), {
     'X-PH-CallId': opts.callId,
     'X-PH-To': opts.to
   })

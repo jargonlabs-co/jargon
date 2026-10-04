@@ -10,6 +10,7 @@ export function DataPage({
   onPgTable,
   onSelectedKey,
   onConnect,
+  onDisconnect,
   onSyncHubSpot,
   onBindRailway,
   onSyncRailway
@@ -28,6 +29,7 @@ export function DataPage({
   onPgTable: (value: string) => void
   onSelectedKey: (value: string) => void
   onConnect: (provider: string) => void
+  onDisconnect: (provider: string) => void
   onSyncHubSpot: () => void
   onBindRailway: () => void
   onSyncRailway: () => void
@@ -38,6 +40,9 @@ export function DataPage({
   const railwayAuthed = railway?.status === 'connected'
   const railwayBound =
     railwayAuthed && railway?.meta?.needsBind !== '1' && !!railway?.meta?.projectId
+  const mailbox = connections.find((c) => c.provider === 'gmail' || c.provider === 'outlook')
+  const mailboxOk = mailbox?.status === 'connected'
+  const mailboxName = mailbox?.provider === 'outlook' ? 'Outlook' : 'Gmail'
   const optionEntries = railwayProjects.flatMap((p) => {
     const services =
       p.postgresServices.length > 0
@@ -55,18 +60,82 @@ export function DataPage({
         <p className="eyebrow">Account</p>
         <h1>Data</h1>
         <p className="section-lede">
-          Tools load people from HubSpot or Railway Postgres. Email, calling, and LinkedIn are sent
-          by Jargon.
+          Tools load people from HubSpot or Railway Postgres. Email sends from your own mailbox, and
+          replies stop the sequence automatically.
         </p>
       </div>
       <div className="context-grid">
+        <article className="context-card">
+          <div className="context-card-top">
+            <span className="context-role">Email</span>
+            <span className={`context-status ${mailboxOk ? 'ok' : ''}`}>
+              {mailbox ? (mailboxOk ? 'Connected' : 'Reconnect') : 'Not connected'}
+            </span>
+          </div>
+          <h3>Sending mailbox</h3>
+          <p>
+            {mailbox
+              ? `Email sends from ${mailbox.accountLabel ?? mailboxName}. Jargon watches that inbox for replies and bounces.`
+              : 'Connect the Google Workspace or Microsoft 365 mailbox your outreach should come from.'}
+          </p>
+          {mailbox && mailboxOk ? (
+            <>
+              <span className="context-connected">{mailboxName}</span>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={busy === `disconnect-${mailbox.provider}`}
+                onClick={() => onDisconnect(mailbox.provider)}
+              >
+                {busy === `disconnect-${mailbox.provider}` ? 'Disconnecting…' : 'Disconnect'}
+              </button>
+            </>
+          ) : (
+            <>
+              {mailbox?.error ? <p className="section-lede">{mailbox.error}</p> : null}
+              <button
+                type="button"
+                className="btn primary btn-sm"
+                disabled={busy === 'gmail'}
+                onClick={() => onConnect('gmail')}
+              >
+                {busy === 'gmail' ? 'Connecting…' : 'Connect Gmail'}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={busy === 'outlook'}
+                onClick={() => onConnect('outlook')}
+              >
+                {busy === 'outlook' ? 'Connecting…' : 'Connect Outlook'}
+              </button>
+            </>
+          )}
+        </article>
+
         <article className="context-card">
           <div className="context-card-top">
             <span className="context-role">CRM</span>
             <span className={`context-status ${hubspotOk ? 'ok' : ''}`}>{statusLabel(hubspot)}</span>
           </div>
           <h3>HubSpot</h3>
-          <p>People in your portal become the queue in every tool.</p>
+          <p>
+            People in your portal become the queue in every tool. Calls, emails, and notes are
+            logged back to the contact in HubSpot.
+          </p>
+          {hubspotOk && hubspot?.meta?.writebackError ? (
+            <>
+              <p className="section-lede">{hubspot.meta.writebackError}</p>
+              <button
+                type="button"
+                className="btn primary btn-sm"
+                disabled={busy === 'hubspot'}
+                onClick={() => onConnect('hubspot')}
+              >
+                {busy === 'hubspot' ? 'Connecting…' : 'Reconnect HubSpot'}
+              </button>
+            </>
+          ) : null}
           {!hubspotOk ? (
             <button
               type="button"

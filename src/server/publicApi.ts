@@ -1,4 +1,13 @@
 import type { DataStore } from './store'
+import { isProduction } from './env'
+import {
+  callBlockReason,
+  emailFooter,
+  findSuppression,
+  OutboundBlockedError,
+  suppressionMessage,
+  unsubscribeUrl
+} from './compliance'
 import type {
   CallPhase,
   CallSession,
@@ -20,12 +29,16 @@ import { getConnection, readSecrets } from './connections'
 import {
   hubspotEnrichmentWaitMessage,
   pullHubSpotContacts,
-  pullHubSpotContactsUntilReady
+  pullHubSpotContactsUntilReady,
+  hubspotAccessToken
 } from './providers/hubspot'
 import { factsFromProspect, prospectsToContacts, type ContextProspect } from './providers/prospects'
 import { sendPlatformGmail } from './providers/gmail'
+import { getOrgMailbox, sendFromMailbox } from './mailboxes'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
+import { enqueueHubSpotActivity } from './hubspotWriteback'
+import { missingRequestedFields, parseRequestedFields } from '../shared/requestedFields'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
@@ -345,6 +358,8 @@ export async function deployPublicTool(
         project: PublicProject
         researchPending?: boolean
         nextAction?: string
+        requestedFields?: string[]
+        missingFields?: Array<{ id: string; name: string; email?: string; missing: string[] }>
         steps?: Array<{ id: string; day: number; channel: string; label: string }>
         people?: Array<{
           id: string
@@ -396,6 +411,13 @@ export async function deployPublicTool(
     if (!project) {
       return { ok: false, status: 502, body: { error: 'Project created but could not be loaded' } }
     }
+    const requestedFields = isPriorityPipelinePrompt(prompt) ? [] : parseRequestedFields(prompt)
+    if (requestedFields.length) {
+      store.update((db) => {
+        const p = db.projects.find((x) => x.id === projectId)
+        if (p) p.requestedFields = requestedFields
+      })
+    }
     const shouldEnroll =
       opts?.enroll !== false &&
       shouldAutoStartSequence({
@@ -417,6 +439,8 @@ export async function deployPublicTool(
       researchPending?: boolean
       nextAction?: string
       pendingEnrichment?: number
+      requestedFields?: string[]
+      missingFields?: Array<{ id: string; name: string; email?: string; missing: string[] }>
       steps?: Array<{ id: string; day: number; channel: string; label: string }>
       people?: Array<{
         id: string
@@ -480,8 +504,19 @@ export async function deployPublicTool(
         context: c.context?.length ? c.context : undefined
       }))
       body.nextAction = willEnrollLater
-        ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from the HubSpot contact and company fields (Lusha enrichment) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
-        : `Write personalized email copy from each contact's HubSpot fields for project ${projectId}. Do not invent company facts. Do not start a sequence.`
+        ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from the source) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
+        : `Write personalized email copy from each contact's fields for project ${projectId}. Do not invent company facts. Do not start a sequence.`
+    }
+    if (requestedFields.length) {
+      const missing = store.db.contacts
+        .filter((c) => c.projectId === projectId)
+        .map((c) => ({ id: c.id, name: c.name, email: c.email || undefined, missing: missingRequestedFields(c, requestedFields) }))
+        .filter((c) => c.missing.length)
+      body.requestedFields = requestedFields
+      if (missing.length) {
+        body.missingFields = missing.slice(0, 50)
+        body.nextAction = `${missing.length} people are missing fields this workspace asked for (${requestedFields.join(', ')}). They are not enrolled until those fields exist. Find the values from the user's enrichment source, then call upsert_enrichment for project ${projectId} with one row per person (email or LinkedIn URL plus the missing fields). Do not guess values.${body.nextAction ? ` Then: ${body.nextAction}` : ''}`
+      }
     }
     if (isPriorityPipelinePrompt(prompt)) {
       body.nextAction = `Call show_tasks for project ${projectId} now. The priority pipeline is already ranked. Do not research, do not save_research, and do not ask to schedule.`
@@ -704,10 +739,51 @@ export function applyDisposition(
     if (project) project.updatedAt = now
   })
   const updated = store.db.contacts.find((c) => c.id === contactId)!
+  if (input.status !== 'active' && input.status !== 'queued') {
+    const outcome = `Outcome: ${input.status.replace(/_/g, ' ')}`
+    enqueueHubSpotActivity(store, updated, {
+      kind: 'note',
+      body: input.note?.trim() ? `${outcome}\n\n${input.note.trim()}` : outcome,
+      at: now
+    })
+  }
   return {
     contact: toPublicContact(updated),
     next: toPublicQueueNext(nextQueueContact(store.db, updated.projectId))
   }
+}
+
+function complianceFooter(
+  store: DataStore,
+  config: ServerConfig,
+  contact: Contact
+): { unsubscribeUrl: string; footer: string } {
+  const url = unsubscribeUrl(config, contact.orgId, contact.email)
+  const org = store.db.orgs.find((o) => o.id === contact.orgId)
+  return { unsubscribeUrl: url, footer: emailFooter({ unsubscribeUrl: url, postalAddress: org?.postalAddress }) }
+}
+
+/** The org's own mailbox when connected; otherwise the shared pool unless that's disabled. */
+async function sendEmailForOrg(
+  store: DataStore,
+  config: ServerConfig,
+  contact: Contact,
+  input: { subject: string; body: string }
+): Promise<{ id: string; threadId?: string; mode: Message['mode']; senderConnectionId?: string }> {
+  if (store.isWriter && !(await store.isWriter())) {
+    throw new Error('Jargon is restarting. Retry in a few seconds.')
+  }
+  const message = { to: contact.email, ...input, ...complianceFooter(store, config, contact) }
+  const mailbox = getOrgMailbox(store, contact.orgId)
+  if (mailbox) {
+    const result = await sendFromMailbox(store, config, mailbox, message)
+    return { ...result, senderConnectionId: mailbox.id }
+  }
+  if (config.mailboxes.requireOrgMailbox) {
+    throw new Error('Connect your Gmail or Outlook mailbox in Jargon (Account → Data) before sending email.')
+  }
+  const pool = allocateEmailMailbox(store, config, contact.orgId)
+  return sendPlatformGmail(config, { ...message, refreshToken: pool.refreshToken })
 }
 
 export function startPublicCall(
@@ -718,7 +794,14 @@ export function startPublicCall(
 ): PublicCall {
   const now = Date.now()
   const callId = uid('call')
+  if (!sandbox) {
+    const blocked = callBlockReason(store.db, contact)
+    if (blocked) throw new OutboundBlockedError(blocked)
+  }
   const live = inspectLiveVoice(config)
+  if (!sandbox && !live.ok && isProduction()) {
+    throw new Error('Calling is not available right now. Try again shortly.')
+  }
   const mode = sandbox || !live.ok ? 'demo' : live.provider
   let poolMemberId: string | undefined
   let fromNumber: string | undefined
@@ -812,6 +895,7 @@ export function completePublicCall(
   config?: ServerConfig
 ): { call: PublicCall; next: QueueNextPublic } {
   const existing = store.db.calls.find((x) => x.id === callId)
+  const wasCompleted = existing?.phase === 'completed'
   if (config && existing?.providerCallSid) {
     void hangupLiveCall(config, existing).catch(() => undefined)
   }
@@ -865,6 +949,16 @@ export function completePublicCall(
     const project = db.projects.find((p) => p.id === c.projectId)
     if (project) project.updatedAt = now
   })
+  const done = store.db.calls.find((x) => x.id === callId)
+  const callContact = done && store.db.contacts.find((x) => x.id === done.contactId)
+  if (done && callContact && done.mode !== 'demo' && !wasCompleted) {
+    enqueueHubSpotActivity(store, callContact, {
+      kind: 'call',
+      disposition,
+      durationMs: done.connectedAt ? now - done.connectedAt : undefined,
+      at: done.startedAt
+    })
+  }
   const call = store.db.calls.find((c) => c.id === callId)!
   return {
     call: toPublicCall(call),
@@ -888,8 +982,19 @@ export async function sendPublicMessage(
 ): Promise<
   | { ok: true; status: 201; body: { message: PublicMessage } }
   | { ok: false; status: 502; body: { error: string; message: PublicMessage } }
+  | { ok: false; status: 409; body: { error: string; code: 'outbound_blocked'; message?: undefined } }
 > {
   const messageChannel = input.channel ?? 'email'
+  if (!input.sandbox && input.status !== 'draft') {
+    const suppressed = findSuppression(store.db, contact.orgId, messageChannel, contact)
+    if (suppressed) {
+      return {
+        ok: false,
+        status: 409,
+        body: { error: suppressionMessage(suppressed), code: 'outbound_blocked' }
+      }
+    }
+  }
   const now = Date.now()
   const messageId = uid('msg')
   const subject = interpolateTemplate(
@@ -905,6 +1010,7 @@ export async function sendPublicMessage(
   let providerMessageId: string | undefined
   let providerThreadId: string | undefined
   let providerAccountId: number | undefined
+  let senderConnectionId: string | undefined
   let error: string | undefined
   // Drafts keep their send day so the queue can still schedule them by step.
   const sendAt =
@@ -925,15 +1031,11 @@ export async function sendPublicMessage(
       console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
-        const mailbox = allocateEmailMailbox(store, config, contact.orgId)
-        const result = await sendPlatformGmail(config, {
-          to: contact.email,
-          subject,
-          body,
-          refreshToken: mailbox.refreshToken
-        })
+        const result = await sendEmailForOrg(store, config, contact, { subject, body })
         mode = result.mode
         providerMessageId = result.id
+        providerThreadId = result.threadId
+        senderConnectionId = result.senderConnectionId
       } catch (err) {
         finalStatus = 'failed'
         error = err instanceof Error ? err.message : 'Send failed'
@@ -982,6 +1084,7 @@ export async function sendPublicMessage(
       providerMessageId,
       providerThreadId,
       providerAccountId,
+      senderConnectionId,
       error,
       sandbox: input.sandbox,
       createdAt: now,
@@ -1053,7 +1156,9 @@ export function addPublicNote(store: DataStore, contactId: string, note: string)
       createdAt: now
     })
   })
-  return toPublicContact(store.db.contacts.find((c) => c.id === contactId)!)
+  const updated = store.db.contacts.find((c) => c.id === contactId)!
+  enqueueHubSpotActivity(store, updated, { kind: 'note', body: note.trim(), at: now })
+  return toPublicContact(updated)
 }
 
 export function findOrgMessage(store: DataStore, orgId: string, messageId: string) {
@@ -1207,28 +1312,74 @@ export function patchPublicMessage(
   return { ok: true, message: toPublicMessage(store.db.messages.find((m) => m.id === messageId)!) }
 }
 
+type DeliverResult =
+  | { ok: true; status: 200; body: { message: PublicMessage } }
+  | { ok: false; status: 404 | 409 | 502; body: { error: string; message?: PublicMessage } }
+
+/** Message ids with a provider send in progress. One writer process, so an in-memory lock is enough. */
+const sendsInFlight = new Set<string>()
+
 export async function deliverPublicMessage(
   store: DataStore,
   config: ServerConfig,
   orgId: string,
   messageId: string,
   sandbox?: boolean
-): Promise<
-  | { ok: true; status: 200; body: { message: PublicMessage } }
-  | { ok: false; status: 404 | 409 | 502; body: { error: string; message?: PublicMessage } }
-> {
+): Promise<DeliverResult> {
   const message = findOrgMessage(store, orgId, messageId)
   if (!message) return { ok: false, status: 404, body: { error: 'Message not found' } }
   if (message.status === 'sent') {
     return { ok: false, status: 409, body: { error: 'Message already sent', message: toPublicMessage(message) } }
   }
+  if (message.status === 'cancelled') {
+    return { ok: false, status: 409, body: { error: 'Message was cancelled', message: toPublicMessage(message) } }
+  }
+  if (sendsInFlight.has(messageId)) {
+    return { ok: false, status: 409, body: { error: 'Message is already being sent', message: toPublicMessage(message) } }
+  }
+  sendsInFlight.add(messageId)
+  try {
+    return await deliverClaimedMessage(store, config, orgId, message, sandbox)
+  } finally {
+    sendsInFlight.delete(messageId)
+  }
+}
+
+async function deliverClaimedMessage(
+  store: DataStore,
+  config: ServerConfig,
+  orgId: string,
+  message: Message,
+  sandbox?: boolean
+): Promise<DeliverResult> {
+  const messageId = message.id
   const contact = findOrgContact(store, orgId, message.contactId)
   if (!contact) return { ok: false, status: 404, body: { error: 'Contact not found' } }
   const now = Date.now()
+  const suppressed =
+    sandbox || message.sandbox ? undefined : findSuppression(store.db, orgId, message.channel, contact)
+  if (suppressed) {
+    store.update((db) => {
+      const row = db.messages.find((m) => m.id === messageId)
+      if (!row) return
+      row.status = 'cancelled'
+      row.error = suppressionMessage(suppressed)
+      row.updatedAt = now
+    })
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        error: suppressionMessage(suppressed),
+        message: toPublicMessage(store.db.messages.find((m) => m.id === messageId)!)
+      }
+    }
+  }
   let mode: Message['mode'] = message.mode
   let providerMessageId = message.providerMessageId
   let providerThreadId = message.providerThreadId
   let providerAccountId = message.providerAccountId
+  let senderConnectionId = message.senderConnectionId
   let error: string | undefined
   let finalStatus: MessageStatus = 'sent'
   const demo = sandbox || message.sandbox
@@ -1243,15 +1394,14 @@ export async function deliverPublicMessage(
       console.log('[jargon] email send skipped (sandbox)')
     } else {
       try {
-        const mailbox = allocateEmailMailbox(store, config, contact.orgId)
-        const result = await sendPlatformGmail(config, {
-          to: contact.email,
+        const result = await sendEmailForOrg(store, config, contact, {
           subject: message.subject,
-          body: message.body,
-          refreshToken: mailbox.refreshToken
+          body: message.body
         })
         mode = result.mode
         providerMessageId = result.id
+        providerThreadId = result.threadId
+        senderConnectionId = result.senderConnectionId
       } catch (err) {
         finalStatus = 'failed'
         error = err instanceof Error ? err.message : 'Send failed'
@@ -1292,6 +1442,7 @@ export async function deliverPublicMessage(
     row.providerMessageId = providerMessageId
     row.providerThreadId = providerThreadId
     row.providerAccountId = providerAccountId
+    row.senderConnectionId = senderConnectionId
     row.error = error
     row.updatedAt = now
     row.sentAt = finalStatus === 'sent' ? now : undefined
@@ -1307,6 +1458,15 @@ export async function deliverPublicMessage(
       }
     }
   })
+  if (finalStatus === 'sent' && !demo) {
+    enqueueHubSpotActivity(
+      store,
+      contact,
+      message.channel === 'linkedin'
+        ? { kind: 'note', body: `LinkedIn message sent via Jargon:\n\n${message.body}`, at: now }
+        : { kind: 'email', subject: message.subject, body: message.body, at: now }
+    )
+  }
   const updated = toPublicMessage(store.db.messages.find((m) => m.id === messageId)!)
   if (finalStatus === 'failed') {
     return { ok: false, status: 502, body: { error: error ?? 'Send failed', message: updated } }
@@ -1383,7 +1543,7 @@ export async function upsertPublicDraft(
   }
 ): Promise<
   | { ok: true; status: 200 | 201; body: { message: PublicMessage } }
-  | { ok: false; status: 404 | 502; body: { error: string; message?: PublicMessage } }
+  | { ok: false; status: 404 | 409 | 502; body: { error: string; message?: PublicMessage } }
 > {
   const contact = findOrgContact(store, orgId, contactId)
   if (!contact) return { ok: false, status: 404, body: { error: 'Contact not found' } }
@@ -1619,10 +1779,18 @@ export async function enrollPublicSequence(
   const startAt = Number.isFinite(input?.startAt) ? Number(input!.startAt) : Date.now()
   const skipped: EnrollSkip[] = []
   const created: PublicMessage[] = []
+  const requested = store.db.projects.find((p) => p.id === projectId)?.requestedFields
+  const held = new Set<string>()
 
   for (const contact of wanted) {
     if (isSequenceStopStatus(contact.status)) {
       skipped.push({ contactId: contact.id, reason: `Contact is ${contact.status.replace('_', ' ')}` })
+      continue
+    }
+    const missing = missingRequestedFields(contact, requested)
+    if (missing.length) {
+      held.add(contact.id)
+      skipped.push({ contactId: contact.id, reason: `Missing requested fields: ${missing.join(', ')}` })
       continue
     }
     const claimed = new Set<string>()
@@ -1696,7 +1864,7 @@ export async function enrollPublicSequence(
   store.update((db) => {
     const now = Date.now()
     for (const contact of wanted) {
-      if (isSequenceStopStatus(contact.status)) continue
+      if (isSequenceStopStatus(contact.status) || held.has(contact.id)) continue
       const row = db.contacts.find((c) => c.id === contact.id)
       if (!row) continue
       if (row.status === 'queued') {
@@ -1714,7 +1882,7 @@ export async function enrollPublicSequence(
       orgId,
       projectId,
       kind: 'campaign',
-      summary: `Started sequence · ${wanted.length} contacts · ${steps.length} steps`,
+      summary: `Started sequence · ${wanted.length - held.size} contacts · ${steps.length} steps`,
       createdAt: now
     })
   })
@@ -1723,7 +1891,7 @@ export async function enrollPublicSequence(
     ok: true,
     projectId,
     startAt,
-    contacts: wanted.length,
+    contacts: wanted.length - held.size,
     steps: steps.length,
     queued: created.length,
     skipped,
@@ -1815,7 +1983,7 @@ export async function listHubSpotContactsForEnroll(
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
-    const { pull, wait } = await hubSpotPullForOrg(store, orgId, secrets.accessToken, demo)
+    const { pull, wait } = await hubSpotPullForOrg(store, orgId, await hubspotAccessToken(store, config, conn), demo)
     const contacts = rankLeads(
       pull.reachable.map((p) => ({
         externalId: p.externalId,
@@ -1982,7 +2150,7 @@ export async function enrollHubSpotContacts(
   let pull: Awaited<ReturnType<typeof pullHubSpotContacts>>
   let wait = false
   try {
-    const loaded = await hubSpotPullForOrg(store, orgId, secrets.accessToken, demo)
+    const loaded = await hubSpotPullForOrg(store, orgId, await hubspotAccessToken(store, config, conn), demo)
     pull = loaded.pull
     wait = loaded.wait
   } catch (err) {

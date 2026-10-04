@@ -1,4 +1,5 @@
 import type { Contact, FieldDef, FieldType } from '../server/types'
+import { canonicalSignals } from './signalAliases'
 
 export type Attrs = Record<string, unknown>
 
@@ -196,6 +197,12 @@ export function interpolationVars(contact: {
     if (!text) continue
     vars[key] = text
     vars[`attrs.${key}`] = text
+  }
+  for (const [canonical, value] of Object.entries(canonicalSignals(contact.attrs))) {
+    const text = attrString(value)
+    if (!text || vars[canonical]) continue
+    vars[canonical] = text
+    vars[`attrs.${canonical}`] = text
   }
   return vars
 }

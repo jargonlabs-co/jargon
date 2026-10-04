@@ -30,14 +30,32 @@ export function LoginPanel({
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('verified') === '1'
+      ? 'Email confirmed. Sign in to finish setting up.'
+      : null
+  )
   const [busy, setBusy] = useState(false)
+  const [needsConfirm, setNeedsConfirm] = useState(false)
+
+  async function resend() {
+    setBusy(true)
+    setError(null)
+    try {
+      setInfo((await api.resendVerification(email.trim())).message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     setInfo(null)
+    setNeedsConfirm(false)
     try {
       if (mode === 'forgot') {
         const result = await api.forgotPassword(email.trim())
@@ -53,6 +71,13 @@ export function LoginPanel({
               name: name.trim() || undefined,
               orgName: orgName.trim() || undefined
             })
+      if ('verificationRequired' in payload) {
+        switchMode('login')
+        setPassword('')
+        setNeedsConfirm(true)
+        setInfo(payload.message)
+        return
+      }
       setStoredToken(payload.token)
       await refresh()
       if (mode === 'register') {
@@ -64,6 +89,9 @@ export function LoginPanel({
       if (/already registered/i.test(message) && mode === 'register') {
         setError('That email is already registered — switch to Sign in.')
         switchMode('login')
+      } else if (/confirm your email/i.test(message)) {
+        setNeedsConfirm(true)
+        setError(message)
       } else {
         setError(message)
       }
@@ -181,6 +209,11 @@ export function LoginPanel({
           ) : null}
           {error ? <p className="form-error">{error}</p> : null}
           {info ? <p className="section-lede">{info}</p> : null}
+          {needsConfirm && mode === 'login' ? (
+            <button type="button" className="btn ghost btn-sm" disabled={busy || !email.trim()} onClick={() => void resend()}>
+              Resend confirmation email
+            </button>
+          ) : null}
           <button type="submit" className="btn primary btn-full" disabled={busy}>
             {busy
               ? 'Working…'

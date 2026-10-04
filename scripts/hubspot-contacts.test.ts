@@ -8,6 +8,30 @@ import {
   RECENT_HUBSPOT_MS
 } from '../src/server/providers/hubspot.ts'
 
+describe('HubSpot company properties', () => {
+  it('copies custom company properties into attrs as company_*, without crowding out the contact', () => {
+    const contactProps: Record<string, string> = { email: 'ana@acme.test', firstname: 'Ana', associatedcompanyid: '9' }
+    for (let i = 0; i < 60; i++) contactProps[`custom_${i}`] = `v${i}`
+    const prospect = prospectFromHubSpotRow(
+      { id: '1', properties: contactProps },
+      {
+        name: 'Acme',
+        domain: 'acme.test',
+        icp_tier: 'Tier 1',
+        description: 'Makes rockets',
+        hs_object_id: '9',
+        annual_contract_value: '120000'
+      }
+    )
+    assert.equal(prospect.attrs?.company_icp_tier, 'Tier 1')
+    assert.equal(prospect.attrs?.company_description, 'Makes rockets')
+    assert.equal(prospect.attrs?.company_annual_contract_value, '120000')
+    assert.equal(prospect.attrs?.company_hs_object_id, undefined)
+    assert.equal(prospect.attrs?.company_name, undefined, 'already the contact company')
+    assert.equal(prospect.company, 'Acme')
+  })
+})
+
 describe('prospectFromHubSpotRow', () => {
   it('reads Lusha LinkedIn and work email from custom properties', () => {
     const prospect = prospectFromHubSpotRow({

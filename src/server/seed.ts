@@ -9,7 +9,6 @@ import type {
   WorkspaceSpec
 } from './types'
 import { uid } from './crypto'
-import { buildProspectContext } from './providers/prospects'
 import { formatChannels, specToAnswers, workspaceKindLabel } from '../shared/workspaceSpec'
 import { setProjectCatalog } from './fieldCatalogSync'
 
@@ -20,71 +19,6 @@ function titleCase(value: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ')
 }
-
-const FIRST = [
-  'Ava', 'Marcus', 'Sofia', 'Jonah', 'Priya', 'Elena', 'Chris', 'Noah', 'Maya', 'Leo',
-  'Iris', 'Owen', 'Nina', 'Kai', 'Ruth', 'Sam', 'Tess', 'Victor', 'Willa', 'Zane',
-  'Amara', 'Blake', 'Cora', 'Devon', 'Eden', 'Felix', 'Gia', 'Hugo', 'Ivy', 'Jules'
-]
-const LAST = [
-  'Chen', 'Lee', 'Grant', 'Price', 'Shah', 'Brooks', 'Nguyen', 'Patel', 'Kim', 'Ross',
-  'Ortiz', 'Walsh', 'Diaz', 'Singh', 'Cohen'
-]
-const COMPANIES = [
-  'Northwind Logistics',
-  'Prairie Health',
-  'Lakeside CRM',
-  'Midwest Forge',
-  'Ledgerly',
-  'Paynest',
-  'Vaultline',
-  'Clearstack'
-]
-const DEMO_SOFTWARE_COMPANIES = [
-  { name: 'Clearstack', domain: 'clearstack.io', size: '120' },
-  { name: 'Harbor AI', domain: 'harborai.com', size: '85' },
-  { name: 'OrbitOps', domain: 'orbitops.com', size: '210' },
-  { name: 'Ledgerly', domain: 'ledgerly.com', size: '340' },
-  { name: 'Vaultline', domain: 'vaultline.io', size: '95' },
-  { name: 'Summit Grid', domain: 'summitgrid.com', size: '160' },
-  { name: 'Copperline', domain: 'copperline.ai', size: '70' },
-  { name: 'Paynest', domain: 'paynest.com', size: '450' },
-  { name: 'Nimbus CRM', domain: 'nimbuscrm.com', size: '280' },
-  { name: 'Relaystack', domain: 'relaystack.io', size: '55' },
-  { name: 'Brightloop', domain: 'brightloop.com', size: '190' },
-  { name: 'Forgecloud', domain: 'forgecloud.com', size: '620' }
-]
-const TITLES = [
-  'VP of Sales',
-  'Head of Sales',
-  'Chief Revenue Officer',
-  'VP Revenue',
-  'Head of Growth',
-  'VP Marketing',
-  'Head of Demand Generation',
-  'SDR Manager',
-  'BDR Manager',
-  'RevOps Lead',
-  'Head of Revenue Operations',
-  'GTM Lead',
-  'VP Go-To-Market',
-  'Founder'
-]
-const CITIES = [
-  'San Francisco', 'Austin', 'Seattle', 'Denver', 'New York', 'Chicago', 'Boston', 'Remote',
-  'Minneapolis', 'Detroit', 'Indy', 'Milwaukee', 'Columbus', 'St. Louis'
-]
-const ATLANTA_CITIES = ['Atlanta', 'Marietta', 'Alpharetta', 'Sandy Springs', 'Roswell', 'Decatur']
-const ATLANTA_ACCOUNTS = [
-  'Peachtree Logistics',
-  'Delta Commerce Group',
-  'Buckhead Analytics',
-  'Cobb Manufacturing',
-  'Midtown SaaS Co',
-  'Perimeter Health Tech',
-  'Atlantic Freight',
-  'Georgia FinServ'
-]
 
 export function seedProject(
   db: Database,
@@ -166,117 +100,6 @@ export function seedProject(
   })
 
   return project
-}
-
-function buildDemoGtmSoftwareContacts(
-  orgId: string,
-  projectId: string,
-  count: number
-): Contact[] {
-  const now = Date.now()
-  return Array.from({ length: count }, (_, i) => {
-    const first = FIRST[i % FIRST.length]
-    const last = LAST[(i * 3) % LAST.length]
-    const company = DEMO_SOFTWARE_COMPANIES[i % DEMO_SOFTWARE_COMPANIES.length]
-    const title = TITLES[i % TITLES.length]
-    const externalId = `seed_demo_${i + 1}`
-    return {
-      id: uid('contact'),
-      orgId,
-      projectId,
-      name: `${first} ${last}`,
-      company: company.name,
-      title,
-      email: `${first.toLowerCase()}.${last.toLowerCase()}${i}@${company.domain}`,
-      phone: `+1-555-${String(1000 + i).slice(-4)}`,
-      city: CITIES[i % CITIES.length],
-      status: i === 0 ? ('active' as const) : ('queued' as const),
-      stepIndex: 0,
-      notes: 'Demo GTM software prospect',
-      externalId,
-      source: 'seed' as const,
-      accountName: company.name,
-      linkedinUrl: `https://www.linkedin.com/in/${first.toLowerCase()}${last.toLowerCase()}${i}`,
-      companyDomain: company.domain,
-      companyIndustry: 'computer software',
-      companySize: company.size,
-      context: buildProspectContext({
-        id: externalId,
-        company: company.name,
-        title,
-        companySize: company.size,
-        companyIndustry: 'computer software'
-      }),
-      channelsDone: [],
-      createdAt: now,
-      updatedAt: now
-    }
-  })
-}
-
-function buildContacts(
-  orgId: string,
-  projectId: string,
-  count: number,
-  segment: string
-): Contact[] {
-  const now = Date.now()
-  return Array.from({ length: count }, (_, i) => {
-    const first = FIRST[i % FIRST.length]
-    const last = LAST[(i + 3) % LAST.length]
-    const company = COMPANIES[(i + 1) % COMPANIES.length]
-    return {
-      id: uid('contact'),
-      orgId,
-      projectId,
-      name: `${first} ${last}`,
-      company,
-      title: TITLES[i % TITLES.length],
-      email: `${first.toLowerCase()}.${last.toLowerCase()}@${company.toLowerCase().replace(/\s+/g, '').slice(0, 12)}.com`,
-      phone: `+1 (312) 555-${String(1000 + i * 17).slice(-4)}`,
-      city: CITIES[i % CITIES.length],
-      status: i === 0 ? ('active' as const) : ('queued' as const),
-      stepIndex: 0,
-      notes: `${segment} prospect`,
-      source: 'seed' as const,
-      channelsDone: [],
-      createdAt: now,
-      updatedAt: now
-    }
-  })
-}
-
-function buildAtlantaMidMarketContacts(orgId: string, projectId: string, count: number): Contact[] {
-  const now = Date.now()
-  return Array.from({ length: count }, (_, i) => {
-    const first = FIRST[i % FIRST.length]
-    const last = LAST[(i + 2) % LAST.length]
-    const accountName = ATLANTA_ACCOUNTS[i % ATLANTA_ACCOUNTS.length]
-    const company = accountName
-    return {
-      id: uid('contact'),
-      orgId,
-      projectId,
-      name: `${first} ${last}`,
-      company,
-      accountName,
-      title: TITLES[i % TITLES.length],
-      email: `${first.toLowerCase()}.${last.toLowerCase()}@${company.toLowerCase().replace(/\s+/g, '').slice(0, 14)}.com`,
-      phone: `+1 (404) 555-${String(1000 + i * 13).slice(-4)}`,
-      city: ATLANTA_CITIES[i % ATLANTA_CITIES.length],
-      companyDomain: `${company.toLowerCase().replace(/\s+/g, '').slice(0, 18)}.com`,
-      companyIndustry: 'B2B software · logistics & supply chain',
-      companySize: ['120', '180', '250', '320', '410'][i % 5],
-      companyRevenue: ['$18M', '$24M', '$31M', '$42M', '$55M'][i % 5],
-      status: i === 0 ? ('active' as const) : ('queued' as const),
-      stepIndex: 0,
-      notes: 'Mid Market · Atlanta assigned account',
-      source: 'seed' as const,
-      channelsDone: [],
-      createdAt: now,
-      updatedAt: now
-    }
-  })
 }
 
 function buildCampaigns(project: Project, contactCount: number): Campaign[] {

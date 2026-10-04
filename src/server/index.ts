@@ -9,8 +9,7 @@ import {
   bundleProject,
   isContactStatus,
   listProjectContacts,
-  nextQueueContact,
-  shouldAdvanceStep
+  nextQueueContact
 } from './queries'
 import type { CallPhase, ContactStatus, ProjectKind } from './types'
 import { loadConfig, type ServerConfig } from './config'
@@ -21,11 +20,13 @@ import {
   requireAuth,
   toPublicUser
 } from './auth'
-import { uid } from './crypto'
+import { adminTokenMatches, uid } from './crypto'
 import {
   requestPasswordReset,
   signInWithPassword,
   signUpWithPassword,
+  EmailNotConfirmedError,
+  resendVerificationEmail,
   supabaseConfigured,
   updatePasswordWithAccessToken
 } from './providers/supabaseAuth'
@@ -36,24 +37,49 @@ import {
   toPublicConnection,
   upsertConnection
 } from './connections'
-import { platformGmailReady } from './providers/gmail'
-import { toE164, voiceTwiml, inspectTwilioVoice } from './providers/twilio'
-import { consumeRateLimit } from './rateLimit'
+import { escapeEmailHtml as escapeHtml, platformGmailReady } from './providers/gmail'
+import {
+  exchangeMailboxCode,
+  finishMailboxOAuthHtml,
+  isMailboxProvider,
+  mailboxAuthUrl,
+  mailboxConfigured,
+  revokeMailbox
+} from './mailboxes'
+import { mountComplianceRoutes } from './complianceRoutes'
+import { toE164 } from '../shared/phone'
+import { consumeRateLimit, ipRateLimit } from './rateLimit'
 import { PlanLimitError } from './planLimits'
-import { poolHealth, PoolBudgetError } from './outboundPools'
+import { plivoSipUsername, poolHealth, PoolBudgetError } from './outboundPools'
+import { isProduction } from './env'
+import {
+  addSuppression,
+  callBlockReason,
+  OutboundBlockedError,
+  readUnsubscribeToken,
+  unsubscribePageHtml
+} from './compliance'
 import {
   hangupLiveCall,
   inspectLiveVoice,
   createVoiceToken,
   voiceIsLive
 } from './providers/voice'
-import { inspectPlivoVoice, plivoDialXml, plivoFormValue, plivoWebhookBase } from './providers/plivo'
+import {
+  inspectPlivoVoice,
+  plivoDialXml,
+  plivoFormValue,
+  plivoRejectXml,
+  plivoWebhookBase,
+  verifyPlivoSignature
+} from './providers/plivo'
 import {
   exchangeHubSpotCode,
   fetchHubSpotContacts,
   finishHubSpotOAuthHtml,
   hubspotAuthUrl,
-  writeHubSpotContactsToProjects
+  writeHubSpotContactsToProjects,
+  hubspotAccessToken
 } from './providers/hubspot'
 import {
   DEFAULT_PROSPECTS_TABLE,
@@ -81,14 +107,25 @@ import { createV1Router } from './v1'
 import { mountMcp } from './mcpHttp'
 import { claudeConnectorStatus } from './mcpOauth'
 import { parseDeployContacts } from './deployContacts'
-import { dashboardFor, sendPublicMessage, startPublicCall } from './publicApi'
+import {
+  addPublicNote,
+  applyDisposition,
+  isSequenceStopStatus,
+  completePublicCall,
+  dashboardFor,
+  sendPublicMessage,
+  startPublicCall
+} from './publicApi'
 import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { startOutboundScheduler } from './scheduler'
+import { DeleteBlockedError, deleteOrg, exportOrgData } from './accountData'
+import { errorHandler, requestLogger } from './observability'
 
 export async function createApi(store: DataStore, config: ServerConfig = loadConfig()) {
   const billing = await createBillingService(store, config)
   startOutboundScheduler(store, config, billing)
   const app = express()
+  app.use(requestLogger())
   app.use(cors({ origin: true, credentials: true }))
   app.use(
     express.static(join(dirname(fileURLToPath(import.meta.url)), 'public'), {
@@ -114,18 +151,37 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   const auth = requireAuth(store, config)
   const paramId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
+  if (isProduction()) app.set('trust proxy', 1)
+  const FIFTEEN_MIN = 15 * 60 * 1000
+  app.use('/auth/login', ipRateLimit('sign-in', 20, FIFTEEN_MIN))
+  app.use('/auth/register', ipRateLimit('sign-up', 5, FIFTEEN_MIN))
+  app.use('/auth/forgot-password', ipRateLimit('password reset', 5, FIFTEEN_MIN))
+  app.use('/auth/resend-verification', ipRateLimit('confirmation email', 5, FIFTEEN_MIN))
+  app.use('/auth/reset-password', ipRateLimit('password reset', 10, FIFTEEN_MIN))
+  // Claude calls these from shared Anthropic IPs, so the limits are loose.
+  app.use('/oauth/register', ipRateLimit('client registration', 100, FIFTEEN_MIN))
+  app.use('/oauth/token', ipRateLimit('token', 300, FIFTEEN_MIN))
+
   app.use('/v1', createV1Router(store, config, billing))
   mountMcp(app, store, config, billing)
   app.get('/openapi.json', (_req, res) => {
     res.redirect(302, '/v1/openapi.json')
   })
 
-  // www.jargonlabs.co is this API. Opening the host in a browser should land on the app.
+  // The API host (api.jargonlabs.co, and legacy www). Opening it in a browser should land on the app.
   app.get('/', (_req, res) => {
     res.redirect(302, `${config.appUrl}/`)
   })
 
   app.get('/health', (_req, res) => {
+    res.json({ ok: true, storage: process.env.DATABASE_URL ? 'postgres' : 'json' })
+  })
+
+  app.get('/health/details', (req, res) => {
+    if (!adminTokenMatches(req.header('authorization'))) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
     res.json({
       ok: true,
       multiTenant: true,
@@ -134,7 +190,6 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         hubspot: config.hubspot.clientId ? 'live' : 'demo',
         gmail: platformGmailReady(config) ? 'live' : 'demo',
         plivo: inspectPlivoVoice(config).ok ? 'live' : 'demo',
-        twilio: inspectTwilioVoice(config).ok ? 'live' : 'demo',
         heyreach: config.heyreach.apiKey ? 'live' : 'unset',
         railway: config.railway.clientId ? 'live' : 'demo',
         auth: supabaseConfigured(config) ? 'supabase' : 'unconfigured',
@@ -149,8 +204,37 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     })
   })
 
-  // Claude concatenates the MCP host (www.jargonlabs.co) with dashboardPath.
-  // www is this API; the tool UI lives on JARGON_APP_URL (jargonlabs.co).
+  // GET only shows a button: link scanners prefetch GETs. Mail clients' one-click (RFC 8058) POSTs.
+  app.get('/u/:token', (req, res) => {
+    const target = readUnsubscribeToken(paramId(req.params.token))
+    res.type('html').send(
+      unsubscribePageHtml(
+        target
+          ? `<p>Stop emails to <strong>${escapeHtml(target.email)}</strong>?</p>
+<form method="post"><button type="submit">Unsubscribe</button></form>`
+          : '<p>This unsubscribe link is invalid.</p>'
+      )
+    )
+  })
+
+  app.post('/u/:token', (req, res) => {
+    const target = readUnsubscribeToken(paramId(req.params.token))
+    if (!target || !store.db.orgs.some((o) => o.id === target.orgId)) {
+      res.status(400).type('html').send(unsubscribePageHtml('<p>This unsubscribe link is invalid.</p>'))
+      return
+    }
+    addSuppression(store, {
+      orgId: target.orgId,
+      kind: 'email',
+      value: target.email,
+      reason: 'unsubscribed',
+      source: 'unsubscribe_link'
+    })
+    res.type('html').send(unsubscribePageHtml("<p>You're unsubscribed. You won't get more emails from this sender.</p>"))
+  })
+
+  // Claude concatenates the MCP host with dashboardPath.
+  // The tool UI lives on JARGON_APP_URL (jargonlabs.co).
   app.get('/tools/:id', (req, res) => {
     const id = paramId(req.params.id)
     if (!id || !/^[\w-]+$/.test(id)) {
@@ -181,18 +265,28 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     const normalized = email.trim().toLowerCase()
 
     try {
-      const { accessToken, supabaseUser } = await signUpWithPassword(config, {
+      const signed = await signUpWithPassword(config, {
         email: normalized,
         password,
-        name: name?.trim()
+        name: name?.trim(),
+        orgName: orgName?.trim()
       })
+      if (signed.verificationRequired) {
+        // The workspace is created at the first sign-in, after the email is confirmed.
+        res.status(202).json({
+          verificationRequired: true,
+          email: normalized,
+          message: `Check ${normalized} for a confirmation link, then sign in.`
+        })
+        return
+      }
       const { user, org } = provisionWorkspace(store, {
         email: normalized,
         name: name?.trim(),
         orgName: orgName?.trim(),
-        supabaseUserId: supabaseUser.id
+        supabaseUserId: signed.supabaseUser.id
       })
-      res.status(201).json(authPayload(store, accessToken, user, org))
+      res.status(201).json(authPayload(store, signed.accessToken, user, org))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Register failed'
       if (/already registered|sign in instead/i.test(message)) {
@@ -219,14 +313,39 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
 
     try {
       const signed = await signInWithPassword(config, { email: normalized, password })
+      const meta = (signed.supabaseUser.user_metadata ?? {}) as { name?: unknown; orgName?: unknown }
       const { user, org } = provisionWorkspace(store, {
         email: normalized,
+        name: typeof meta.name === 'string' ? meta.name : undefined,
+        orgName: typeof meta.orgName === 'string' ? meta.orgName : undefined,
         supabaseUserId: signed.supabaseUser.id
       })
       res.json(authPayload(store, signed.accessToken, user, org))
     } catch (err) {
+      if (err instanceof EmailNotConfirmedError) {
+        res.status(403).json({ error: err.message, code: err.code })
+        return
+      }
       res.status(401).json({ error: err instanceof Error ? err.message : 'Invalid credentials' })
     }
+  })
+
+  app.post('/auth/resend-verification', async (req, res) => {
+    if (!supabaseConfigured(config)) {
+      res.status(503).json({ error: 'Auth is not configured.' })
+      return
+    }
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+    if (!email) {
+      res.status(400).json({ error: 'email required' })
+      return
+    }
+    try {
+      await resendVerificationEmail(config, email)
+    } catch (err) {
+      console.warn('[jargon] resend verification failed', err instanceof Error ? err.message : err)
+    }
+    res.json({ ok: true, message: 'If that account is waiting for confirmation, a new link is on the way.' })
   })
 
   app.post('/auth/forgot-password', async (req, res) => {
@@ -327,6 +446,11 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     })
   })
 
+  mountComplianceRoutes(app, store, auth, {
+    suppressions: '/account/suppressions',
+    compliance: '/account/compliance'
+  })
+
   // ——— Portal & account ———
   app.get('/portal/builds', auth, (req, res) => {
     res.json({ builds: listPortalBuilds(store, req.auth!.org.id) })
@@ -349,6 +473,39 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     })
     const org = store.db.orgs.find((o) => o.id === orgId)!
     res.json({ org })
+  })
+
+  app.get('/account/export', auth, (req, res) => {
+    const data = exportOrgData(store, req.auth!.org.id)
+    if (!data) {
+      res.status(404).json({ error: 'Workspace not found' })
+      return
+    }
+    const day = new Date().toISOString().slice(0, 10)
+    res.setHeader('Content-Disposition', `attachment; filename="jargon-${req.auth!.org.slug}-${day}.json"`)
+    res.json(data)
+  })
+
+  app.delete('/account', auth, async (req, res) => {
+    if (req.auth!.via === 'api_key') {
+      res.status(403).json({ error: 'Sign in at jargonlabs.co to delete your workspace.' })
+      return
+    }
+    const org = req.auth!.org
+    const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm.trim() : ''
+    if (confirm !== org.name.trim()) {
+      res.status(400).json({ error: 'Type your workspace name to confirm.', code: 'confirm_required' })
+      return
+    }
+    try {
+      res.json({ ok: true, ...(await deleteOrg(store, config, billing, org.id)) })
+    } catch (err) {
+      if (err instanceof DeleteBlockedError) {
+        res.status(409).json({ error: err.message, billingUrl: err.billingUrl })
+        return
+      }
+      throw err
+    }
   })
 
   app.get('/account', auth, async (req, res) => {
@@ -396,7 +553,8 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
           c.orgId === req.auth!.org.id &&
           (c.provider === 'hubspot' ||
             c.provider === 'postgres' ||
-            c.provider === 'railway')
+            c.provider === 'railway' ||
+            isMailboxProvider(c.provider))
       )
       .map(toPublicConnection)
     res.json(list)
@@ -675,10 +833,23 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       })
       return
     }
-    if (provider === 'gmail' || provider === 'twilio' || provider === 'heyreach') {
+    if (isMailboxProvider(provider)) {
+      if (!mailboxConfigured(config, provider)) {
+        res.status(400).json({
+          error:
+            provider === 'gmail'
+              ? 'Gmail sending is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the API.'
+              : 'Outlook sending is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET on the API.'
+        })
+        return
+      }
+      const { org, user } = req.auth!
+      res.json({ url: mailboxAuthUrl(store, config, provider, org.id, user.id) })
+      return
+    }
+    if (provider === 'heyreach') {
       res.status(400).json({
-        error:
-          'Email, calling, and LinkedIn are sent by Jargon on managed infrastructure. Connect Claude and bring your list — no outbound API keys needed.'
+        error: 'Calling and LinkedIn are sent by Jargon on managed infrastructure — no API keys needed.'
       })
       return
     }
@@ -729,6 +900,72 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
   })
 
+  app.get('/oauth/:provider/callback', async (req, res, next) => {
+    const provider = paramId(req.params.provider)
+    if (!isMailboxProvider(provider)) {
+      next()
+      return
+    }
+    try {
+      const { code, state, error_description } = req.query as {
+        code?: string
+        state?: string
+        error_description?: string
+      }
+      if (!code || !state) {
+        res.status(400).send(finishMailboxOAuthHtml(config, provider, false, error_description || 'Missing code/state'))
+        return
+      }
+      const oauth = consumeOAuthState(store, state)
+      if (!oauth || oauth.provider !== provider) {
+        res.status(400).send(finishMailboxOAuthHtml(config, provider, false, 'Invalid or expired state'))
+        return
+      }
+      const { secrets, email, cursor } = await exchangeMailboxCode(config, provider, code)
+      const replaced = store.db.connections.filter(
+        (c) => c.orgId === oauth.orgId && isMailboxProvider(c.provider) && c.provider !== provider
+      )
+      for (const old of replaced) await revokeMailbox(old).catch(() => undefined)
+      if (replaced.length) {
+        const ids = new Set(replaced.map((c) => c.id))
+        store.update((db) => {
+          db.connections = db.connections.filter((c) => !ids.has(c.id))
+        })
+      }
+      upsertConnection(store, {
+        orgId: oauth.orgId,
+        provider,
+        status: 'connected',
+        accountLabel: email,
+        secrets,
+        meta: { email, cursor }
+      })
+      res.send(finishMailboxOAuthHtml(config, provider, true, `Email will now send from ${email}.`))
+    } catch (err) {
+      res
+        .status(500)
+        .send(finishMailboxOAuthHtml(config, provider, false, err instanceof Error ? err.message : 'Error'))
+    }
+  })
+
+  app.delete('/connections/:provider', auth, async (req, res) => {
+    const provider = paramId(req.params.provider)
+    if (!isMailboxProvider(provider)) {
+      res.status(400).json({ error: 'Only email mailboxes can be disconnected here.' })
+      return
+    }
+    const conn = getConnection(store, req.auth!.org.id, provider)
+    if (!conn) {
+      res.status(404).json({ error: 'Not connected' })
+      return
+    }
+    await revokeMailbox(conn).catch(() => undefined)
+    store.update((db) => {
+      db.connections = db.connections.filter((c) => c.id !== conn.id)
+    })
+    res.json({ ok: true })
+  })
+
   app.post('/connections/hubspot/sync', auth, async (req, res) => {
     const { projectId, limit } = req.body as { projectId?: string; limit?: number }
     const orgId = req.auth!.org.id
@@ -741,7 +978,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
     try {
       const prospects = await fetchHubSpotContacts(
-        secrets.accessToken,
+        await hubspotAccessToken(store, config, conn),
         limit ?? 100,
         demo
       )
@@ -786,60 +1023,65 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     }
   })
 
-  app.post('/voice/twiml', (req, res) => {
-    const body = req.body as Record<string, string | undefined>
-    const to = String(body.Phone ?? body.To ?? req.query.To ?? '')
-    const callId = String(body.CallId ?? req.query.CallId ?? '')
-    const callSid = String(body.CallSid ?? '')
-    const from = config.twilio.fromNumber || '+15555550100'
-    if (callId && callSid) {
-      store.update((db) => {
-        const call = db.calls.find((c) => c.id === callId)
-        if (call) call.providerCallSid = callSid
-      })
-    }
-    res.type('text/xml').send(voiceTwiml(to, from, `${config.publicUrl.replace(/\/$/, '')}/voice/status`))
-  })
-
-  app.post('/voice/status', (req, res) => {
-    const callSid = String(req.body.CallSid ?? '')
-    const callStatus = String(req.body.CallStatus ?? '')
-    if (callSid) {
-      store.update((db) => {
-        const call = db.calls.find((c) => c.providerCallSid === callSid)
-        if (!call) return
-        if (callStatus === 'in-progress' || callStatus === 'answered') {
-          call.phase = 'connected'
-          call.connectedAt = call.connectedAt ?? Date.now()
-        } else if (
-          callStatus === 'completed' ||
-          callStatus === 'busy' ||
-          callStatus === 'no-answer' ||
-          callStatus === 'failed' ||
-          callStatus === 'canceled'
-        ) {
-          if (call.phase !== 'completed') {
-            call.phase = callStatus === 'completed' ? 'connected' : 'failed'
-          }
-        }
-      })
-    }
-    res.status(204).end()
-  })
-
   const plivoCallbackUrl = `${plivoWebhookBase(config)}/voice/plivo/dial`
+
+  const verifyPlivo: express.RequestHandler = (req, res, next) => {
+    const authToken = config.plivo.authToken
+    if (!authToken && !isProduction()) {
+      next()
+      return
+    }
+    const ok = verifyPlivoSignature({
+      authToken,
+      url: `${plivoWebhookBase(config)}${req.originalUrl}`,
+      nonce: req.header('x-plivo-signature-v3-nonce'),
+      signature: req.header('x-plivo-signature-v3'),
+      params: (req.body ?? {}) as Record<string, unknown>
+    })
+    if (!ok) {
+      console.warn(`[jargon] Rejected unsigned Plivo webhook ${req.path}`)
+      res.status(403).end()
+      return
+    }
+    next()
+  }
+
+  /** Pool member whose SIP endpoint placed the call (From = sip:user@phone.plivo.com). */
+  function callerPoolMemberId(body: Record<string, unknown>): string | undefined {
+    const from = plivoFormValue(body, 'From', 'CallerName')
+    if (!from) return undefined
+    let caller = ''
+    try {
+      caller = plivoSipUsername(from).toLowerCase()
+    } catch {
+      return undefined
+    }
+    return config.outboundPools.voiceEndpoints.find((m) => {
+      try {
+        return plivoSipUsername(m.endpointUsername).toLowerCase() === caller
+      } catch {
+        return false
+      }
+    })?.id
+  }
 
   function attachPlivoCall(
     callId: string,
     callUuid: string,
-    phase?: CallPhase
+    phase?: CallPhase,
+    callerMemberId?: string
   ): void {
     store.update((db) => {
       const byId = callId ? db.calls.find((c) => c.id === callId) : undefined
       const bySid = callUuid ? db.calls.find((c) => c.providerCallSid === callUuid) : undefined
       const recent =
-        !byId && !bySid
-          ? db.calls.find((c) => c.phase === 'dialing' && Date.now() - c.startedAt < 120_000)
+        !byId && !bySid && callerMemberId
+          ? db.calls.find(
+              (c) =>
+                c.phase === 'dialing' &&
+                c.poolMemberId === callerMemberId &&
+                Date.now() - c.startedAt < 120_000
+            )
           : undefined
       const call = byId ?? bySid ?? recent
       if (!call || call.phase === 'completed') return
@@ -856,25 +1098,49 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     })
   }
 
-  app.post('/voice/plivo/answer', (req, res) => {
+  app.post('/voice/plivo/answer', verifyPlivo, (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>
     const headerTo = plivoFormValue(body, 'X-PH-To')
     const to = headerTo || plivoFormValue(body, 'To', 'Destination')
     const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
     const callUuid = plivoFormValue(body, 'CallUUID', 'ALegUUID')
+    const callerMemberId = callerPoolMemberId(body)
     const call = callId
       ? store.db.calls.find((c) => c.id === callId)
       : undefined
+    if (call?.poolMemberId && callerMemberId && call.poolMemberId !== callerMemberId) {
+      console.warn(`[jargon] Plivo answer for ${callId} came from another org's endpoint`)
+      res.type('text/xml').send(plivoRejectXml())
+      return
+    }
+    const contact = call ? store.db.contacts.find((c) => c.id === call.contactId) : undefined
+    if (isProduction() && !contact) {
+      console.warn('[jargon] Plivo answer without a Jargon call; refusing to dial')
+      res.type('text/xml').send(plivoRejectXml())
+      return
+    }
+    const blocked = contact ? callBlockReason(store.db, contact) : null
+    if (blocked) {
+      console.warn(`[jargon] Plivo answer blocked for ${callId}: ${blocked}`)
+      attachPlivoCall(callId, callUuid, 'failed', callerMemberId)
+      res.type('text/xml').send(plivoRejectXml())
+      return
+    }
+    const dialTo = (contact && toE164(contact.phone)) || to
+    const callerFrom = callerMemberId
+      ? config.outboundPools.voiceEndpoints.find((m) => m.id === callerMemberId)?.fromNumber
+      : undefined
     const from =
       call?.fromNumber ||
+      callerFrom ||
       config.outboundPools.voiceEndpoints[0]?.fromNumber ||
       config.plivo.fromNumber ||
       '+15555550100'
-    attachPlivoCall(callId, callUuid, 'ringing')
-    res.type('text/xml').send(plivoDialXml(to, from, plivoCallbackUrl))
+    attachPlivoCall(callId, callUuid, 'ringing', callerMemberId)
+    res.type('text/xml').send(plivoDialXml(dialTo, from, plivoCallbackUrl))
   })
 
-  app.post('/voice/plivo/dial', (req, res) => {
+  app.post('/voice/plivo/dial', verifyPlivo, (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>
     const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
     const callUuid = plivoFormValue(body, 'DialALegUUID', 'ALegUUID', 'CallUUID')
@@ -891,7 +1157,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.status(204).end()
   })
 
-  app.post('/voice/plivo/hangup', (req, res) => {
+  app.post('/voice/plivo/hangup', verifyPlivo, (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>
     const callId = plivoFormValue(body, 'X-PH-CallId', 'X-PH-Callid', 'CallId')
     const callUuid = plivoFormValue(body, 'CallUUID', 'ALegUUID')
@@ -1165,10 +1431,15 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(400).json({ error: 'invalid stepIndex' })
       return
     }
+    const nextStatus = body.status
+    const isOutcome = nextStatus !== undefined && nextStatus !== 'active' && nextStatus !== 'queued'
+    if (isOutcome && nextStatus !== contact.status) {
+      applyDisposition(store, contact.id, { status: nextStatus, advanceStep: false })
+    }
     store.update((db) => {
       const c = db.contacts.find((x) => x.id === paramId(req.params.id))
       if (!c) return
-      if (body.status !== undefined) c.status = body.status
+      if (nextStatus !== undefined && !isOutcome && !isSequenceStopStatus(c.status)) c.status = nextStatus
       if (typeof body.notes === 'string') c.notes = body.notes
       if (body.stepIndex !== undefined) c.stepIndex = Math.min(Math.floor(body.stepIndex), 99)
       c.updatedAt = Date.now()
@@ -1201,45 +1472,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    const now = Date.now()
-    const doAdvance = shouldAdvanceStep(status, advanceStep)
-    store.update((db) => {
-      const c = db.contacts.find((x) => x.id === contactId)
-      if (!c) return
-      c.status = status
-      c.updatedAt = now
-      if (doAdvance) {
-        c.stepIndex = Math.min(c.stepIndex + 1, 99)
-      }
-      if (note?.trim()) {
-        const stamped = `${new Date(now).toLocaleString()}: ${note.trim()}`
-        c.notes = c.notes ? `${c.notes}\n${stamped}` : stamped
-      }
-      db.activities.unshift({
-        id: uid('act'),
-        orgId: c.orgId,
-        projectId: c.projectId,
-        contactId: c.id,
-        kind: 'system',
-        summary: note?.trim()
-          ? `Disposition ${status.replace('_', ' ')} · ${note.trim()}`
-          : `Disposition ${status.replace('_', ' ')}`,
-        createdAt: now
-      })
-      // Promote next queued contact when this one leaves the active slot
-      if (status !== 'active' && status !== 'queued') {
-        const next = db.contacts.find(
-          (x) => x.projectId === c.projectId && x.status === 'queued' && x.id !== c.id
-        )
-        if (next) {
-          next.status = 'active'
-          next.updatedAt = now
-        }
-      }
-      const project = db.projects.find((p) => p.id === c.projectId)
-      if (project) project.updatedAt = now
-    })
-
+    applyDisposition(store, contactId, { status, note, advanceStep })
     const updated = store.db.contacts.find((c) => c.id === contactId)!
     const next = nextQueueContact(store.db, updated.projectId)
     res.json({
@@ -1316,6 +1549,10 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         res.status(429).json({ error: err.message, code: err.code })
         return
       }
+      if (err instanceof OutboundBlockedError) {
+        res.status(409).json({ error: err.message, code: err.code })
+        return
+      }
       res.status(503).json({ error: err instanceof Error ? err.message : 'Call failed' })
     }
   })
@@ -1344,9 +1581,9 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   })
 
   app.post('/calls/:id/complete', auth, (req, res) => {
-    const { disposition } = req.body as { disposition?: ContactStatus }
-    if (!disposition) {
-      res.status(400).json({ error: 'disposition required' })
+    const { disposition } = req.body as { disposition?: string }
+    if (!isContactStatus(disposition)) {
+      res.status(400).json({ error: 'valid disposition required' })
       return
     }
     const call = store.db.calls.find(
@@ -1356,60 +1593,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(404).json({ error: 'Call not found' })
       return
     }
-    const now = Date.now()
-    if (call.providerCallSid) {
-      void hangupLiveCall(config, call).catch(() => undefined)
-    }
-    store.update((db) => {
-      const c = db.calls.find((x) => x.id === paramId(req.params.id))
-      if (!c) return
-      c.phase = 'completed'
-      c.disposition = disposition
-      c.endedAt = now
-      const contact = db.contacts.find((x) => x.id === c.contactId)
-      if (contact) {
-        contact.status = disposition
-        contact.updatedAt = now
-        const done = new Set(contact.channelsDone ?? [])
-        done.add('call')
-        contact.channelsDone = [...done]
-        if (disposition === 'interested' || disposition === 'completed' || disposition === 'replied') {
-          contact.stepIndex = Math.min(contact.stepIndex + 1, 99)
-        }
-      }
-      const campaign = db.campaigns.find(
-        (camp) => camp.projectId === c.projectId && camp.state === 'ACTIVE'
-      )
-      if (campaign) {
-        campaign.done = Math.min(campaign.total, campaign.done + 1)
-        campaign.updatedAt = now
-        const completed = db.calls.filter(
-          (x) => x.projectId === c.projectId && x.phase === 'completed'
-        )
-        const answered = completed.filter(
-          (x) => x.disposition && x.disposition !== 'no_answer'
-        ).length
-        campaign.answerRatio = completed.length ? (answered / completed.length) * 100 : 0
-      }
-      const next = db.contacts.find(
-        (x) => x.projectId === c.projectId && x.status === 'queued' && x.id !== c.contactId
-      )
-      if (next) {
-        next.status = 'active'
-        next.updatedAt = now
-      }
-      db.activities.unshift({
-        id: uid('act'),
-        orgId: c.orgId,
-        projectId: c.projectId,
-        contactId: c.contactId,
-        kind: 'call',
-        summary: `Call completed · ${disposition.replace('_', ' ')}`,
-        createdAt: now
-      })
-      const project = db.projects.find((p) => p.id === c.projectId)
-      if (project) project.updatedAt = now
-    })
+    completePublicCall(store, call.id, disposition, config)
     res.json({
       call: store.db.calls.find((c) => c.id === paramId(req.params.id)),
       bundle: bundleProject(store.db, call.projectId)
@@ -1429,6 +1613,14 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       body?: string
       status?: 'draft' | 'queued' | 'sent'
       channel?: 'email' | 'linkedin'
+    }
+    if (status && !['draft', 'queued', 'sent'].includes(status)) {
+      res.status(400).json({ error: 'invalid status' })
+      return
+    }
+    if (channel && channel !== 'email' && channel !== 'linkedin') {
+      res.status(400).json({ error: 'invalid channel' })
+      return
     }
     const messageChannel = channel ?? 'email'
     const finalStatus = status ?? 'draft'
@@ -1479,7 +1671,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
     }
     if (!result.ok) {
-      res.status(502).json({
+      res.status(result.status).json({
         error: result.body.error,
         message: result.body.message,
         bundle: bundleProject(store.db, contact.projectId)
@@ -1507,23 +1699,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    const now = Date.now()
-    store.update((db) => {
-      const c = db.contacts.find((x) => x.id === paramId(req.params.id))
-      if (!c) return
-      const stamped = `${new Date(now).toLocaleString()}: ${note.trim()}`
-      c.notes = c.notes ? `${c.notes}\n${stamped}` : stamped
-      c.updatedAt = now
-      db.activities.unshift({
-        id: uid('act'),
-        orgId: c.orgId,
-        projectId: c.projectId,
-        contactId: c.id,
-        kind: 'note',
-        summary: note.trim(),
-        createdAt: now
-      })
-    })
+    addPublicNote(store, contact.id, note)
     res.json(store.db.contacts.find((c) => c.id === paramId(req.params.id)))
   })
 
@@ -1538,6 +1714,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     res.json(call)
   })
 
+  app.use(errorHandler())
   return app
 }
 

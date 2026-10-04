@@ -9,9 +9,8 @@ import {
   plivoWebhookBase,
   syncPlivoApplication
 } from './plivo'
-import { hangupTwilioPstn, inspectTwilioVoice, syncTwilioTwimlApp } from './twilio'
 
-export type LiveVoiceProvider = 'plivo' | 'twilio'
+export type LiveVoiceProvider = 'plivo'
 
 export type VoiceToken = {
   /** Opaque session id for logs; browser auth is accessToken (JWT). */
@@ -97,10 +96,6 @@ export async function hangupLiveCall(
   if (!call.providerCallSid) return
   if (call.mode === 'plivo') {
     await hangupPlivoCall(config, call.providerCallSid)
-    return
-  }
-  if (call.mode === 'twilio') {
-    await hangupTwilioPstn(config, call.providerCallSid)
   }
 }
 
@@ -115,12 +110,6 @@ export async function syncVoiceProvider(config: ServerConfig): Promise<void> {
       console.log(
         `[jargon] Voice pool: ${config.outboundPools.voiceEndpoints.length} exclusive DID(s); JWT softphone auth`
       )
-    }
-  }
-  if (inspectTwilioVoice(config).ok || config.twilio.twimlAppSid) {
-    await syncTwilioTwimlApp(config)
-    if (inspectTwilioVoice(config).ok) {
-      console.log(`[jargon] Twilio TwiML app voice URL: ${config.publicUrl.replace(/\/$/, '')}/voice/twiml`)
     }
   }
 }

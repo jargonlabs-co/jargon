@@ -137,6 +137,7 @@ export interface ConnectionPublic {
   status: string
   accountLabel?: string
   meta?: Record<string, string>
+  error?: string
 }
 
 export interface PortalBuild {
@@ -197,9 +198,15 @@ export const api = {
     })
   },
   register(input: { email: string; password: string; name?: string; orgName?: string }) {
-    return request<AuthPayload>('/auth/register', {
+    return request<AuthPayload | { verificationRequired: true; email: string; message: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(input)
+    })
+  },
+  resendVerification(email: string) {
+    return request<{ ok: boolean; message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email })
     })
   },
   forgotPassword(email: string) {
@@ -228,6 +235,15 @@ export const api = {
       `/connections/${provider}/start`,
       { method: 'POST', body: JSON.stringify(body ?? {}) }
     )
+  },
+  disconnect(provider: string) {
+    return request<{ ok: true }>(`/connections/${provider}`, { method: 'DELETE' })
+  },
+  exportAccount() {
+    return request<Record<string, unknown>>('/account/export')
+  },
+  deleteAccount(confirm: string) {
+    return request<{ ok: true }>('/account', { method: 'DELETE', body: JSON.stringify({ confirm }) })
   },
   syncHubSpot() {
     return request<{ count: number; source: string }>('/connections/hubspot/sync', {
@@ -339,7 +355,7 @@ export const api = {
 }
 
 /** Public MCP origin Claude should use (logo + OAuth). Do not point this at Railway. */
-export const PUBLIC_MCP_URL = 'https://www.jargonlabs.co/mcp'
+export const PUBLIC_MCP_URL = 'https://api.jargonlabs.co/mcp'
 
 function isLocalApi(base: string): boolean {
   return /localhost|127\.0\.0\.1/i.test(base)

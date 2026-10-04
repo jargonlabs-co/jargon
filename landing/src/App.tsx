@@ -78,6 +78,10 @@ function Root() {
     )
   }
 
+  if (path === '/login' || path === '/login/') {
+    return <LoginPanel key="login" initialMode="login" onClose={() => navigate('/')} />
+  }
+
   if (toolId) {
     return (
       <LoginPanel

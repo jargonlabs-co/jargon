@@ -5,6 +5,7 @@ import {
   connectPostgres,
   createApiKey,
   deployTool,
+  ensureApiKey,
   health,
   listConnections,
   listProjects,
@@ -60,13 +61,13 @@ async function cmdLogin() {
   }
 
   const result = await loginWithPassword(apiUrl, email, password)
-  saveConfig({ apiUrl, token: result.token, email: result.email })
+  await ensureApiKey({ apiUrl, token: result.token, email: result.email }, saveConfig)
   console.log(`Logged in as ${result.email}`)
   console.log(`API: ${apiUrl}`)
 }
 
 async function cmdDeploy() {
-  const cfg = requireConfig()
+  const cfg = await ensureApiKey(requireConfig(), saveConfig)
   const json = flag('--json')
   const promptParts = restAfterCommand().filter(
     (a) => a !== opt('--email') && a !== opt('--password') && a !== opt('--api-key')
@@ -77,7 +78,7 @@ async function cmdDeploy() {
     process.exit(1)
   }
 
-  const result = await deployTool(cfg, { prompt, label: opt('--label') })
+  const result = await deployTool(cfg, { prompt })
 
   if (json) {
     console.log(JSON.stringify(result, null, 2))
@@ -91,13 +92,7 @@ async function cmdDeploy() {
 }
 
 async function cmdProspects() {
-  const cfg = requireConfig()
-  if (!cfg.token.startsWith('jarg_')) {
-    console.error('Prospects is a /v1 route. Log in with an API key:')
-    console.error('  jargon api-keys create --name "Claude Code" --sandbox')
-    console.error('  jargon login --api-key jarg_...')
-    process.exit(1)
-  }
+  const cfg = await ensureApiKey(requireConfig(), saveConfig)
   const result = await listProspects(cfg, {
     q: opt('--q'),
     status: opt('--status'),

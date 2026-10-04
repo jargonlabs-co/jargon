@@ -177,15 +177,30 @@ function cellEmail(cell: string): string | undefined {
   return cell.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
 }
 
-function extractMarkdownTableContacts(prompt: string): DeployContactInput[] | undefined {
+function namedRows(records: Record<string, unknown>[] | undefined): DeployContactInput[] | undefined {
+  if (!records) return undefined
+  const rows: DeployContactInput[] = []
+  for (const record of records) {
+    const parsed = normalizeContactRow(record)
+    if (!('error' in parsed)) rows.push(parsed)
+  }
+  return rows.length ? rows.slice(0, MAX_CONTACTS) : undefined
+}
+
+function isKeyHeader(headers: Array<string | null>, requireName: boolean): boolean {
+  if (requireName) return headers.includes('name')
+  return headers.some((h) => h === 'name' || h === 'email' || h === 'linkedinUrl' || h === 'contact_id' || h === 'crm_id' || h === 'hubspot_id')
+}
+
+function extractMarkdownTableRecords(prompt: string, requireName = true): Record<string, unknown>[] | undefined {
   const lines = prompt.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].includes('|')) continue
     const headers = splitTableRow(lines[i]).map(headerField)
-    if (!headers.includes('name')) continue
+    if (!isKeyHeader(headers, requireName)) continue
     let rowIndex = i + 1
     if (rowIndex < lines.length && isTableDivider(lines[rowIndex])) rowIndex++
-    const rows: DeployContactInput[] = []
+    const rows: Record<string, unknown>[] = []
     for (; rowIndex < lines.length; rowIndex++) {
       const line = lines[rowIndex]
       if (!line.includes('|') || isTableDivider(line)) break
@@ -198,8 +213,7 @@ function extractMarkdownTableContacts(prompt: string): DeployContactInput[] | un
         else if (field === 'email') record.email = cellEmail(raw)
         else record[field] = asTrimmed(raw)
       })
-      const parsed = normalizeContactRow(record)
-      if (!('error' in parsed)) rows.push(parsed)
+      rows.push(record)
     }
     if (rows.length) return rows.slice(0, MAX_CONTACTS)
   }
@@ -232,7 +246,7 @@ function splitCsvRow(line: string, delim: string): string[] {
   return cells
 }
 
-function extractCsvContacts(prompt: string): DeployContactInput[] | undefined {
+function extractCsvRecords(prompt: string, requireName = true): Record<string, unknown>[] | undefined {
   const lines = prompt.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -240,8 +254,8 @@ function extractCsvContacts(prompt: string): DeployContactInput[] | undefined {
     const delim = line.includes('\t') ? '\t' : line.includes(',') ? ',' : ''
     if (!delim) continue
     const headers = splitCsvRow(line, delim).map(headerField)
-    if (!headers.includes('name')) continue
-    const rows: DeployContactInput[] = []
+    if (!isKeyHeader(headers, requireName)) continue
+    const rows: Record<string, unknown>[] = []
     for (let rowIndex = i + 1; rowIndex < lines.length; rowIndex++) {
       const rawLine = lines[rowIndex].trim()
       if (!rawLine) break
@@ -255,8 +269,7 @@ function extractCsvContacts(prompt: string): DeployContactInput[] | undefined {
         else if (field === 'email') record.email = cellEmail(raw) ?? asTrimmed(raw)
         else record[field] = asTrimmed(raw)
       })
-      const parsed = normalizeContactRow(record)
-      if (!('error' in parsed)) rows.push(parsed)
+      rows.push(record)
     }
     if (rows.length) return rows.slice(0, MAX_CONTACTS)
   }
@@ -269,7 +282,18 @@ export function extractContactsFromPrompt(prompt: string): DeployContactInput[] 
     const parsed = parseDeployContacts(value)
     if (parsed.ok && parsed.contacts?.length) return parsed.contacts
   }
-  return extractMarkdownTableContacts(prompt) ?? extractCsvContacts(prompt)
+  return namedRows(extractMarkdownTableRecords(prompt)) ?? namedRows(extractCsvRecords(prompt))
+}
+
+/** Rows keyed by email, LinkedIn URL, or CRM id (no name required), from JSON, a markdown table, or CSV. */
+export function extractRecordsFromText(text: string): Record<string, unknown>[] | undefined {
+  for (const value of jsonArraysIn(text)) {
+    const rows = (value as unknown[]).filter(
+      (row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row)
+    )
+    if (rows.length) return rows.slice(0, MAX_CONTACTS)
+  }
+  return extractMarkdownTableRecords(text, false) ?? extractCsvRecords(text, false)
 }
 
 export const PROMPT_CONTACTS_HINT =

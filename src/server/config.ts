@@ -1,36 +1,39 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { isProduction } from './env'
 
 export interface ServerConfig {
   /** Public URL of this API (used in OAuth redirects) */
   publicUrl: string
+  /** Older API origins that still route here; MCP OAuth metadata answers with whichever one was called. */
+  publicUrlAliases: string[]
   /** Logged-in website (dashboard + tool UIs) */
   appUrl: string
   /** Bind host — 0.0.0.0 for hosted */
   host: string
   port: number
-  /** Deep link scheme for desktop OAuth return */
-  deepLinkScheme: string
   demoMode: boolean
   google: {
     clientId: string
     clientSecret: string
-    scopes: string
     /** Platform mailbox refresh token — outbound is Jargon-owned, not the customer */
     refreshToken: string
+  }
+  /** Customer mailboxes (Outlook / Microsoft 365). Gmail mailboxes use `google`. */
+  microsoft: {
+    clientId: string
+    clientSecret: string
+  }
+  mailboxes: {
+    /** Refuse the shared pool; every org must connect its own mailbox. */
+    requireOrgMailbox: boolean
+    /** Per org mailbox per UTC day. */
+    dailyLimit: number
   }
   hubspot: {
     clientId: string
     clientSecret: string
     scopes: string
-  }
-  twilio: {
-    accountSid: string
-    authToken: string
-    apiKeySid: string
-    apiKeySecret: string
-    twimlAppSid: string
-    fromNumber: string
   }
   plivo: {
     authId: string
@@ -66,6 +69,8 @@ export interface ServerConfig {
     url: string
     anonKey: string
     serviceRoleKey: string
+    /** Signups must confirm their email before the first sign-in. On by default in production. */
+    requireEmailVerification: boolean
   }
   railway: {
     clientId: string
@@ -212,33 +217,34 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
 
   return {
     publicUrl,
+    publicUrlAliases: (process.env.JARGON_PUBLIC_URL_ALIASES ?? '')
+      .split(',')
+      .map((url) => url.trim().replace(/\/$/, ''))
+      .filter((url) => /^https?:\/\//.test(url)),
     appUrl: (process.env.JARGON_APP_URL ?? 'http://127.0.0.1:5180').replace(/\/$/, ''),
     host: process.env.JARGON_API_HOST ?? '127.0.0.1',
     port,
-    deepLinkScheme: process.env.JARGON_DEEP_LINK ?? 'jargon',
-    demoMode: process.env.JARGON_DEMO_MODE === '1' || !(hasVoice && hasGoogle),
+    demoMode:
+      !isProduction() && (process.env.JARGON_DEMO_MODE === '1' || !(hasVoice && hasGoogle)),
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID ?? '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-      scopes:
-        process.env.GOOGLE_SCOPES ??
-        'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
       refreshToken: gmailRefresh
+    },
+    microsoft: {
+      clientId: (process.env.MICROSOFT_CLIENT_ID ?? '').trim(),
+      clientSecret: (process.env.MICROSOFT_CLIENT_SECRET ?? '').trim()
+    },
+    mailboxes: {
+      requireOrgMailbox: process.env.JARGON_REQUIRE_ORG_MAILBOX === '1',
+      dailyLimit: Math.max(0, Number(process.env.JARGON_MAILBOX_DAILY_LIMIT ?? 200) || 200)
     },
     hubspot: {
       clientId: process.env.HUBSPOT_CLIENT_ID ?? '',
       clientSecret: process.env.HUBSPOT_CLIENT_SECRET ?? '',
       scopes:
         process.env.HUBSPOT_SCOPES ??
-        'crm.objects.contacts.read crm.objects.companies.read oauth'
-    },
-    twilio: {
-      accountSid: (process.env.TWILIO_ACCOUNT_SID ?? '').trim(),
-      authToken: (process.env.TWILIO_AUTH_TOKEN ?? '').trim(),
-      apiKeySid: (process.env.TWILIO_API_KEY_SID ?? '').trim(),
-      apiKeySecret: (process.env.TWILIO_API_KEY_SECRET ?? '').trim(),
-      twimlAppSid: (process.env.TWILIO_TWIML_APP_SID ?? '').trim(),
-      fromNumber: (process.env.TWILIO_FROM_NUMBER ?? '').trim()
+        'crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read oauth'
     },
     plivo: {
       authId: (process.env.PLIVO_AUTH_ID ?? '').trim(),
@@ -262,7 +268,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     supabase: {
       url: (process.env.SUPABASE_URL ?? '').trim().replace(/\/$/, ''),
       anonKey: (process.env.SUPABASE_ANON_KEY ?? '').trim(),
-      serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
+      serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim(),
+      requireEmailVerification:
+        process.env.JARGON_REQUIRE_EMAIL_VERIFICATION === '1' ||
+        (isProduction() && process.env.JARGON_REQUIRE_EMAIL_VERIFICATION !== '0')
     },
     railway: {
       clientId: (process.env.RAILWAY_CLIENT_ID ?? '').trim(),

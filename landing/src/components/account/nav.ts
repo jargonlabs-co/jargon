@@ -93,9 +93,9 @@ export function previewSnapshot(): AccountSnapshot {
     claude: {
       connected: false,
       connectedAt: null,
-      mcpUrl: 'https://www.jargonlabs.co/mcp',
+      mcpUrl: 'https://api.jargonlabs.co/mcp',
       connectorUrl:
-        'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Jargon&connectorUrl=https%3A%2F%2Fwww.jargonlabs.co%2Fmcp'
+        'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Jargon&connectorUrl=https%3A%2F%2Fapi.jargonlabs.co%2Fmcp'
     }
   }
 }

@@ -21,7 +21,7 @@ export type ContactStatus =
   | 'interested'
   | 'not_interested'
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
-export type CallMode = 'demo' | 'plivo' | 'twilio'
+export type CallMode = 'demo' | 'plivo'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
 export type Channel = 'email' | 'call' | 'linkedin'
 export type FieldOrigin = 'identity' | 'attrs'
@@ -76,16 +76,15 @@ export type DeploySpecInput = {
   kind?: ProjectKind
 }
 
-export type ConnectionProvider = 'hubspot' | 'gmail' | 'twilio' | 'heyreach' | 'postgres' | 'railway'
+export type ConnectionProvider = 'hubspot' | 'heyreach' | 'postgres' | 'railway' | MailboxProvider
+/** The customer's own sending mailbox. */
+export type MailboxProvider = 'gmail' | 'outlook'
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'pending'
 
 export interface User {
   id: string
   email: string
   name: string
-  /** Present only for legacy rows; login never uses Railway passwords. */
-  passwordHash?: string
-  passwordSalt?: string
   /** Supabase Auth user id — required for product login */
   supabaseUserId?: string
   createdAt: number
@@ -96,6 +95,8 @@ export interface Org {
   id: string
   name: string
   slug: string
+  /** Sender postal address for the email footer (CAN-SPAM). */
+  postalAddress?: string
   createdAt: number
   updatedAt: number
 }
@@ -158,7 +159,7 @@ export interface IdempotencyRecord {
 export interface RateWindow {
   id: string
   orgId: string
-  action: 'message' | 'call' | 'pool_email' | 'pool_linkedin' | 'pool_voice'
+  action: 'message' | 'call' | 'pool_email' | 'pool_linkedin' | 'pool_voice' | 'mailbox_email'
   windowStart: number
   count: number
 }
@@ -213,6 +214,8 @@ export interface Project {
   spec?: WorkspaceSpec
   /** Discovered variables for this workspace's source (identity + attrs). */
   fieldCatalog?: FieldDef[]
+  /** Fields the deploy prompt asked the copy to use; contacts missing any are not enrolled. */
+  requestedFields?: string[]
   /** What a new Claude chat or a scheduled run should resume. */
   brief?: WorkspaceBrief
   createdAt: number
@@ -320,10 +323,12 @@ export interface Message {
   status: MessageStatus
   channel: 'email' | 'linkedin'
   providerMessageId?: string
-  /** HeyReach conversation + sending LinkedIn account, for threading replies */
+  /** Gmail thread, Outlook conversation, or HeyReach conversation; replies are matched on it. */
   providerThreadId?: string
   providerAccountId?: number
-  mode: 'demo' | 'gmail' | 'heyreach'
+  /** The org mailbox connection that sent it. Unset for the shared pool. */
+  senderConnectionId?: string
+  mode: 'demo' | 'gmail' | 'outlook' | 'heyreach'
   createdAt: number
   updatedAt: number
   sentAt?: number
@@ -343,95 +348,6 @@ export interface Activity {
   kind: 'call' | 'email' | 'draft' | 'linkedin' | 'note' | 'campaign' | 'system' | 'sync'
   summary: string
   createdAt: number
-}
-
-export interface ShareLink {
-  id: string
-  orgId: string
-  projectId: string
-  tokenHash: string
-  createdBy: string
-  label: string
-  expiresAt: number
-  revokedAt?: number
-  createdAt: number
-}
-
-export type PreviewCommentSection = 'queue' | 'talk_track' | 'email' | 'general'
-
-export interface PreviewComment {
-  id: string
-  orgId: string
-  projectId: string
-  shareLinkId: string
-  authorName: string
-  authorEmail?: string
-  body: string
-  contactId?: string
-  section?: PreviewCommentSection
-  /** Normalized 0–1 position on the preview canvas (root comments only). */
-  pinX?: number
-  pinY?: number
-  /** Reply to a root pinned comment. */
-  parentId?: string
-  createdAt: number
-}
-
-export interface SharedContact {
-  id: string
-  name: string
-  company: string
-  title: string
-  email: string
-  phone: string
-  city: string
-  status: ContactStatus
-  stepIndex: number
-  accountName?: string
-  channelsDone?: Channel[]
-  context?: string[]
-  companyDomain?: string
-  companyIndustry?: string
-  companySize?: string
-}
-
-export interface SharedPreviewPayload {
-  project: {
-    id: string
-    name: string
-    kind: ProjectKind
-    segment: string
-    description: string
-  }
-  contacts: SharedContact[]
-  sequences: Array<{ id: string; name: string; goal: string }>
-  steps: Array<{
-    id: string
-    day: number
-    channel: Channel
-    label: string
-    subject?: string
-    body?: string
-    order: number
-  }>
-  share: {
-    id: string
-    label: string
-    createdAt: number
-    commentCount: number
-  }
-  comments: Array<{
-    id: string
-    authorName: string
-    authorEmail?: string
-    body: string
-    contactId?: string
-    section?: PreviewCommentSection
-    pinX?: number
-    pinY?: number
-    parentId?: string
-    createdAt: number
-  }>
 }
 
 /** @deprecated Use orgBilling. Kept so hosted JSON/Postgres blobs migrate cleanly. */
@@ -484,6 +400,9 @@ export interface McpAccessToken {
   orgId: string
   createdAt: number
   expiresAt: number
+  /** Rotated on every refresh; the old one stops working. */
+  refreshHash?: string
+  refreshExpiresAt?: number
 }
 
 export interface Database {
@@ -508,14 +427,43 @@ export interface Database {
   calls: CallSession[]
   messages: Message[]
   activities: Activity[]
-  shareLinks: ShareLink[]
-  previewComments: PreviewComment[]
   idempotencyRecords: IdempotencyRecord[]
   rateWindows: RateWindow[]
   poolAssignments: PoolAssignment[]
   mcpOAuthClients: McpOAuthClient[]
   mcpAuthCodes: McpAuthCode[]
   mcpAccessTokens: McpAccessToken[]
+  suppressions: Suppression[]
+  hubspotOutbox: HubSpotOutboxItem[]
+}
+
+export type SuppressionKind = 'email' | 'domain' | 'phone' | 'linkedin'
+export type SuppressionReason = 'unsubscribed' | 'bounced' | 'complaint' | 'do_not_call' | 'manual'
+
+/** An activity waiting to be logged on the contact's HubSpot record. */
+export interface HubSpotOutboxItem {
+  id: string
+  orgId: string
+  contactId: string
+  hubspotContactId: string
+  kind: 'email' | 'call' | 'note'
+  properties: Record<string, string>
+  attempts: number
+  nextAttemptAt: number
+  lastError?: string
+  createdAt: number
+}
+
+/** A recipient Jargon must not contact. `orgId: null` applies to every org (hard bounces). */
+export interface Suppression {
+  id: string
+  orgId: string | null
+  kind: SuppressionKind
+  /** Lowercased email or domain, E.164 phone, or normalized LinkedIn URL. */
+  value: string
+  reason: SuppressionReason
+  source?: string
+  createdAt: number
 }
 
 export interface ProjectBundle {

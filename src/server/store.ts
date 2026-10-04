@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import type { Database } from './types'
-import { ensureBootstrapTenant } from './bootstrap'
+import { isProduction } from './env'
 
 export interface DataStore {
   get db(): Database
@@ -9,6 +9,8 @@ export interface DataStore {
   update(mutator: (db: Database) => void): Database
   /** Wait for pending durable writes (Postgres). No-op for JsonStore. */
   flush?(): Promise<void>
+  /** False once another process owns the state (Postgres). Absent means always the writer. */
+  isWriter?(): Promise<boolean>
 }
 
 const EMPTY: Database = {
@@ -33,20 +35,18 @@ const EMPTY: Database = {
   calls: [],
   messages: [],
   activities: [],
-  shareLinks: [],
-  previewComments: [],
   idempotencyRecords: [],
   rateWindows: [],
   poolAssignments: [],
   mcpOAuthClients: [],
   mcpAuthCodes: [],
-  mcpAccessTokens: []
+  mcpAccessTokens: [],
+  suppressions: [],
+  hubspotOutbox: []
 }
 
 function migrateDb(raw: Partial<Database>): Database {
   const db: Database = { ...structuredClone(EMPTY), ...raw } as Database
-  if (!db.shareLinks) db.shareLinks = []
-  if (!db.previewComments) db.previewComments = []
   if (!db.apiKeys) db.apiKeys = []
   if (!db.subscriptions) db.subscriptions = []
   if (!db.orgBilling) db.orgBilling = []
@@ -60,6 +60,16 @@ function migrateDb(raw: Partial<Database>): Database {
   if (!db.mcpOAuthClients) db.mcpOAuthClients = []
   if (!db.mcpAuthCodes) db.mcpAuthCodes = []
   if (!db.mcpAccessTokens) db.mcpAccessTokens = []
+  if (!db.suppressions) db.suppressions = []
+  if (!db.hubspotOutbox) db.hubspotOutbox = []
+  const legacy = db as Database & { shareLinks?: unknown; previewComments?: unknown }
+  delete legacy.shareLinks
+  delete legacy.previewComments
+  for (const user of db.users) {
+    const row = user as typeof user & { passwordHash?: unknown; passwordSalt?: unknown }
+    delete row.passwordHash
+    delete row.passwordSalt
+  }
   for (const key of db.apiKeys) {
     if (!key.environment) {
       key.environment = key.prefix.startsWith('jarg_test_') ? 'sandbox' : 'live'
@@ -105,14 +115,10 @@ export class JsonStore implements DataStore {
   private filePath: string
   private data: Database
 
-  constructor(filePath: string, options?: { bootstrap?: boolean }) {
+  constructor(filePath: string) {
     this.filePath = filePath
     this.data = this.load()
-    if (options?.bootstrap !== false) {
-      ensureBootstrapTenant(this)
-      this.data = migrateDb(this.data)
-      this.persist()
-    }
+    this.persist()
   }
 
   get db(): Database {
@@ -120,16 +126,17 @@ export class JsonStore implements DataStore {
   }
 
   private load(): Database {
-    try {
-      if (!existsSync(this.filePath)) {
-        mkdirSync(dirname(this.filePath), { recursive: true })
-        this.persist(EMPTY)
-        return structuredClone(EMPTY)
-      }
-      const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as Partial<Database>
-      return migrateDb(raw)
-    } catch {
+    if (!existsSync(this.filePath)) {
+      mkdirSync(dirname(this.filePath), { recursive: true })
       return structuredClone(EMPTY)
+    }
+    const text = readFileSync(this.filePath, 'utf8')
+    try {
+      return migrateDb(JSON.parse(text) as Partial<Database>)
+    } catch (err) {
+      throw new Error(
+        `Could not parse ${this.filePath}; refusing to overwrite it (${err instanceof Error ? err.message : err})`
+      )
     }
   }
 
@@ -152,26 +159,28 @@ export class JsonStore implements DataStore {
 
 export { migrateDb as migrateDatabase }
 
-export function defaultDbPath(userDataPath: string): string {
-  return join(userDataPath, 'jargon-db.json')
-}
-
 export function hostedDbPath(cwd = process.cwd()): string {
   return process.env.JARGON_DB_PATH ?? join(cwd, 'data', 'jargon-db.json')
 }
 
-/** Hosted API store — Postgres when DATABASE_URL is set, else JSON file. */
-export async function createHostedStore(options?: {
-  bootstrap?: boolean
-}): Promise<{ store: DataStore; backend: 'postgres' | 'json'; label: string }> {
+/** Hosted API store — Postgres when DATABASE_URL is set, else JSON file (dev only). */
+export async function createHostedStore(options: { onFenced?: () => void } = {}): Promise<{
+  store: DataStore
+  backend: 'postgres' | 'json'
+  label: string
+}> {
   const databaseUrl = process.env.DATABASE_URL?.trim()
   if (databaseUrl) {
     const { PgStore } = await import('./pgStore')
-    const store = await PgStore.connect(databaseUrl, structuredClone(EMPTY), options)
-    return { store, backend: 'postgres', label: 'postgres:jargon_state' }
+    const store = await PgStore.connect(databaseUrl, structuredClone(EMPTY))
+    if (options.onFenced) store.onFenced = options.onFenced
+    return { store, backend: 'postgres', label: 'postgres:jargon_records' }
+  }
+  if (isProduction()) {
+    throw new Error('DATABASE_URL is required in production; JSON-file storage is dev only')
   }
   const dbPath = hostedDbPath()
   mkdirSync(dirname(dbPath), { recursive: true })
-  const store = new JsonStore(dbPath, options)
+  const store = new JsonStore(dbPath)
   return { store, backend: 'json', label: dbPath }
 }

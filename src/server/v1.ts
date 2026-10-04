@@ -7,7 +7,8 @@ import type { ServerConfig } from './config'
 import { requireApiKey, toPublicUser } from './auth'
 import { readIdempotency, writeIdempotency } from './idempotency'
 import { consumeRateLimit } from './rateLimit'
-import { parseDeployContacts, parseRequiredContacts } from './deployContacts'
+import { MAX_CONTACTS, parseDeployContacts, parseRequiredContacts } from './deployContacts'
+import { upsertEnrichment } from './enrichment'
 import {
   addPublicContactsAndEnroll,
   addPublicNote,
@@ -46,6 +47,8 @@ import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from '.
 import { claudeConnectorStatus } from './mcpOauth'
 import { voiceIsLive } from './providers/voice'
 import { platformGmailReady } from './providers/gmail'
+import { mountComplianceRoutes } from './complianceRoutes'
+
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
   return Array.isArray(value) ? value[0] : value
@@ -183,6 +186,11 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       ...meBillingFields(credits),
       claude: claudeConnectorStatus(store, config, org.id)
     })
+  })
+
+  mountComplianceRoutes(router, store, auth, {
+    suppressions: '/suppressions',
+    compliance: '/account/compliance'
   })
 
   router.get('/account/credits', auth, async (req, res) => {
@@ -553,6 +561,29 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     res.json({ contact: addPublicNote(store, contact.id, note) })
+  })
+
+  router.post('/contacts/enrichment', auth, async (req, res) => {
+    const rows = Array.isArray(req.body?.contacts)
+      ? (req.body.contacts as unknown[]).filter(
+          (row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row)
+        )
+      : []
+    if (!rows.length || rows.length > MAX_CONTACTS) {
+      res.status(400).json({ error: `contacts must be an array of 1–${MAX_CONTACTS} objects` })
+      return
+    }
+    const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId : undefined
+    if (projectId && !findOrgProject(store, req.auth!.org.id, projectId)) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json(
+      await upsertEnrichment(store, config, req.auth!.org.id, rows, {
+        projectId,
+        sandbox: req.auth!.environment === 'sandbox'
+      })
+    )
   })
 
   router.post('/contacts/:id/unenroll', auth, (req, res) => {

@@ -1,4 +1,5 @@
 import type { ServerConfig } from '../config'
+import { isProduction } from '../env'
 import {
   getConnection,
   readSecrets,
@@ -417,6 +418,7 @@ export async function sendHeyReachLinkedInMessage(input: {
 
   const resolved = resolveHeyReachApiKey(input.store, input.orgId, input.config)
   if (!resolved || resolved.demo) {
+    if (isProduction()) throw new HeyReachError('LinkedIn sending is not available right now.', 503)
     return { id: `demo_li_${Date.now()}`, mode: 'demo', delivery: 'demo' }
   }
 

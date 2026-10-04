@@ -10,7 +10,8 @@ import {
   pullHubSpotContacts,
   pullHubSpotContactsUntilReady,
   writeHubSpotContactsToProjects,
-  type HubSpotContactPull
+  type HubSpotContactPull,
+  hubspotAccessToken
 } from './providers/hubspot'
 import {
   fetchPostgresProspects,
@@ -158,8 +159,8 @@ export async function createProjectRecord(
     try {
       const wait = orgWaitsForHubSpotEnrichment(store, orgId)
       const pull = wait
-        ? await pullHubSpotContactsUntilReady(secrets.accessToken, limit, demo)
-        : await pullHubSpotContacts(secrets.accessToken, limit, demo)
+        ? await pullHubSpotContactsUntilReady(await hubspotAccessToken(store, config, conn), limit, demo)
+        : await pullHubSpotContacts(await hubspotAccessToken(store, config, conn), limit, demo)
       const pipeline = isPriorityPipelinePrompt(prompt)
       if (pipeline || !wait || pull.recentlyPending === 0) {
         writeHubSpotContactsToProjects(store, orgId, pull.reachable, projectId)

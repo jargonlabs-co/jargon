@@ -40,11 +40,11 @@ Do not build a separate store or cache prospect PII locally. Pass the working li
 Prefer the MCP ([MCP.md](./MCP.md)):
 
 ```bash
-claude mcp add --scope user \
-  --env JARGON_API_URL=https://jargon-api-production.up.railway.app \
-  --env JARGON_API_KEY=jarg_test_... \
-  jargon -- npx -y @jargon_labs/mcp
+claude mcp add --scope user --transport http jargon https://api.jargonlabs.co/mcp \
+  --header "Authorization: Bearer jarg_test_..."
 ```
+
+The npm stdio package `@jargon_labs/mcp` is deprecated and no longer gets new tools.
 
 Or raw HTTP:
 

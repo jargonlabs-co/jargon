@@ -6,7 +6,16 @@ import { resolveApiKeyAuth } from './apiKeys'
 import type { ApiKeyEnvironment } from './types'
 
 const CODE_TTL_MS = 10 * 60 * 1000
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+/** Sliding: each refresh issues a new refresh token good for this long. */
+const REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
+type TokenResponse = {
+  access_token: string
+  token_type: 'Bearer'
+  expires_in: number
+  refresh_token: string
+}
 
 export type McpActor = {
   userId: string
@@ -17,6 +26,13 @@ export type McpActor = {
 
 export function issuerUrl(config: ServerConfig): string {
   return config.publicUrl.replace(/\/$/, '')
+}
+
+/** The configured origin the client called (a legacy alias, or the canonical public URL). */
+export function originFor(config: ServerConfig, host?: string): string {
+  const h = (host ?? '').toLowerCase()
+  const alias = h ? config.publicUrlAliases.find((url) => new URL(url).host.toLowerCase() === h) : undefined
+  return alias ?? issuerUrl(config)
 }
 
 export function mcpResourceUrl(config: ServerConfig): string {
@@ -35,7 +51,7 @@ export function claudeConnectorInstallUrl(mcpUrl: string): string {
 export function claudeConnectorStatus(store: DataStore, config: ServerConfig, orgId: string) {
   const now = Date.now()
   const token = store.db.mcpAccessTokens
-    .filter((row) => row.orgId === orgId && row.expiresAt > now)
+    .filter((row) => row.orgId === orgId && Math.max(row.expiresAt, row.refreshExpiresAt ?? 0) > now)
     .sort((a, b) => b.createdAt - a.createdAt)[0]
   const mcpUrl = mcpResourceUrl(config)
   return {
@@ -46,10 +62,9 @@ export function claudeConnectorStatus(store: DataStore, config: ServerConfig, or
   }
 }
 
-export function protectedResourceMetadata(config: ServerConfig) {
-  const issuer = issuerUrl(config)
+export function protectedResourceMetadata(config: ServerConfig, issuer = issuerUrl(config)) {
   return {
-    resource: mcpResourceUrl(config),
+    resource: `${issuer}/mcp`,
     authorization_servers: [issuer],
     scopes_supported: ['jargon'],
     bearer_methods_supported: ['header'],
@@ -57,23 +72,22 @@ export function protectedResourceMetadata(config: ServerConfig) {
   }
 }
 
-export function authorizationServerMetadata(config: ServerConfig) {
-  const issuer = issuerUrl(config)
+export function authorizationServerMetadata(config: ServerConfig, issuer = issuerUrl(config)) {
   return {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: ['jargon']
   }
 }
 
-export function wwwAuthenticate(config: ServerConfig): string {
-  const meta = `${issuerUrl(config)}/.well-known/oauth-protected-resource`
+export function wwwAuthenticate(config: ServerConfig, issuer = issuerUrl(config)): string {
+  const meta = `${issuer}/.well-known/oauth-protected-resource`
   return `Bearer realm="jargon", resource_metadata="${meta}", scope="jargon"`
 }
 
@@ -89,12 +103,22 @@ export function registerMcpClient(
   if (!redirectUris.length) {
     throw new Error('redirect_uris required')
   }
+  if (redirectUris.length > 10 || redirectUris.some((u) => u.length > 2048)) {
+    throw new Error('redirect_uris too large')
+  }
+  const clientName = input.client_name?.trim().slice(0, 200) || 'Claude'
+  const sameUris = (a: string[]) =>
+    a.length === redirectUris.length && a.every((u, i) => u === redirectUris[i])
+  const existing = store.db.mcpOAuthClients.find(
+    (c) => c.clientName === clientName && sameUris(c.redirectUris)
+  )
+  if (existing) return { client_id: existing.clientId, redirect_uris: existing.redirectUris }
   const clientId = `mcp_${randomToken(16)}`
   store.update((db) => {
     db.mcpOAuthClients.push({
       id: uid('mcpcli'),
       clientId,
-      clientName: input.client_name?.trim() || 'Claude',
+      clientName,
       redirectUris,
       createdAt: Date.now()
     })
@@ -144,7 +168,7 @@ export function exchangeAuthCode(
     redirectUri: string
     codeVerifier: string
   }
-): { access_token: string; token_type: 'Bearer'; expires_in: number } {
+): TokenResponse {
   const now = Date.now()
   const row = store.db.mcpAuthCodes.find(
     (c) => c.codeHash === hashToken(input.code) && c.expiresAt > now
@@ -153,22 +177,55 @@ export function exchangeAuthCode(
   if (row.clientId !== input.clientId) throw new Error('client_id mismatch')
   if (row.redirectUri !== input.redirectUri) throw new Error('redirect_uri mismatch')
   if (pkceS256(input.codeVerifier) !== row.codeChallenge) throw new Error('PKCE verification failed')
+  return issueTokens(store, row, { consumeCodeId: row.id })
+}
 
-  const token = `mcp_${randomToken(24)}`
+/** Rotate: the presented refresh token is spent and a new access + refresh pair is issued. */
+export function refreshAccessToken(
+  store: DataStore,
+  input: { refreshToken: string; clientId?: string }
+): TokenResponse {
+  const now = Date.now()
+  const hash = hashToken(input.refreshToken)
+  const row = store.db.mcpAccessTokens.find((t) => t.refreshHash === hash && (t.refreshExpiresAt ?? 0) > now)
+  if (!row) throw new Error('Invalid or expired refresh token')
+  if (input.clientId && input.clientId !== row.clientId) throw new Error('client_id mismatch')
+  const stillMember = store.db.memberships.some((m) => m.userId === row.userId && m.orgId === row.orgId)
+  if (!stillMember) throw new Error('Invalid or expired refresh token')
+  return issueTokens(store, row, { replaceTokenId: row.id })
+}
+
+function issueTokens(
+  store: DataStore,
+  owner: { clientId: string; userId: string; orgId: string },
+  opts: { consumeCodeId?: string; replaceTokenId?: string }
+): TokenResponse {
+  const now = Date.now()
+  const access = `mcp_${randomToken(24)}`
+  const refresh = `mcpr_${randomToken(32)}`
   store.update((db) => {
-    db.mcpAuthCodes = db.mcpAuthCodes.filter((c) => c.id !== row.id)
-    db.mcpAccessTokens = db.mcpAccessTokens.filter((t) => t.expiresAt > now)
+    if (opts.consumeCodeId) db.mcpAuthCodes = db.mcpAuthCodes.filter((c) => c.id !== opts.consumeCodeId)
+    db.mcpAccessTokens = db.mcpAccessTokens.filter(
+      (t) => t.id !== opts.replaceTokenId && Math.max(t.expiresAt, t.refreshExpiresAt ?? 0) > now
+    )
     db.mcpAccessTokens.push({
       id: uid('mcptok'),
-      tokenHash: hashToken(token),
-      clientId: row.clientId,
-      userId: row.userId,
-      orgId: row.orgId,
+      tokenHash: hashToken(access),
+      clientId: owner.clientId,
+      userId: owner.userId,
+      orgId: owner.orgId,
       createdAt: now,
-      expiresAt: now + TOKEN_TTL_MS
+      expiresAt: now + TOKEN_TTL_MS,
+      refreshHash: hashToken(refresh),
+      refreshExpiresAt: now + REFRESH_TTL_MS
     })
   })
-  return { access_token: token, token_type: 'Bearer', expires_in: Math.floor(TOKEN_TTL_MS / 1000) }
+  return {
+    access_token: access,
+    token_type: 'Bearer',
+    expires_in: Math.floor(TOKEN_TTL_MS / 1000),
+    refresh_token: refresh
+  }
 }
 
 export function resolveMcpBearer(store: DataStore, header?: string | null): McpActor | null {

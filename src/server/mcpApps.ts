@@ -85,7 +85,7 @@ export function registerEmailWorkspaceApp(server: McpServer): void {
 }
 
 export function emailWorkspacePreviewHtml(payloadJson?: string): string {
-  const payload = payloadJson?.trim() || JSON.stringify(SAMPLE_EMAIL_WORKSPACE)
+  const payload = (payloadJson?.trim() || JSON.stringify(SAMPLE_EMAIL_WORKSPACE)).replace(/</g, '\\u003c')
   const shim = `globalThis.ExtApps={applyHostStyleVariables:()=>{},applyDocumentTheme:()=>{},App:class{
     constructor(){this.h={theme:'light'}}
     ontoolresult; onhostcontextchanged;

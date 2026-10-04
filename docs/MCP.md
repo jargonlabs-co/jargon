@@ -2,7 +2,7 @@
 
 Users on jargonlabs.co add Jargon to Claude. They **sign in with their Jargon account**. They do not paste an API key.
 
-Hosted endpoint: `https://www.jargonlabs.co/mcp`
+Hosted endpoint: `https://api.jargonlabs.co/mcp`
 
 ## What a customer does
 

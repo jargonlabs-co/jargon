@@ -33,8 +33,6 @@ function emptyDb(): Database {
     calls: [],
     messages: [],
     activities: [],
-    shareLinks: [],
-    previewComments: [],
     idempotencyRecords: [],
     rateWindows: [],
     mcpOAuthClients: [],

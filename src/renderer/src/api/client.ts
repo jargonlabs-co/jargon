@@ -116,7 +116,7 @@ export const api = {
   voiceToken: () =>
     request<{
       token: string
-      mode: 'demo' | 'plivo' | 'twilio'
+      mode: 'demo' | 'plivo'
       identity: string
       accessToken?: string
       username?: string

@@ -1,4 +1,5 @@
 import type { ServerConfig } from '../config'
+import { isProduction } from '../env'
 import {
   createOAuthState,
   getConnection,
@@ -56,6 +57,7 @@ export async function exchangeRailwayCode(
   code: string
 ): Promise<ProviderSecrets & { accountLabel: string }> {
   if (code === 'demo' || !railwayConfigured(config)) {
+    if (isProduction()) throw new Error('Railway OAuth is not configured on this server')
     return {
       accessToken: 'demo-railway-token',
       refreshToken: 'demo-railway-refresh',

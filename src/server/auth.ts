@@ -190,8 +190,6 @@ export function provisionWorkspace(
         const row = db.users.find((u) => u.id === existing.id)
         if (row) {
           row.supabaseUserId = input.supabaseUserId
-          row.passwordHash = undefined
-          row.passwordSalt = undefined
           row.updatedAt = Date.now()
         }
       })

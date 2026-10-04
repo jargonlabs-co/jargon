@@ -5,11 +5,14 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import type { DataStore } from './store'
 import type { ServerConfig } from './config'
 import { requireAuth } from './auth'
+import { isProduction } from './env'
 import {
   authorizationServerMetadata,
   exchangeAuthCode,
+  refreshAccessToken,
   issueAuthCode,
   mcpResourceUrl,
+  originFor,
   protectedResourceMetadata,
   registerMcpClient,
   resolveMcpBearer,
@@ -43,25 +46,26 @@ export function mountMcp(
   const node = toNodeHandler(handler)
   const auth = requireAuth(store, config)
 
-  app.get('/mcp/apps/email-workspace', (req, res) => {
-    const payload =
-      typeof req.query.payload === 'string'
-        ? req.query.payload
-        : req.query.surface === 'queue'
+  if (!isProduction()) {
+    app.get('/mcp/apps/email-workspace', (req, res) => {
+      const payload =
+        req.query.surface === 'queue'
           ? JSON.stringify(SAMPLE_QUEUE_WORKSPACE)
           : req.query.surface === 'tasks'
             ? JSON.stringify(SAMPLE_TASKS_WORKSPACE)
             : undefined
-    res.type('html').send(emailWorkspacePreviewHtml(payload))
-  })
+      res.type('html').send(emailWorkspacePreviewHtml(payload))
+    })
+  }
 
-  const sendMeta = (_req: Request, res: Response) => {
-    res.json(protectedResourceMetadata(config))
+  const origin = (req: Request) => originFor(config, req.get('host'))
+  const sendMeta = (req: Request, res: Response) => {
+    res.json(protectedResourceMetadata(config, origin(req)))
   }
   app.get('/.well-known/oauth-protected-resource', sendMeta)
   app.get('/.well-known/oauth-protected-resource/mcp', sendMeta)
-  app.get('/.well-known/oauth-authorization-server', (_req, res) => {
-    res.json(authorizationServerMetadata(config))
+  app.get('/.well-known/oauth-authorization-server', (req, res) => {
+    res.json(authorizationServerMetadata(config, origin(req)))
   })
 
   app.post('/oauth/register', (req, res) => {
@@ -128,6 +132,22 @@ export function mountMcp(
       client_id?: string
       redirect_uri?: string
       code_verifier?: string
+      refresh_token?: string
+    }
+    if (body.grant_type === 'refresh_token') {
+      if (!body.refresh_token) {
+        res.status(400).json({ error: 'invalid_request', error_description: 'refresh_token required' })
+        return
+      }
+      try {
+        res.json(refreshAccessToken(store, { refreshToken: body.refresh_token, clientId: body.client_id }))
+      } catch (err) {
+        res.status(400).json({
+          error: 'invalid_grant',
+          error_description: err instanceof Error ? err.message : 'Refresh failed'
+        })
+      }
+      return
     }
     if (body.grant_type && body.grant_type !== 'authorization_code') {
       res.status(400).json({ error: 'unsupported_grant_type' })
@@ -153,7 +173,7 @@ export function mountMcp(
   app.all('/mcp', (req, res) => {
     const actor = resolveMcpBearer(store, req.header('authorization'))
     if (!actor) {
-      res.setHeader('WWW-Authenticate', wwwAuthenticate(config))
+      res.setHeader('WWW-Authenticate', wwwAuthenticate(config, origin(req)))
       res.status(401).json({ error: 'Unauthorized', code: 'mcp_auth_required' })
       return
     }

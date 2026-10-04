@@ -152,8 +152,8 @@ export function KeysPage({
           Add to Claude Code:
           <br />
           <code>
-            claude mcp add --scope user --env JARGON_API_URL={getApiBase()} --env JARGON_API_KEY=
-            {lastKey.key} jargon -- npx -y @jargon_labs/mcp
+            claude mcp add --scope user --transport http jargon {getMcpUrl()} --header &quot;Authorization: Bearer{' '}
+            {lastKey.key}&quot;
           </code>
         </p>
       ) : null}

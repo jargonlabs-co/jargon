@@ -8,7 +8,7 @@ COPY src ./src
 
 ENV JARGON_API_HOST=0.0.0.0
 ENV PORT=8787
-ENV JARGON_DB_PATH=/data/jargon-db.json
+ENV NODE_ENV=production
 EXPOSE 8787
-# Persist /data with a Railway Volume (Docker VOLUME is not supported on Railway)
+# App state lives in Postgres (DATABASE_URL); the API refuses to boot without it.
 CMD ["npx", "tsx", "src/server/standalone.ts"]

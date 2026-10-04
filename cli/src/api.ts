@@ -5,6 +5,7 @@ export type DeployResult = {
   contactCount: number
   dashboardPath?: string
   project?: { name: string; prompt: string }
+  nextAction?: string
 }
 
 export type ProjectSummary = {
@@ -79,16 +80,19 @@ export async function createApiKey(
   })
 }
 
-export async function deployTool(
-  cfg: JargonConfig,
-  input: { prompt: string; label?: string }
-): Promise<DeployResult> {
-  return request(cfg, '/tools/deploy', {
+/** /v1 only accepts API keys. Swap a password-login session for one, once. */
+export async function ensureApiKey(cfg: JargonConfig, save: (cfg: JargonConfig) => void): Promise<JargonConfig> {
+  if (cfg.token.startsWith('jarg_')) return cfg
+  const created = await createApiKey(cfg, 'Jargon CLI')
+  const next = { ...cfg, token: created.key }
+  save(next)
+  return next
+}
+
+export async function deployTool(cfg: JargonConfig, input: { prompt: string }): Promise<DeployResult> {
+  return request(cfg, '/v1/tools/deploy', {
     method: 'POST',
-    body: JSON.stringify({
-      prompt: input.prompt,
-      label: input.label
-    })
+    body: JSON.stringify({ prompt: input.prompt })
   })
 }
 

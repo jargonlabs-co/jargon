@@ -91,14 +91,48 @@ function stickyExclusive<T extends { id: string }>(
   const taken = new Set(
     store.db.poolAssignments.filter((a) => a.channel === 'voice').map((a) => a.memberId)
   )
-  const free = members.find((m) => !taken.has(m.id))
+  const free = members.find((m) => !taken.has(m.id)) ?? reclaimIdleVoiceMember(store, members)
   if (!free) {
-    throw new PoolBudgetError(
-      'No free Plivo DIDs in the voice pool. Add a number to PLIVO_POOL_JSON (use the username Plivo returns after create — it appends a 12-digit suffix). Auto-provision is not enabled yet.'
+    console.error(
+      `[jargon] Voice pool exhausted (${members.length} DIDs, all held by orgs that called in the last ${voiceReclaimDays()} days). ` +
+        'Add a number to PLIVO_POOL_JSON (use the endpoint username Plivo returns after create, with its 12-digit suffix).'
     )
+    throw new PoolBudgetError('Calling is at capacity right now. The Jargon team has been notified; try again later.')
   }
   persistAssignment(store, orgId, 'voice', free.id)
+  const remaining = members.length - taken.size - (taken.has(free.id) ? 0 : 1)
+  if (remaining <= Math.max(1, Math.floor(members.length * 0.2))) {
+    console.warn(`[jargon] Voice pool low: ${remaining} of ${members.length} DIDs free`)
+  }
   return free
+}
+
+function voiceReclaimDays(): number {
+  const days = Number(process.env.JARGON_VOICE_RECLAIM_DAYS ?? 30)
+  return Number.isFinite(days) && days > 0 ? days : 30
+}
+
+/**
+ * A DID held by an org that hasn't called in JARGON_VOICE_RECLAIM_DAYS (default 30),
+ * longest idle first. Never one with a live call. The old org gets a new DID next time.
+ */
+function reclaimIdleVoiceMember<T extends { id: string }>(store: DataStore, members: T[]): T | undefined {
+  const cutoff = Date.now() - voiceReclaimDays() * 24 * 60 * 60 * 1000
+  const lastCall = new Map<string, number>()
+  for (const call of store.db.calls) {
+    lastCall.set(call.orgId, Math.max(lastCall.get(call.orgId) ?? 0, call.startedAt ?? 0))
+  }
+  const idle = store.db.poolAssignments
+    .filter((a) => a.channel === 'voice' && members.some((m) => m.id === a.memberId))
+    .map((a) => ({ a, last: Math.max(lastCall.get(a.orgId) ?? 0, a.createdAt) }))
+    .filter(({ a, last }) => last < cutoff && countLiveCallsForMember(store, a.memberId) === 0)
+    .sort((x, y) => x.last - y.last)[0]
+  if (!idle) return undefined
+  console.log(`[jargon] Reclaimed voice DID ${idle.a.memberId} from idle org ${idle.a.orgId}`)
+  store.update((db) => {
+    db.poolAssignments = db.poolAssignments.filter((a) => a.id !== idle.a.id)
+  })
+  return members.find((m) => m.id === idle.a.memberId)
 }
 
 function persistAssignment(
@@ -123,10 +157,10 @@ function persistAssignment(
   })
 }
 
-function consumeDailyBudget(
+export function consumeDailyBudget(
   store: DataStore,
   orgId: string,
-  action: 'pool_email' | 'pool_linkedin' | 'pool_voice',
+  action: 'pool_email' | 'pool_linkedin' | 'pool_voice' | 'mailbox_email',
   limit: number,
   label: string
 ): void {

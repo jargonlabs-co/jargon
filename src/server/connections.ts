@@ -32,6 +32,24 @@ export function readSecrets(connection: Connection): ProviderSecrets {
   return decryptJson<ProviderSecrets>(connection.secretsCipher)
 }
 
+/** Re-encrypt every stored secret under the current key. Returns counts. */
+export function reencryptConnectionSecrets(store: DataStore): { rotated: number; failed: number } {
+  let rotated = 0
+  let failed = 0
+  store.update((db) => {
+    for (const conn of db.connections) {
+      if (!conn.secretsCipher) continue
+      try {
+        conn.secretsCipher = encryptJson(decryptJson<ProviderSecrets>(conn.secretsCipher))
+        rotated += 1
+      } catch {
+        failed += 1
+      }
+    }
+  })
+  return { rotated, failed }
+}
+
 export function upsertConnection(
   store: DataStore,
   input: {
@@ -54,7 +72,8 @@ export function upsertConnection(
       existing.status = input.status
       existing.accountLabel = input.accountLabel
       existing.secretsCipher = encryptJson(input.secrets)
-      existing.meta = input.meta ?? existing.meta
+      const { writebackError: _cleared, ...meta } = input.meta ?? existing.meta
+      existing.meta = meta
       existing.error = input.error
       existing.updatedAt = now
       result = existing
@@ -128,9 +147,4 @@ export function consumeOAuthState(store: DataStore, id: string): OAuthState | nu
 
 export function oauthRedirectUri(config: ServerConfig, provider: ConnectionProvider): string {
   return `${config.publicUrl}/oauth/${provider}/callback`
-}
-
-export function desktopDeepLink(config: ServerConfig, path: string, params: Record<string, string>): string {
-  const qs = new URLSearchParams(params).toString()
-  return `${config.deepLinkScheme}://${path}?${qs}`
 }

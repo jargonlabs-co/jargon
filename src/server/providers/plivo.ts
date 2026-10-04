@@ -1,6 +1,8 @@
+import { createHmac } from 'crypto'
 import type { ServerConfig } from '../config'
+import { safeEqual } from '../crypto'
 import { plivoSipUsername } from '../outboundPools'
-import { toE164 } from './twilio'
+import { toE164 } from '../../shared/phone'
 
 export type PlivoVoiceReady = { ok: true } | { ok: false; error: string }
 
@@ -162,6 +164,11 @@ export function plivoDialXml(to: string, fromNumber: string, callbackUrl?: strin
 </Response>`
 }
 
+export function plivoRejectXml(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response><Hangup reason="rejected"/></Response>`
+}
+
 export async function hangupPlivoCall(config: ServerConfig, callUuid: string): Promise<void> {
   if (!config.plivo.authId || !config.plivo.authToken || !callUuid) return
   const res = await fetch(plivoApi(config, `/Call/${encodeURIComponent(callUuid)}/`), {
@@ -310,6 +317,52 @@ export async function syncPlivoApplication(config: ServerConfig): Promise<void> 
   if (attached) {
     console.log(`[jargon] Attached ${attached} Plivo endpoint(s) to the voice application`)
   }
+}
+
+type FormParams = Record<string, unknown>
+
+function paramValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v))
+  return value == null ? [] : [String(value)]
+}
+
+/** Plivo V3 webhook signature (matches plivo-node `validateV3Signature` for POST). */
+export function plivoV3Signature(
+  authToken: string,
+  url: string,
+  nonce: string,
+  params: FormParams
+): string {
+  const parsed = new URL(url)
+  const query = new Map<string, string[]>()
+  parsed.searchParams.forEach((value, key) => {
+    query.set(key, [...(query.get(key) ?? []), value])
+  })
+  const sortedQuery = [...query.keys()]
+    .sort()
+    .flatMap((key) => query.get(key)!.sort().map((v) => `${key}=${v}`))
+    .join('&')
+  const keys = Object.keys(params).sort()
+  let base = `${parsed.protocol}//${parsed.host}${parsed.pathname}`
+  if (keys.length) {
+    base += `?${sortedQuery}${sortedQuery ? '.' : ''}`
+    base += keys.flatMap((key) => paramValues(params[key]).sort().map((v) => key + v)).join('')
+  } else if (sortedQuery) {
+    base += `?${sortedQuery}`
+  }
+  return createHmac('sha256', authToken).update(`${base}.${nonce}`).digest('base64')
+}
+
+export function verifyPlivoSignature(input: {
+  authToken: string
+  url: string
+  nonce: string | undefined
+  signature: string | undefined
+  params: FormParams
+}): boolean {
+  if (!input.authToken || !input.nonce || !input.signature) return false
+  const expected = plivoV3Signature(input.authToken, input.url, input.nonce, input.params)
+  return input.signature.split(',').some((candidate) => safeEqual(candidate.trim(), expected))
 }
 
 export function plivoFormValue(body: Record<string, unknown>, ...keys: string[]): string {

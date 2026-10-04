@@ -1,3 +1,5 @@
+import { canonicalSignals } from './signalAliases'
+
 /** Ranked To-dos from whatever list is connected — HubSpot, Railway, warehouse, or an import. */
 export function isPriorityPipelinePrompt(prompt: string): boolean {
   const t = prompt.toLowerCase()
@@ -117,17 +119,14 @@ function asStringList(value: unknown): string[] {
   return []
 }
 
-function firstAttr(attrs: Record<string, unknown> | null | undefined, keys: string[]): string {
-  if (!attrs) return ''
-  for (const key of keys) {
-    const value = attrs[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
+function text(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'string') return value.trim()
+  if (Array.isArray(value)) return asStringList(value).join(', ')
   return ''
 }
 
-/** Rankable lines from Lusha/HubSpot/warehouse attrs — never invented. */
+/** Rankable lines from any source's attrs (vendor names mapped via SIGNAL_ALIASES) — never invented. */
 export function signalLinesFromAttrs(
   attrs?: Record<string, unknown> | null,
   warmth?: string | null
@@ -137,19 +136,19 @@ export function signalLinesFromAttrs(
     const text = line.trim()
     if (text && !facts.includes(text)) facts.push(text)
   }
-  for (const role of asStringList(attrs?.hiring)) push(`Hiring: ${role}`)
+  const signals = canonicalSignals(attrs)
+  for (const role of asStringList(signals.hiring)) push(`Hiring: ${role}`)
   for (const line of asStringList(attrs?.gtm_initiative)) push(line)
   if (!facts.some((line) => /\bintent\b/i.test(line))) {
-    const topics = firstAttr(attrs, ['intent_topics', 'lusha_intent_topics'])
-    for (const topic of asStringList(topics).slice(0, 3)) push(`Intent: ${topic}`)
+    for (const topic of asStringList(signals.intent_topics).slice(0, 3)) push(`Intent: ${topic}`)
   }
-  const signal = firstAttr(attrs, ['lusha_latest_signal', 'latest_signal'])
+  const signal = text(signals.latest_signal)
   if (signal) push(signal)
-  const seniority = firstAttr(attrs, ['seniority', 'lusha_seniority', 'hs_seniority'])
+  const seniority = text(signals.seniority)
   if (seniority) push(seniority)
-  const funding = firstAttr(attrs, ['funding_stage', 'lusha_funding_stage'])
+  const funding = text(signals.funding_stage)
   if (funding) push(`Funding: ${funding}`)
-  const tech = firstAttr(attrs, ['technologies', 'lusha_technologies'])
+  const tech = text(signals.technologies)
   if (tech) {
     const first = asStringList(tech)[0]
     if (first) push(`Uses ${first}`)
@@ -210,14 +209,9 @@ function cleanTitle(title: string | undefined): string {
   return value
 }
 
-function numAttr(attrs: Record<string, unknown> | null | undefined, keys: string[]): number {
-  if (!attrs) return 0
-  for (const key of keys) {
-    const value = attrs[key]
-    const n = typeof value === 'number' ? value : Number(String(value ?? '').trim())
-    if (Number.isFinite(n) && n > 0) return n
-  }
-  return 0
+function positive(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(String(value ?? '').trim())
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
 function intentBoost(score: number): number {
@@ -226,8 +220,8 @@ function intentBoost(score: number): number {
   return Math.min(40, Math.round(score * 0.4))
 }
 
-function hasBuyingIntent(facts: string[], attrs?: Record<string, unknown> | null): boolean {
-  if (numAttr(attrs, ['intent_score', 'intent_count', 'lusha_signal_score']) > 0) return true
+function hasBuyingIntent(facts: string[], intentScore: number, intentCount: number): boolean {
+  if (intentScore > 0 || intentCount > 0) return true
   return facts.some((line) => /\bintent\b|buying signal/i.test(line))
 }
 
@@ -242,11 +236,13 @@ export function scoreLead(input: {
   const company = cleanCompany(input.company)
   const title = cleanTitle(input.title)
   const facts = (input.facts ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 3)
-  const inboundFromSignals = hasBuyingIntent(facts, input.attrs)
-  const motion: LeadMotion = inboundFromSignals ? 'inbound' : h % 5 < 2 ? 'inbound' : 'outbound'
+  const signals = canonicalSignals(input.attrs)
+  const intentScore = positive(signals.intent_score)
+  const intentCount = positive(signals.intent_count)
+  const inboundFromSignals = hasBuyingIntent(facts, intentScore, intentCount)
+  const motion: LeadMotion = inboundFromSignals ? 'inbound' : 'outbound'
+  // The hash only breaks ties between otherwise equal people; it never adds a signal.
   let score = 22 + (h % 8)
-  const intentScore = numAttr(input.attrs, ['intent_score', 'lusha_signal_score'])
-  const intentCount = numAttr(input.attrs, ['intent_count'])
   if (intentScore) score += intentBoost(intentScore)
   else if (intentCount) score += Math.min(32, Math.round(intentCount * 8))
   if (isSalesExecTitle(title)) score += 14
@@ -255,7 +251,6 @@ export function scoreLead(input: {
   if (facts.some((line) => /^hiring:/i.test(line))) score += 8
   if (facts.some((line) => /^funding:/i.test(line))) score += 6
   if (inboundFromSignals && !intentScore && !intentCount) score += 10
-  if (motion === 'inbound' && !inboundFromSignals) score += 12
   score = Math.max(1, Math.min(99, score))
   if (facts.length) return { score, motion, signals: facts }
   const who = title && company ? `${title} at ${company}` : title || company

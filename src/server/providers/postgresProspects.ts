@@ -1,7 +1,7 @@
 import pg from 'pg'
 import { uid } from '../crypto'
 import type { DataStore } from '../store'
-import { buildProspectContext, prospectsToContacts, type ContextProspect } from './prospects'
+import { factsFromProspect, prospectsToContacts, type ContextProspect } from './prospects'
 import { extraAttrs } from '../../shared/fieldCatalog'
 import { hasReachableContact } from '../../shared/priorityOverlay'
 import { normalizeLinkedInUrl } from '../../shared/linkedinUrl'
@@ -155,13 +155,7 @@ function mapRow(
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
 
-  const context = buildProspectContext({
-    id: externalId,
-    company,
-    title,
-    companySize,
-    companyIndustry
-  })
+  const context = factsFromProspect({ title, company, city, companyIndustry, companySize, companyDomain })
   if (companyOpenRoles?.length || gtmInitiatives?.length) {
     context.length = 0
     if (title && company) context.push(`${title} at ${company}`)

@@ -210,6 +210,23 @@ export interface paths {
         patch: operations["updateSequence"];
         trace?: never;
     };
+    "/projects/{id}/sequence/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll contacts into the sequence and queue emails by step day */
+        post: operations["startSequence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/messages": {
         parameters: {
             query?: never;
@@ -344,6 +361,79 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/contacts/enrichment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge enrichment onto existing contacts
+         * @description Each row is matched by contactId, CRM id (crm_id / hubspot_id), email, or LinkedIn URL within your org. Extra fields become attrs (overwriting), blank email/phone/title/company fields are filled, and context lines are appended. Contacts that now have every requested field are enrolled if the sequence is running.
+         */
+        post: operations["upsertEnrichment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/suppressions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This org's do-not-contact list. Global hard bounces apply but are not listed. */
+        get: operations["listSuppressions"];
+        put?: never;
+        /** Block emails, domains, phone numbers (do-not-call), or LinkedIn URLs. Cancels queued messages they cover. */
+        post: operations["addSuppressions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/suppressions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove an org suppression */
+        delete: operations["removeSuppression"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/compliance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sender postal address shown in the email footer */
+        get: operations["getCompliance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set the sender postal address (CAN-SPAM) */
+        patch: operations["updateCompliance"];
         trace?: never;
     };
 }
@@ -525,7 +615,7 @@ export interface components {
             spec?: components["schemas"]["WorkspaceSpec"];
             fieldCatalog?: components["schemas"]["FieldDef"][];
             contactCount: number;
-            /** @description Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with www.jargonlabs.co. */
+            /** @description Path on jargonlabs.co, e.g. /tools/{id}. Do not prefix with the API host. */
             dashboardPath: string;
             /** @description Absolute URL to open the tool in the browser, e.g. https://jargonlabs.co/tools/{id} */
             dashboardUrl: string;
@@ -629,10 +719,11 @@ export interface components {
             status: "draft" | "queued" | "sent";
             subject?: string;
             body: string;
+            /** @description Required when status is queued. Unix ms or ISO-8601 datetime. */
             sendAt?: number | string;
-            /** Sequence step to bind this copy to. Drafts upsert onto this step instead of creating a second message. */
+            /** @description Sequence step to bind this copy to. Drafts upsert onto this step instead of creating a second message. */
             stepId?: string;
-            /** Alternative to stepId: the cadence day this copy belongs to. */
+            /** @description Alternative to stepId: the cadence day this copy belongs to. */
             day?: number;
         };
         PatchMessageRequest: {
@@ -674,7 +765,7 @@ export interface components {
             /** @enum {string} */
             channel: "email" | "linkedin";
             /** @enum {string} */
-            status: "draft" | "queued" | "sent" | "failed";
+            status: "draft" | "queued" | "sent" | "failed" | "cancelled";
             subject?: string;
             body: string;
             /** @enum {string} */
@@ -682,6 +773,7 @@ export interface components {
             createdAt?: number;
             sentAt?: number;
             sendAt?: number;
+            stepId?: string;
         };
         Call: {
             id: string;
@@ -691,7 +783,7 @@ export interface components {
             phase: "dialing" | "ringing" | "connected" | "completed" | "failed";
             disposition?: components["schemas"]["ContactStatus"];
             /** @enum {string} */
-            mode: "demo" | "twilio";
+            mode: "demo" | "plivo";
             startedAt: number;
             connectedAt?: number;
             endedAt?: number;
@@ -700,6 +792,31 @@ export interface components {
             status: components["schemas"]["ContactStatus"];
             note?: string;
             advanceStep?: boolean;
+        };
+        Suppression: {
+            id: string;
+            orgId: string | null;
+            /** @enum {string} */
+            kind: "email" | "domain" | "phone" | "linkedin";
+            value: string;
+            /** @enum {string} */
+            reason: "unsubscribed" | "bounced" | "complaint" | "do_not_call" | "manual";
+            source?: string;
+            createdAt: number;
+        };
+        AddSuppressionsRequest: {
+            /** @enum {string} */
+            kind: "email" | "domain" | "phone" | "linkedin";
+            value?: string;
+            values?: string[];
+            /**
+             * @description Defaults to do_not_call for phone, manual otherwise
+             * @enum {string}
+             */
+            reason?: "unsubscribed" | "do_not_call" | "manual";
+        };
+        ComplianceSettings: {
+            postalAddress?: string | null;
         };
     };
     responses: {
@@ -1115,10 +1232,41 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    startSequence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description When day 0 should send. Unix ms or ISO date. Defaults to now. */
+                    startAt?: number | string;
+                    contactIds?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Enrolled */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listMessages: {
         parameters: {
             query?: {
-                status?: "draft" | "queued" | "sent" | "failed";
+                status?: "draft" | "queued" | "sent" | "failed" | "cancelled";
                 contactId?: string;
             };
             header?: never;
@@ -1372,6 +1520,168 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    upsertEnrichment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Limit matching to one project */
+                    projectId?: string;
+                    contacts: {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        matched: number;
+                        updated: number;
+                        enrolled: number;
+                        unmatched: {
+                            row: number;
+                            key: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSuppressions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        suppressions: components["schemas"]["Suppression"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addSuppressions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddSuppressionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        added: components["schemas"]["Suppression"][];
+                        invalid: string[];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    removeSuppression: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCompliance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplianceSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateCompliance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComplianceSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplianceSettings"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

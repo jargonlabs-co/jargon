@@ -20,7 +20,8 @@ npm install
 cp .env.example .env
 npm run api              # API on :8787
 npm run landing:dev      # website on :5180
-npm run jargon -- login --email demo@jargon.app --password jargon-demo
+# sign up at http://127.0.0.1:5180 first
+npm run jargon -- login --email you@company.com --password '<password>'
 npm run jargon -- deploy "Build a dialer for inbound leads"
 ```
 
@@ -31,7 +32,7 @@ Open the printed `/tools/…` URL while logged in.
 | Surface | Path | Role |
 |---------|------|------|
 | CLI | `cli/` | `login` · `deploy` · `list` · `api-keys` |
-| API | `src/server/` | Auth, HubSpot CRM sync, platform Gmail / Twilio / HeyReach |
+| API | `src/server/` | Auth, HubSpot CRM sync, platform Gmail / Plivo / HeyReach |
 | Website | `landing/` | Marketing + login dashboard + tool UIs |
 
 ## Hosted API

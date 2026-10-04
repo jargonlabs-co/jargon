@@ -11,8 +11,6 @@ export interface PlanCatalog {
   amountCents: number
   interval: 'month' | null
   maxTools: number | null
-  maxMembers: number | null
-  maxDataSources: number | null
   description: string
 }
 
@@ -37,8 +35,6 @@ export const PLANS: Record<PlanId, PlanCatalog> = {
     amountCents: 0,
     interval: 'month',
     maxTools: 2,
-    maxMembers: 1,
-    maxDataSources: 1,
     description: 'Connect Claude, ship a couple of tools, and try live outbound.'
   },
   team: {
@@ -48,8 +44,6 @@ export const PLANS: Record<PlanId, PlanCatalog> = {
     amountCents: 4900,
     interval: 'month',
     maxTools: null,
-    maxMembers: null,
-    maxDataSources: null,
     description: 'Monthly credits, live outbound, and credit top-ups for the revenue team.'
   },
   scale: {
@@ -59,8 +53,6 @@ export const PLANS: Record<PlanId, PlanCatalog> = {
     amountCents: 0,
     interval: null,
     maxTools: null,
-    maxMembers: null,
-    maxDataSources: null,
     description: 'Custom grant, invoicing, and higher concurrency. Talk to us.'
   }
 }

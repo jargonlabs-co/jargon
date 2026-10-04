@@ -12,32 +12,38 @@ export class PlanLimitError extends Error {
   }
 }
 
-/** Workspaces that can create tools with no Free-plan cap. */
-const UNLIMITED_TOOLS_EMAILS = new Set(['tara@jargonlabs.co'])
+/** Comma-separated member emails from env. Unset falls back to the internal dogfood account. */
+function emailFlag(name: string): Set<string> {
+  const raw = process.env[name] ?? 'tara@jargonlabs.co'
+  return new Set(raw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean))
+}
 
 export function countOrgTools(store: DataStore, orgId: string): number {
   return store.db.projects.filter((p) => p.orgId === orgId).length
 }
 
-function orgHasDogfoodOwner(store: DataStore, orgId: string): boolean {
+function orgHasMemberIn(store: DataStore, orgId: string, emails: Set<string>): boolean {
+  if (!emails.size) return false
   const memberIds = new Set(
     store.db.memberships.filter((membership) => membership.orgId === orgId).map((membership) => membership.userId)
   )
-  return store.db.users.some(
-    (user) => memberIds.has(user.id) && UNLIMITED_TOOLS_EMAILS.has(user.email.trim().toLowerCase())
-  )
+  return store.db.users.some((user) => memberIds.has(user.id) && emails.has(user.email.trim().toLowerCase()))
 }
 
+/** Orgs with a member in JARGON_UNLIMITED_TOOLS_EMAILS create tools with no plan cap. */
 export function orgSkipsToolLimit(store: DataStore, orgId: string): boolean {
-  return orgHasDogfoodOwner(store, orgId)
+  return orgHasMemberIn(store, orgId, emailFlag('JARGON_UNLIMITED_TOOLS_EMAILS'))
 }
 
-/** Tara's HubSpot is empty until Lusha writes — do not block customer enrolls on that wait. */
+/**
+ * Orgs with a member in JARGON_HUBSPOT_ENRICHMENT_WAIT_EMAILS wait for Lusha to
+ * write enrichment into HubSpot before enrolling. Customers never wait.
+ */
 export function orgWaitsForHubSpotEnrichment(store: DataStore, orgId: string): boolean {
-  return orgHasDogfoodOwner(store, orgId)
+  return orgHasMemberIn(store, orgId, emailFlag('JARGON_HUBSPOT_ENRICHMENT_WAIT_EMAILS'))
 }
 
-/** Enforce Free-tier maxTools (and future maxDataSources) before creating a tool. */
+/** Enforce Free-tier maxTools before creating a tool. */
 export async function assertCanCreateTool(
   billing: BillingService,
   store: DataStore,

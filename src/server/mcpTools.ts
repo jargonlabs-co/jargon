@@ -988,6 +988,18 @@ export function registerJargonTools(
   }
 
   async function execStartSequence(projectId: string, startAt?: number | string, contactIds?: string[]) {
+    const project = findOrgProject(store, actor.orgId, projectId)
+    if (!project) return fail('Project not found')
+    if (!isPriorityPipelinePrompt(project.prompt || '')) {
+      const unresearched = store.db.contacts.filter(
+        (c) => c.projectId === projectId && (!contactIds?.length || contactIds.includes(c.id)) && !c.enrichedAt
+      )
+      if (unresearched.length) {
+        return fail(
+          `${unresearched.length} of these people do not have personalized copy yet. Write their talk tracks, email copy, and LinkedIn notes from each contact's fields, then call save_research for project ${projectId} — that enrolls them. Do not start the sequence on template copy.`
+        )
+      }
+    }
     const parsedStart =
       typeof startAt === 'number' ? startAt : typeof startAt === 'string' ? Date.parse(startAt) : undefined
     const result = await enrollPublicSequence(store, config, actor.orgId, projectId, {
@@ -1164,7 +1176,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll people who are already in this workspace into the sequence and open To-dos. Use this when the user says to enroll these people and they are already contacts here. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
+        'Enroll people who are already in this workspace into the sequence and open To-dos. Use this when the user says to enroll these people and they are already contacts here. Never call this before save_research has written their copy — save_research enrolls new people itself. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: StartSequenceInput
     },

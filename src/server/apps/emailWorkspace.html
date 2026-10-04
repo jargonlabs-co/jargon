@@ -373,6 +373,7 @@
   <script type="module">
 /*__EXT_APPS_BUNDLE__*/
 const { App, applyDocumentTheme } = globalThis.ExtApps;
+const app = new App({ name: 'jargon-outbound', version: '1.7.0' }, {}, { autoResize: true });
 
 /** Latest workspace payload. Shared by the top-level helpers and the app below. */
 let ws = null;
@@ -667,7 +668,6 @@ function dueLabel(task) {
 }
 
 (async () => {
-  const app = new App({ name: 'jargon-outbound', version: '1.7.0' }, {}, { autoResize: true });
   const root = document.getElementById('root');
   let tab = 'flows';
   let seqPane = 'flow';
@@ -2463,6 +2463,21 @@ function dueLabel(task) {
       return;
     }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
+    if (ws.researchPending) {
+      const n = ws.contactCount ?? (ws.contacts || []).length;
+      root.innerHTML = `
+        <header class="engage-head">
+          <div>
+            <div class="eyebrow">Engage</div>
+            <h1>Flows</h1>
+            <div class="sub">${esc(ws.name)}</div>
+          </div>
+        </header>
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        <p class="empty">Writing personalized copy for ${n} ${n === 1 ? 'person' : 'people'}…</p>
+      `;
+      return;
+    }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
     const open = nextTaskByContact(myOpenTasks()).length;
     root.innerHTML = `

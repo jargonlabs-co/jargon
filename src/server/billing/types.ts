@@ -58,9 +58,17 @@ export interface UsageProjectRow extends UsageTotals {
   projectName: string
 }
 
+/** Inclusive UTC calendar days, `YYYY-MM-DD`. */
+export interface UsageRange {
+  from: string
+  to: string
+}
+
 export interface AccountUsage {
   periodStart: string | null
   periodEnd: string | null
+  /** Set when the caller asked for a custom window instead of the billing period. */
+  range: UsageRange | null
   totals: UsageTotals
   daily: UsageDayRow[]
   byProject: UsageProjectRow[]
@@ -192,7 +200,7 @@ export interface BillingService {
   paymentsReady: boolean
   ensureOrg(orgId: string): Promise<AccountCredits>
   getCredits(orgId: string): Promise<AccountCredits>
-  getUsage(orgId: string, projectNames?: Record<string, string>): Promise<AccountUsage>
+  getUsage(orgId: string, projectNames?: Record<string, string>, range?: UsageRange): Promise<AccountUsage>
   snapshot(orgId: string, projectNames?: Record<string, string>): Promise<AccountSnapshot>
   debit(input: DebitInput): Promise<DebitResult>
   grant(input: GrantInput): Promise<AccountCredits>

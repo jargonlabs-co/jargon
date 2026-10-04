@@ -35,7 +35,7 @@ export const PLANS: Record<PlanId, PlanCatalog> = {
     amountCents: 0,
     interval: 'month',
     maxTools: 2,
-    description: 'Connect Claude, ship a couple of tools, and try live outbound.'
+    description: 'Connect Claude, ship a couple of sequences, and try live outbound.'
   },
   team: {
     id: 'team',

@@ -38,6 +38,7 @@ import { getOrgMailbox, sendFromMailbox } from './mailboxes'
 import { sendHeyReachLinkedInMessage } from './providers/heyreach'
 import { allocateEmailMailbox, beginManagedVoiceCall } from './outboundPools'
 import { enqueueHubSpotActivity } from './hubspotWriteback'
+import { toE164 } from '../shared/phone'
 import { missingRequestedFields, parseRequestedFields } from '../shared/requestedFields'
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
@@ -790,12 +791,14 @@ export function startPublicCall(
   store: DataStore,
   config: ServerConfig,
   contact: Contact,
-  sandbox = false
+  sandbox = false,
+  to?: string
 ): PublicCall {
   const now = Date.now()
   const callId = uid('call')
+  const dialTo = toE164(to ?? '') || toE164(contact.phone ?? '') || undefined
   if (!sandbox) {
-    const blocked = callBlockReason(store.db, contact)
+    const blocked = callBlockReason(store.db, { ...contact, phone: dialTo ?? '' })
     if (blocked) throw new OutboundBlockedError(blocked)
   }
   const live = inspectLiveVoice(config)
@@ -830,6 +833,7 @@ export function startPublicCall(
       mode,
       poolMemberId,
       fromNumber,
+      to: dialTo,
       startedAt: now
     })
     db.activities.unshift({

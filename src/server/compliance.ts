@@ -86,7 +86,7 @@ const REASON_TEXT: Record<SuppressionReason, string> = {
 }
 
 export function suppressionMessage(s: Suppression): string {
-  return REASON_TEXT[s.reason]
+  return REASON_TEXT[s.reason] ?? REASON_TEXT.manual
 }
 
 export interface SuppressionInput {

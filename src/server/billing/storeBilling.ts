@@ -22,7 +22,8 @@ import type {
   DebitInput,
   DebitResult,
   GrantInput,
-  OrgBillingRow
+  OrgBillingRow,
+  UsageRange
 } from './types'
 import { billingUrlFor, remainingFrom, roundCredits, toAccountCredits, toAccountUsage, toSnapshot } from './view'
 
@@ -151,10 +152,10 @@ export class StoreBillingService implements BillingService {
     return this.view(orgId)
   }
 
-  async getUsage(orgId: string, projectNames?: Record<string, string>): Promise<AccountUsage> {
+  async getUsage(orgId: string, projectNames?: Record<string, string>, range?: UsageRange): Promise<AccountUsage> {
     await this.ensureOrg(orgId)
     const { org, daily, ledger } = this.orgRows(orgId)
-    return toAccountUsage({ org: org!, daily, ledger, projectNames })
+    return toAccountUsage({ org: org!, daily, ledger, projectNames, range })
   }
 
   async snapshot(orgId: string, projectNames?: Record<string, string>): Promise<AccountSnapshot> {

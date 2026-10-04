@@ -308,6 +308,8 @@ export interface CallSession {
   poolMemberId?: string
   /** Plivo-rented caller ID used on Dial XML (attestation A). */
   fromNumber?: string
+  /** E.164 number dialed; differs from the contact phone when the dialer overrides it. */
+  to?: string
   startedAt: number
   connectedAt?: number
   endedAt?: number

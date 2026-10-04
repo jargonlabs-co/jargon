@@ -73,6 +73,7 @@ describe('tool app (session) routes', () => {
         subject: 'Following up',
         body: 'Hi Omar',
         status: 'queued',
+        stepId: 'step_2',
         channel: 'email',
         mode: 'demo',
         sendAt: Date.now() + 86_400_000,

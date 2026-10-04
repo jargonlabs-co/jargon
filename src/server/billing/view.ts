@@ -7,8 +7,45 @@ import type {
   CreditLotRow,
   CreditWalletRow,
   OrgBillingRow,
-  UsageDailyRow
+  UsageDailyRow,
+  UsageRange
 } from './types'
+
+export const MAX_USAGE_RANGE_DAYS = 366
+const DAY_MS = 86_400_000
+
+function parseDay(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const ms = Date.parse(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value) return null
+  return ms
+}
+
+/** Parses `?from=&to=` (inclusive UTC days). Neither set means the billing period. */
+export function parseUsageRange(
+  query: Record<string, unknown>
+): { ok: true; range?: UsageRange } | { ok: false; error: string } {
+  const { from, to } = query
+  if (from === undefined && to === undefined) return { ok: true }
+  const fromMs = parseDay(from)
+  const toMs = parseDay(to)
+  if (fromMs === null || toMs === null) {
+    return { ok: false, error: 'from and to must both be dates in YYYY-MM-DD format' }
+  }
+  if (fromMs > toMs) return { ok: false, error: 'from must be on or before to' }
+  if ((toMs - fromMs) / DAY_MS + 1 > MAX_USAGE_RANGE_DAYS) {
+    return { ok: false, error: `Usage windows are limited to ${MAX_USAGE_RANGE_DAYS} days` }
+  }
+  return { ok: true, range: { from: from as string, to: to as string } }
+}
+
+/** Millisecond bounds for an inclusive day range: [start of `from`, end of `to`]. */
+export function usageRangeBounds(range: UsageRange): { start: number; end: number } {
+  return {
+    start: Date.parse(`${range.from}T00:00:00.000Z`),
+    end: Date.parse(`${range.to}T00:00:00.000Z`) + DAY_MS - 1
+  }
+}
 
 export function billingUrlFor(appUrl: string): string {
   return `${appUrl.replace(/\/$/, '')}/billing`
@@ -97,6 +134,7 @@ export function emptyUsage(periodStart: string | null, periodEnd: string | null)
   return {
     periodStart,
     periodEnd,
+    range: null,
     totals: { credits: 0, emails: 0, calls: 0, linkedin: 0 },
     daily: [],
     byProject: []
@@ -108,11 +146,15 @@ export function toAccountUsage(input: {
   daily: UsageDailyRow[]
   ledger: CreditLedgerRow[]
   projectNames?: Record<string, string>
+  range?: UsageRange
 }): AccountUsage {
-  const periodStart = input.org.periodStart ?? 0
-  const periodEnd = input.org.periodEnd ?? Date.now()
+  const { range } = input
+  const bounds = range ? usageRangeBounds(range) : null
+  const periodStart = bounds?.start ?? input.org.periodStart ?? 0
+  const periodEnd = bounds?.end ?? input.org.periodEnd ?? Date.now()
   const daily = input.daily
     .filter((row) => {
+      if (range) return row.day >= range.from && row.day <= range.to
       const t = Date.parse(`${row.day}T00:00:00.000Z`)
       return t >= periodStart && t <= periodEnd
     })
@@ -148,6 +190,7 @@ export function toAccountUsage(input: {
   return {
     periodStart: iso(input.org.periodStart),
     periodEnd: iso(input.org.periodEnd),
+    range: range ?? null,
     totals: {
       credits: roundCredits(totals.credits),
       emails: totals.emails,

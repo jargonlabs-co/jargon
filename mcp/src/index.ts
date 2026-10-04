@@ -239,14 +239,14 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate HubSpot/Railway. Do not share a web workspace URL — work stays in Claude.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate Railway, Postgres, or HubSpot. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
           .string()
           .min(1)
           .describe(
-            'What to build. Include a markdown people table to ingest a list, or omit the table to hydrate HubSpot/Railway.'
+            'What to build. Include a markdown people table to ingest a list, or omit the table to hydrate Railway, Postgres, or HubSpot.'
           )
       })
     },

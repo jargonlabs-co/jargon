@@ -21,9 +21,10 @@ import type {
   DebitInput,
   DebitResult,
   GrantInput,
-  OrgBillingRow
+  OrgBillingRow,
+  UsageRange
 } from './types'
-import { billingUrlFor, remainingFrom, toAccountCredits, toAccountUsage, toSnapshot } from './view'
+import { billingUrlFor, remainingFrom, toAccountCredits, toAccountUsage, toSnapshot, usageRangeBounds } from './view'
 
 function ms(value: string | null | undefined): number | undefined {
   return value ? Date.parse(value) : undefined
@@ -156,12 +157,21 @@ export class SupabaseBillingService implements BillingService {
     return this.ensureOrg(orgId)
   }
 
-  async getUsage(orgId: string, projectNames?: Record<string, string>): Promise<AccountUsage> {
+  async getUsage(orgId: string, projectNames?: Record<string, string>, range?: UsageRange): Promise<AccountUsage> {
     await this.ensureOrg(orgId)
     const loaded = await this.loadOrg(orgId)
+    let dailyQuery = this.client.from('usage_daily').select('*').eq('org_id', orgId)
+    let ledgerQuery = this.client.from('credit_ledger').select('*').eq('org_id', orgId).lt('amount', 0)
+    if (range) {
+      const bounds = usageRangeBounds(range)
+      dailyQuery = dailyQuery.gte('day', range.from).lte('day', range.to)
+      ledgerQuery = ledgerQuery
+        .gte('created_at', new Date(bounds.start).toISOString())
+        .lte('created_at', new Date(bounds.end).toISOString())
+    }
     const [{ data: daily }, { data: ledger }] = await Promise.all([
-      this.client.from('usage_daily').select('*').eq('org_id', orgId),
-      this.client.from('credit_ledger').select('*').eq('org_id', orgId).order('created_at', { ascending: false }).limit(2000)
+      dailyQuery,
+      ledgerQuery.order('created_at', { ascending: false }).limit(10000)
     ])
     return toAccountUsage({
       org: loaded!.org,
@@ -174,7 +184,8 @@ export class SupabaseBillingService implements BillingService {
         credits: Number(row.credits ?? 0)
       })),
       ledger: (ledger ?? []).map(mapLedger),
-      projectNames
+      projectNames,
+      range
     })
   }
 

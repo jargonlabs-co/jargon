@@ -109,14 +109,14 @@ export function OverviewPage({
 
       <div className="home-recent">
         <div className="home-recent-head">
-          <h2>Recent tools</h2>
+          <h2>Recent sequences</h2>
           <button type="button" className="btn primary btn-sm" onClick={() => onNavigate('/tools')}>
-            All tools
+            All sequences
           </button>
         </div>
         {builds.length === 0 ? (
           <button type="button" className="home-empty-row" onClick={() => onNavigate('/claude')}>
-            + New tool — {claudeConnected ? 'type a prompt above to open Claude or ChatGPT' : 'connect Claude or ChatGPT to deploy one'}
+            + New sequence — {claudeConnected ? 'type a prompt above to open Claude or ChatGPT' : 'connect Claude or ChatGPT to deploy one'}
           </button>
         ) : (
           <div className="home-table">

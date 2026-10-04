@@ -73,9 +73,16 @@ export interface UsageTotals {
   linkedin: number
 }
 
+/** Inclusive UTC calendar days, `YYYY-MM-DD`. */
+export interface UsageRange {
+  from: string
+  to: string
+}
+
 export interface AccountUsage {
   periodStart: string | null
   periodEnd: string | null
+  range: UsageRange | null
   totals: UsageTotals
   daily: Array<UsageTotals & { day: string }>
   byProject: Array<UsageTotals & { projectId: string; projectName: string }>
@@ -326,8 +333,9 @@ export const api = {
   accountCredits() {
     return request<AccountCredits>('/account/credits')
   },
-  accountUsage() {
-    return request<AccountUsage>('/account/usage')
+  accountUsage(range?: UsageRange) {
+    const query = range ? `?${new URLSearchParams({ from: range.from, to: range.to })}` : ''
+    return request<AccountUsage>(`/account/usage${query}`)
   },
   billingLink(body: { intent: BillingIntent; plan?: PlanId; packId?: string }) {
     return request<BillingLink>('/account/billing-link', {

@@ -60,7 +60,7 @@ export function DataPage({
         <p className="eyebrow">Account</p>
         <h1>Data</h1>
         <p className="section-lede">
-          Tools load people from HubSpot or Railway Postgres. Email sends from your own mailbox, and
+          Sequences load people from HubSpot or Railway Postgres. Email sends from your own mailbox, and
           replies stop the sequence automatically.
         </p>
       </div>
@@ -120,7 +120,7 @@ export function DataPage({
           </div>
           <h3>HubSpot</h3>
           <p>
-            People in your portal become the queue in every tool. Calls, emails, and notes are
+            People in your portal become the queue in every sequence. Calls, emails, and notes are
             logged back to the contact in HubSpot.
           </p>
           {hubspotOk && hubspot?.meta?.writebackError ? (

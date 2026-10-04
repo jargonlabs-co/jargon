@@ -7,7 +7,7 @@ export const ACCOUNT_NAV = [
   { id: 'data', path: '/data', label: 'Data' },
   { id: 'claude', path: '/claude', label: 'Connectors' },
   { id: 'keys', path: '/keys', label: 'API keys' },
-  { id: 'tools', path: '/tools', label: 'Tools' },
+  { id: 'tools', path: '/tools', label: 'Sequences' },
   { id: 'settings', path: '/settings', label: 'Settings' }
 ] as const
 
@@ -68,6 +68,7 @@ export function previewSnapshot(): AccountSnapshot {
     usage: {
       periodStart: new Date(Date.now() - 10 * 86400000).toISOString(),
       periodEnd: new Date(Date.now() + 20 * 86400000).toISOString(),
+      range: null,
       totals: { credits: 18, emails: 8, calls: 2, linkedin: 0 },
       daily: [
         { day: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), credits: 10, emails: 5, calls: 1, linkedin: 0 },
@@ -79,7 +80,7 @@ export function previewSnapshot(): AccountSnapshot {
     },
     catalog: {
       plans: [
-        { id: 'free', name: 'Free', monthlyCredits: 100, amountCents: 0, description: 'Connect Claude and ship a couple of tools.' },
+        { id: 'free', name: 'Free', monthlyCredits: 100, amountCents: 0, description: 'Connect Claude and ship a couple of sequences.' },
         { id: 'team', name: 'Team', monthlyCredits: 2000, amountCents: 4900, description: 'Monthly credits, live outbound, and top-ups.' },
         { id: 'scale', name: 'Scale', monthlyCredits: 20000, amountCents: 0, description: 'Custom grant and invoicing.' }
       ],

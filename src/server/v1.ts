@@ -44,6 +44,7 @@ import {
 import { shouldAutoStartSequence } from '../shared/workspaceSpec'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
+import { parseUsageRange } from './billing/view'
 import { claudeConnectorStatus } from './mcpOauth'
 import { voiceIsLive } from './providers/voice'
 import { platformGmailReady } from './providers/gmail'
@@ -198,7 +199,12 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
   })
 
   router.get('/account/usage', auth, async (req, res) => {
-    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id)))
+    const parsed = parseUsageRange(req.query)
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id), parsed.range))
   })
 
   router.post('/account/billing-link', auth, async (req, res) => {

@@ -211,7 +211,7 @@ export function AccountApp({
     setError(null)
     try {
       const result = await api.syncHubSpot()
-      setToast(`Loaded ${result.count} contacts into your tools`)
+      setToast(`Loaded ${result.count} contacts into your sequences`)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed')
@@ -405,7 +405,7 @@ export function AccountApp({
               onOpenTool={(id) => onOpenTool?.(id)}
             />
           ) : null}
-          {snapshot && page === 'usage' ? <UsagePage snapshot={snapshot} /> : null}
+          {snapshot && page === 'usage' ? <UsagePage snapshot={snapshot} preview={preview} /> : null}
           {snapshot && page === 'billing' ? (
             <BillingPage snapshot={snapshot} busy={busy} onCheckout={checkout} />
           ) : null}

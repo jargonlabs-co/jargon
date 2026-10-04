@@ -616,7 +616,7 @@ export function registerJargonTools(
     if (!charge.ok) return failCharge(charge)
     try {
       return ok({
-        call: startPublicCall(store, config, contact, sandbox),
+        call: startPublicCall(store, config, contact, sandbox, to),
         creditsUsed: charge.creditsUsed,
         creditsRemaining: charge.remaining
       })

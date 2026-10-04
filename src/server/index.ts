@@ -117,6 +117,7 @@ import {
   startPublicCall
 } from './publicApi'
 import { createBillingService, chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
+import { parseUsageRange } from './billing/view'
 import { startOutboundScheduler } from './scheduler'
 import { DeleteBlockedError, deleteOrg, exportOrgData } from './accountData'
 import { errorHandler, requestLogger } from './observability'
@@ -521,7 +522,12 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
   })
 
   app.get('/account/usage', auth, async (req, res) => {
-    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id)))
+    const parsed = parseUsageRange(req.query)
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    res.json(await billing.getUsage(req.auth!.org.id, projectNamesFor(store, req.auth!.org.id), parsed.range))
   })
 
   app.post('/account/billing-link', auth, async (req, res) => {
@@ -1119,14 +1125,14 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.type('text/xml').send(plivoRejectXml())
       return
     }
-    const blocked = contact ? callBlockReason(store.db, contact) : null
+    const dialTo = call?.to || (contact && toE164(contact.phone)) || to
+    const blocked = contact ? callBlockReason(store.db, { ...contact, phone: dialTo }) : null
     if (blocked) {
       console.warn(`[jargon] Plivo answer blocked for ${callId}: ${blocked}`)
       attachPlivoCall(callId, callUuid, 'failed', callerMemberId)
       res.type('text/xml').send(plivoRejectXml())
       return
     }
-    const dialTo = (contact && toE164(contact.phone)) || to
     const callerFrom = callerMemberId
       ? config.outboundPools.voiceEndpoints.find((m) => m.id === callerMemberId)?.fromNumber
       : undefined

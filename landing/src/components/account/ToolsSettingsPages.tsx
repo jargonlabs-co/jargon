@@ -12,9 +12,9 @@ export function ToolsPage({
     <section className="webapp-section">
       <div className="section-heading">
         <p className="eyebrow">Account</p>
-        <h1>Tools</h1>
+        <h1>Sequences</h1>
         <p className="section-lede">
-          Workspaces deployed from Claude or <code>jargon deploy</code>. Open a tool to run the queue.
+          Workspaces deployed from Claude or <code>jargon deploy</code>. Open a sequence to run the queue.
         </p>
       </div>
       {builds.length === 0 ? (

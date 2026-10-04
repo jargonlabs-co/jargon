@@ -727,6 +727,67 @@ function dueLabel(task) {
     return emails.length ? emails : draftSteps;
   }
 
+  function isStockCopy(text) {
+    const t = String(text || '').trim();
+    if (!t) return true;
+    if (/\{\{[^}]+\}\}/.test(t)) return true;
+    if (/Direct & concise|Warm & brief/.test(t)) return true;
+    if (/12-min look/i.test(t)) return true;
+    if (/worth a short note toward/i.test(t)) return true;
+    if (/bumping this in case it got buried/i.test(t)) return true;
+    return false;
+  }
+
+  function flowContactId() {
+    const contacts = ws?.contacts || [];
+    if (contacts.length === 1) return contacts[0].id;
+    const open = nextTaskByContact(myOpenTasks());
+    if (open[0]) return open[0].contactId;
+    const task = (ws?.tasks || []).find((t) => t.body && !isStockCopy(t.body));
+    return task?.contactId || contacts[0]?.id || null;
+  }
+
+  function personalizedForStep(step) {
+    if (!step) return null;
+    const contactId = flowContactId();
+    const tasks = (ws?.tasks || []).filter(
+      (t) => t.stepId === step.id && (!contactId || t.contactId === contactId)
+    );
+    for (const task of tasks) {
+      const subject = task.subject && !isStockCopy(task.subject) ? task.subject : '';
+      const body = task.body && !isStockCopy(task.body) ? task.body : '';
+      if (subject || body) return { subject, body, messageId: task.messageId || null };
+    }
+    const msg = (ws?.messages || []).find(
+      (m) =>
+        m.stepId === step.id &&
+        (!contactId || m.contactId === contactId) &&
+        ((m.body && !isStockCopy(m.body)) || (m.subject && !isStockCopy(m.subject)))
+    );
+    if (!msg) return null;
+    return {
+      subject: msg.subject && !isStockCopy(msg.subject) ? msg.subject : '',
+      body: msg.body && !isStockCopy(msg.body) ? msg.body : '',
+      messageId: msg.id,
+    };
+  }
+
+  function sequenceHasPersonalizedCopy() {
+    return (ws?.steps || []).some((step) => {
+      const copy = personalizedForStep(step);
+      return Boolean(copy && (copy.subject || copy.body));
+    });
+  }
+
+  function viewStep(step) {
+    const original = (ws?.steps || []).find((s) => s.id === step.id) || step;
+    const untouched =
+      (step.subject || '') === (original.subject || '') && (step.body || '') === (original.body || '');
+    if (!untouched) return step;
+    const copy = personalizedForStep(step);
+    return { ...step, subject: copy?.subject || '', body: copy?.body || '' };
+  }
+
   function syncDrafts() {
     draftSteps = (ws?.steps || []).map((s) => ({ ...s }));
     const n = emailSteps().length;
@@ -784,15 +845,39 @@ function dueLabel(task) {
 
   async function saveSequence() {
     flushEditor();
-    const steps = (draftSteps.length ? draftSteps : ws.steps || []).map((step) => ({
-      day: Number(step.day || 0),
-      channel: step.channel,
-      label: step.label,
-      subject: step.subject || '',
-      body: step.body || '',
-      mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
-    }));
+    const contactId = flowContactId();
+    const draftWrites = [];
+    for (const step of draftSteps) {
+      const shown = personalizedForStep(step);
+      const subject = step.subject || '';
+      const body = step.body || '';
+      if (subject === (shown?.subject || '') && body === (shown?.body || '')) continue;
+      if (isStockCopy(subject) && isStockCopy(body)) continue;
+      const task = (ws.tasks || []).find(
+        (t) => t.stepId === step.id && (!contactId || t.contactId === contactId) && t.messageId
+      );
+      const messageId = task?.messageId || shown?.messageId;
+      if (!messageId) continue;
+      draftWrites.push(
+        callTool({
+          name: 'run_update_draft',
+          arguments: { messageId, subject, body },
+        })
+      );
+    }
+    const steps = (draftSteps.length ? draftSteps : ws.steps || []).map((step) => {
+      const original = (ws.steps || []).find((s) => s.id === step.id) || step;
+      return {
+        day: Number(step.day || 0),
+        channel: step.channel,
+        label: step.label,
+        subject: original.subject || '',
+        body: original.body || '',
+        mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
+      };
+    });
     busy = true; render();
+    if (draftWrites.length) await Promise.all(draftWrites);
     const result = await callTool({
       name: 'run_update_sequence',
       arguments: { projectId: ws.projectId, goal: ws.goal, steps },
@@ -2342,7 +2427,12 @@ function dueLabel(task) {
   }
 
   function renderFlows() {
-    const steps = draftSteps.length ? draftSteps : (ws.steps || []);
+    if (!sequenceHasPersonalizedCopy()) {
+      const n = ws.contactCount ?? (ws.contacts || []).length;
+      const people = n ? ` for ${n} ${n === 1 ? 'person' : 'people'}` : '';
+      return `<p class="empty">Writing personalized copy${people}…</p>`;
+    }
+    const steps = (draftSteps.length ? draftSteps : (ws.steps || [])).map(viewStep);
     if (selectedStep >= steps.length) selectedStep = 0;
     const step = steps[selectedStep];
     const rail = steps.map((s, i) => {

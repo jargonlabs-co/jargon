@@ -8,6 +8,7 @@ export const ACCOUNT_NAV = [
   { id: 'claude', path: '/claude', label: 'Connectors' },
   { id: 'keys', path: '/keys', label: 'API keys' },
   { id: 'tools', path: '/tools', label: 'Sequences' },
+  { id: 'admin', path: '/admin', label: 'Admin' },
   { id: 'settings', path: '/settings', label: 'Settings' }
 ] as const
 
@@ -21,6 +22,7 @@ export function accountPageFromPath(pathname: string): AccountPageId {
   if (path === '/claude') return 'claude'
   if (path === '/keys') return 'keys'
   if (path === '/tools') return 'tools'
+  if (path === '/admin') return 'admin'
   if (path === '/settings') return 'settings'
   return 'overview'
 }

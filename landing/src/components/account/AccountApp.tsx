@@ -15,6 +15,7 @@ import { DataPage } from './DataPage'
 import { OverviewPage } from './OverviewPage'
 import { ToolsPage, SettingsPage } from './ToolsSettingsPages'
 import { UsagePage } from './UsagePage'
+import { AdminPage } from './AdminPage'
 import { ACCOUNT_NAV, accountPageFromPath, formatCredits, PREVIEW_BUILDS, previewSnapshot } from './nav'
 
 export function toolPath(projectId: string): string {
@@ -392,7 +393,7 @@ export function AccountApp({
             Sign out
           </button>
         </header>
-        <main className={`account-main${page === 'overview' ? ' is-home' : ''}`}>
+        <main className={`account-main${page === 'overview' ? ' is-home' : ''}${page === 'admin' ? ' is-wide' : ''}`}>
           {!snapshot && !error ? <p className="section-lede">Loading account…</p> : null}
           {snapshot && page === 'overview' ? (
             <OverviewPage
@@ -438,6 +439,7 @@ export function AccountApp({
           {page === 'tools' ? (
             <ToolsPage builds={builds} onOpenTool={(id) => onOpenTool?.(id)} />
           ) : null}
+          {page === 'admin' ? <AdminPage /> : null}
           {page === 'settings' ? (
             <SettingsPage
               orgName={orgName}

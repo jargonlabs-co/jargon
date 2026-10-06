@@ -413,7 +413,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open a workspace. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template. Research each company/prospect next, then call save_research once; that enrolls everyone and opens the one workspace, with personalized copy. Do not share a web workspace URL.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "5 touchpoints over 14 days" or "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open a workspace. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template. Research each company/prospect next, then call save_research once; that enrolls everyone and opens the one workspace, with personalized copy. Do not share a web workspace URL.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)

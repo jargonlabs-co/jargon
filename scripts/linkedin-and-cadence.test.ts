@@ -98,4 +98,75 @@ describe('compileWorkspaceSpec step spans', () => {
     assert.ok(spec.steps.some((s) => s.channel === 'call'), 'expected a call step in the ladder')
     assert.ok(spec.channels.includes('call'))
   })
+
+  it('builds a sequence from touchpoints over days', () => {
+    const spec = compileWorkspaceSpec(
+      'Build a sequence with 5 touchpoints over 14 days for the retail brand'
+    )
+    assert.equal(spec.primarySurface, 'sequence')
+    assert.match(spec.segment, /retail brand/i)
+    assert.deepEqual(
+      spec.steps.map((step) => [step.day, step.channel]),
+      [
+        [0, 'email'],
+        [4, 'call'],
+        [7, 'linkedin'],
+        [11, 'email'],
+        [14, 'call']
+      ]
+    )
+  })
+
+  it('spaces a per-channel mix across weeks for another brand', () => {
+    const spec = compileWorkspaceSpec(
+      'Build a sequence with 4 emails and 1 call over 3 weeks for the wholesale brand'
+    )
+    assert.match(spec.segment, /wholesale brand/i)
+    assert.deepEqual(
+      spec.steps.map((step) => step.channel),
+      ['email', 'email', 'call', 'email', 'email']
+    )
+    assert.equal(spec.steps[0].day, 0)
+    assert.equal(spec.steps.at(-1)?.day, 21)
+    assert.deepEqual(spec.channels, ['email', 'call'])
+  })
+
+  it('accepts touches, touch points, weeks, and reversed order', () => {
+    const touches = compileWorkspaceSpec('six touches across two weeks for franchise owners')
+    assert.equal(touches.steps.length, 6)
+    assert.equal(touches.steps[0].day, 0)
+    assert.equal(touches.steps.at(-1)?.day, 14)
+
+    const points = compileWorkspaceSpec('Build a sequence with 5 touch points over 10 days')
+    assert.equal(points.steps.length, 5)
+    assert.equal(points.steps.at(-1)?.day, 10)
+
+    const reversed = compileWorkspaceSpec('over 10 days with 4 touchpoints for field marketers')
+    assert.equal(reversed.steps.length, 4)
+    assert.equal(reversed.steps[0].day, 0)
+    assert.equal(reversed.steps.at(-1)?.day, 10)
+  })
+
+  it('spreads a counted email, call, and LinkedIn mix', () => {
+    const spec = compileWorkspaceSpec(
+      'Build a sequence with 3 emails, 2 calls, and 1 LinkedIn over 14 days for the flagship brand'
+    )
+    assert.deepEqual(
+      spec.steps.map((step) => [step.day, step.channel]),
+      [
+        [0, 'email'],
+        [3, 'call'],
+        [6, 'linkedin'],
+        [8, 'email'],
+        [11, 'call'],
+        [14, 'email']
+      ]
+    )
+  })
+
+  it('caps a long ask at 8 steps and 30 days', () => {
+    const spec = compileWorkspaceSpec('Build a sequence with 12 touchpoints over 40 days')
+    assert.equal(spec.steps.length, 8)
+    assert.equal(spec.steps.at(-1)?.day, 30)
+  })
 })

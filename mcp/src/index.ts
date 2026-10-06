@@ -212,7 +212,7 @@ function createServer(): McpServer {
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. State goal / step count / day span in that text; do not write the full sequence in chat. Does not open Tasks — research each contact next, then save_research (enrolls + opens Tasks). Do not share a web workspace URL — work stays in Claude.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table or CSV — never as a contacts array. State goal / step count / day span in that text (e.g. "5 touchpoints over 14 days"); do not write the full sequence in chat. Does not open Tasks — research each contact next, then save_research (enrolls + opens Tasks). Do not share a web workspace URL — work stays in Claude.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z

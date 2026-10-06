@@ -32,7 +32,15 @@ export function compileWorkspaceSpec(prompt: string, override?: DeploySpecInput)
   const intent = matchOutboundIntent(prompt, override?.kind)
   const channels =
     mergeChannelLists(uniqueChannels(override?.channels), intent.channels) ?? intent.channels
-  const primarySurface = override?.primarySurface ?? refinePrimarySurface(t, channels, intent.primarySurface)
+  let primarySurface = override?.primarySurface ?? refinePrimarySurface(t, channels, intent.primarySurface)
+  if (
+    !override?.primarySurface &&
+    parseStepSpan(prompt, channels) &&
+    channels.length > 1 &&
+    !/\bdialer|power[ -]?dial/.test(t)
+  ) {
+    primarySurface = 'sequence'
+  }
   const goal = override?.goal?.trim() || intent.goal
   const segment = override?.segment?.trim() || inferSegment(prompt)
   const rawSteps = override?.steps?.length
@@ -315,9 +323,9 @@ function buildSteps(channels: Channel[], goal: string, prompt: string): Workspac
     }))
   }
 
-  const span = parseStepSpan(prompt)
+  const span = parseStepSpan(prompt, channels)
   if (span) {
-    return expandStepSpan(channels, span.count, span.days, goal, tone)
+    return expandStepSpan(channels, span.count, span.days, goal, tone, span.sequence)
   }
 
   const steps: WorkspaceSpecStep[] = channels.map((channel, i) => {
@@ -354,21 +362,230 @@ function parseExplicitDayLadder(prompt: string): Array<{ day: number; channel: C
   return out.length >= 2 ? out.slice(0, 8) : undefined
 }
 
-/** Parse "7 steps over 10 days" / "7-step sequence across 10 days". */
-function parseStepSpan(prompt: string): { count: number; days: number } | undefined {
-  const t = prompt.toLowerCase()
-  const match =
-    t.match(
-      /(\d{1,2})\s*[- ]?\s*steps?[\s\w-]{0,48}?(?:over|across|in|spanning|through)\s+(\d{1,2})\s*days?/
-    ) ||
-    t.match(
-      /(?:sequence|cadence|drip)\s+(?:of\s+)?(\d{1,2})\s*steps?\s+(?:over|across|in|spanning|through)\s+(\d{1,2})\s*days?/
+const COUNT_WORDS =
+  'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty'
+const DURATION_WORDS = `a|an|${COUNT_WORDS}`
+const WORD_NUMBERS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30
+}
+
+type StepSpan = { count: number; days: number; sequence?: Channel[] }
+type TextSpan = { index: number; end: number }
+type DurationHit = TextSpan & { days: number; anchored: boolean }
+type QuotaHit = { channel: Channel; count: number; index: number; end: number }
+
+/**
+ * Parse a touch count and a day span from rep language.
+ * "5 touchpoints over 14 days", "six touches across two weeks",
+ * "over 10 days with 4 touchpoints", "4 emails and 1 call over 3 weeks".
+ */
+function parseStepSpan(prompt: string, pool?: Channel[]): StepSpan | undefined {
+  const text = prompt.toLowerCase()
+  const units = [...text.matchAll(unitPattern())]
+    .map((match) => ({
+      count: parseCount(match[1]),
+      index: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length
+    }))
+    .filter((unit) => unit.count >= 1 && unit.count <= 30)
+  const durations = [...text.matchAll(durationPattern())]
+    .map((match) => {
+      const days = durationDays(match[2], match[4])
+      const index = match.index ?? 0
+      return {
+        days,
+        index,
+        end: index + match[0].length,
+        anchored: Boolean(match[1]) || match[3] === '-'
+      }
+    })
+    .filter(
+      (duration): duration is DurationHit =>
+        duration.days != null && !/^\s*(?:ago|old)\b/.test(text.slice(duration.end))
     )
-  if (!match) return undefined
-  const count = Math.min(8, Math.max(1, Number(match[1])))
-  const days = Math.min(30, Math.max(0, Number(match[2])))
-  if (!Number.isFinite(count) || !Number.isFinite(days)) return undefined
-  return { count, days }
+  const quotas = parseChannelQuotas(text)
+  const paired = pairUnitAndDuration(units, durations)
+  if (paired) {
+    const count = Math.min(8, paired.count)
+    return {
+      count,
+      days: paired.days,
+      sequence: sequenceFromQuotas(quotas, count, pool)
+    }
+  }
+
+  const quotaCount = quotas.reduce((sum, quota) => sum + quota.count, 0)
+  const duration = closestAnchoredDuration(quotas, durations)
+  if (!duration || quotaCount < 1) return undefined
+  const count = Math.min(8, quotaCount)
+  const sequence = sequenceFromQuotas(quotas, count, pool)
+  if (!sequence) return undefined
+  return { count, days: duration.days, sequence }
+}
+
+function unitPattern(): RegExp {
+  return new RegExp(
+    `\\b(\\d{1,2}|${COUNT_WORDS})\\s*[- ]?\\s*(touch[ -]?points?|touches|steps?|touch)\\b`,
+    'gi'
+  )
+}
+
+function durationPattern(): RegExp {
+  return new RegExp(
+    `\\b(?:(over|across|within|spanning|through|during|in)\\s+)?(?:the\\s+)?(?:next\\s+)?(\\d{1,2}|${DURATION_WORDS})\\s*([- ])?\\s*(day|week)s?\\b`,
+    'gi'
+  )
+}
+
+function quotaPattern(): RegExp {
+  return new RegExp(
+    `\\b(\\d{1,2}|${COUNT_WORDS})\\s*[- ]?\\s*(e-?mails?|calls?|dials?|phones?|linkedin|inmails?)\\b`,
+    'gi'
+  )
+}
+
+function pairUnitAndDuration(
+  units: Array<TextSpan & { count: number }>,
+  durations: DurationHit[]
+): { count: number; days: number } | undefined {
+  let best: { count: number; days: number; dist: number; anchored: boolean } | undefined
+  for (const unit of units) {
+    for (const duration of durations) {
+      const dist = rangeGap(unit, duration)
+      if (dist > 120) continue
+      const candidate = { count: unit.count, days: duration.days, dist, anchored: duration.anchored }
+      if (!best || preferPair(candidate, best)) best = candidate
+    }
+  }
+  return best ? { count: best.count, days: best.days } : undefined
+}
+
+function preferPair(
+  next: { dist: number; anchored: boolean },
+  prev: { dist: number; anchored: boolean }
+): boolean {
+  if (next.anchored !== prev.anchored) return next.anchored
+  return next.dist < prev.dist
+}
+
+function closestAnchoredDuration(quotas: QuotaHit[], durations: DurationHit[]): DurationHit | undefined {
+  let best: DurationHit | undefined
+  let bestDist = Infinity
+  for (const quota of quotas) {
+    for (const duration of durations) {
+      if (!duration.anchored) continue
+      const dist = rangeGap(quota, duration)
+      if (dist > 120 || dist >= bestDist) continue
+      best = duration
+      bestDist = dist
+    }
+  }
+  return best
+}
+
+function rangeGap(a: TextSpan, b: TextSpan): number {
+  if (a.end <= b.index) return b.index - a.end
+  if (b.end <= a.index) return a.index - b.end
+  return Infinity
+}
+
+function parseChannelQuotas(text: string): QuotaHit[] {
+  const order: Channel[] = []
+  const counts = new Map<Channel, number>()
+  const spans = new Map<Channel, TextSpan>()
+  for (const match of text.matchAll(quotaPattern())) {
+    const count = parseCount(match[1])
+    const channel = channelFromWord(match[2])
+    if (!count || count > 30 || !channel) continue
+    if (!counts.has(channel)) {
+      order.push(channel)
+      spans.set(channel, { index: match.index ?? 0, end: (match.index ?? 0) + match[0].length })
+    }
+    counts.set(channel, (counts.get(channel) ?? 0) + count)
+  }
+  return order.map((channel) => ({
+    channel,
+    count: counts.get(channel) ?? 0,
+    index: spans.get(channel)?.index ?? 0,
+    end: spans.get(channel)?.end ?? 0
+  }))
+}
+
+/** Use per-channel counts only when every channel in the ladder was counted. */
+function sequenceFromQuotas(quotas: QuotaHit[], count: number, pool?: Channel[]): Channel[] | undefined {
+  if (!quotas.length) return undefined
+  if (pool?.length && pool.some((channel) => !quotas.some((quota) => quota.channel === channel))) {
+    return undefined
+  }
+  return spreadQuotas(capQuotas(quotas, count))
+}
+
+function capQuotas(quotas: QuotaHit[], limit: number): Array<{ channel: Channel; count: number }> {
+  const copy = quotas.map((quota) => ({ channel: quota.channel, count: quota.count }))
+  let total = copy.reduce((sum, quota) => sum + quota.count, 0)
+  while (total > limit) {
+    let largest = copy[0]
+    for (const quota of copy) if (quota.count > largest.count) largest = quota
+    if (largest.count <= 1) break
+    largest.count -= 1
+    total -= 1
+  }
+  return copy.filter((quota) => quota.count > 0)
+}
+
+/** Space scarcer channels through the ladder instead of clumping them. */
+function spreadQuotas(quotas: Array<{ channel: Channel; count: number }>): Channel[] {
+  const total = quotas.reduce((sum, quota) => sum + quota.count, 0)
+  const state = quotas.map((quota) => ({ channel: quota.channel, remaining: quota.count, debt: 0 }))
+  const out: Channel[] = []
+  while (out.length < total) {
+    for (const item of state) item.debt += item.remaining
+    let best = state.find((item) => item.remaining > 0)
+    if (!best) break
+    for (const item of state) {
+      if (item.remaining > 0 && item.debt > best.debt) best = item
+    }
+    out.push(best.channel)
+    best.remaining -= 1
+    best.debt -= total
+  }
+  return out
+}
+
+function parseCount(raw: string): number {
+  const t = raw.toLowerCase()
+  if (/^\d+$/.test(t)) return Number(t)
+  return WORD_NUMBERS[t] ?? 0
+}
+
+function durationDays(amountRaw: string, unitRaw: string): number | undefined {
+  const amount = parseCount(amountRaw)
+  if (!Number.isFinite(amount) || amount < 0) return undefined
+  const days = /week/.test(unitRaw) ? amount * 7 : amount
+  if (days > 90) return undefined
+  return Math.min(30, days)
 }
 
 function expandStepSpan(
@@ -376,13 +593,15 @@ function expandStepSpan(
   count: number,
   spanDays: number,
   goal: string,
-  tone: string
+  tone: string,
+  sequence?: Channel[]
 ): WorkspaceSpecStep[] {
   const n = Math.min(8, Math.max(1, count))
   const days = Math.min(30, Math.max(0, spanDays))
+  const planned = sequence?.length ? fitSequence(sequence, n) : undefined
   const pool = channels.length ? channels : (['email'] as Channel[])
   return Array.from({ length: n }, (_, i) => {
-    const channel = pool[i % pool.length]
+    const channel = planned ? planned[i] : pool[i % pool.length]
     const day = n === 1 ? 0 : Math.round((i / (n - 1)) * days)
     const role = i === 0 ? 'intro' : 'followup'
     return {
@@ -392,6 +611,20 @@ function expandStepSpan(
       ...copyFor(channel, role, goal, tone)
     }
   })
+}
+
+function fitSequence(sequence: Channel[], count: number): Channel[] {
+  if (sequence.length === count) return sequence
+  if (sequence.length > count) return sequence.slice(0, count)
+  const pool: Channel[] = []
+  for (const channel of sequence) if (!pool.includes(channel)) pool.push(channel)
+  const out = [...sequence]
+  let i = 0
+  while (out.length < count && pool.length) {
+    out.push(pool[i % pool.length])
+    i += 1
+  }
+  return out
 }
 
 function channelFromWord(word: string): Channel | undefined {
@@ -497,8 +730,8 @@ function ensureStepsCoverChannels(
       ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
     }))
   }
-  const span = parseStepSpan(prompt)
-  if (span) return expandStepSpan(channels, span.count, span.days, goal, tone)
+  const span = parseStepSpan(prompt, channels)
+  if (span) return expandStepSpan(channels, span.count, span.days, goal, tone, span.sequence)
 
   const covered = new Set(steps.map((step) => step.channel))
   let day = steps.length ? Math.max(...steps.map((step) => step.day)) + 2 : 0

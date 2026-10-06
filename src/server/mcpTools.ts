@@ -23,6 +23,7 @@ import {
   findOrgContact,
   findOrgMessage,
   findOrgProject,
+  getPublicSequence,
   isContactStatus,
   listPublicContacts,
   listPublicMessages,
@@ -176,7 +177,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Then save_research. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen with show_email_workspace. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
+        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
       })
     }
   )
@@ -378,7 +379,6 @@ export function registerJargonTools(
       { enroll: pipeline, billing }
     )
     if (!result.ok) return fail(result.body.error)
-    if (pipeline) return workspaceOk(store, config, actor.orgId, result.body.projectId, sandbox, 'tasks', actor.userId)
     return ok(result.body)
   }
 
@@ -413,7 +413,7 @@ export function registerJargonTools(
     {
       ...display('Add these people to an outbound list', HINTS.write),
       description:
-        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open Tasks yet — research each company/prospect next, then call save_research once; that enrolls everyone and opens the flow with personalized copy. Do not share a web workspace URL.',
+        'Ingest people and build the cadence structure. summary is the sentence on Claude\'s Allow card. Put people in workspace as a markdown table, CSV, or JSON. State the goal, audience, and any step count / day span (e.g. "7 steps over 10 days") — Jargon builds the ladder; do not write the full day-by-day sequence in chat. Does not open a workspace. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template. Research each company/prospect next, then call save_research once; that enrolls everyone and opens the one workspace, with personalized copy. Do not share a web workspace URL.',
       inputSchema: ImportListInput
     },
     async ({ workspace }) => execImportList(workspace)
@@ -435,7 +435,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the flow. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. That opens To-dos already ranked from signals on the connected source. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
+        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -834,13 +834,16 @@ export function registerJargonTools(
   server.registerTool(
     'get_sequence',
     {
-      ...display('Open the outbound workspace', HINTS.read),
+      ...display('Read the cadence steps', HINTS.read),
       description:
-        'Open the outbound workspace in Claude: Contacts, Sequence, and Tasks (Queue for a dialer). Prefer this or show_email_workspace over dumping JSON into chat.',
-      inputSchema: z.object({ projectId: z.string() }),
-      _meta: EMAIL_WORKSPACE_TOOL_META
+        'Read cadence steps as JSON (days, channels, labels). Does not open a workspace. Use only to check that the ladder matches the ask; if it does not, call update_sequence. Do not call this to display the template sequence. save_research opens the one workspace after personalized copy is saved.',
+      inputSchema: z.object({ projectId: z.string() })
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId)
+    async ({ projectId }) => {
+      const sequence = getPublicSequence(store, actor.orgId, projectId)
+      if (!sequence) return fail('Project not found')
+      return ok(sequence)
+    }
   )
 
   server.registerTool(
@@ -848,7 +851,7 @@ export function registerJargonTools(
     {
       ...display('Open your outbound workspace', HINTS.read),
       description:
-        'Reopen the outbound workspace in Claude on the flow (Contacts, Sequence, Tasks). Call after save_research or when they want to reopen work. Do not call this after deploy_tool while HubSpot enrichment is still pending. Use show_tasks only when they want to work what is due.',
+        'Reopen an outbound workspace that already has personalized copy. Call only when the user asks to see existing work. Do not call it during a build, after deploy_tool or import_list, before save_research, or in the same turn as save_research. save_research is the one workspace a build displays. Do not use this to show the template sequence.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -860,7 +863,7 @@ export function registerJargonTools(
     {
       ...display("Show what's due today", HINTS.read),
       description:
-        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Use this when they ask what is due today or want to work their tasks.',
+        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Call this once when they ask what is due, or once after a priority-pipeline deploy. Do not call it to preview a template cadence, and do not call it in the same turn as save_research — that already opened the workspace.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -987,7 +990,23 @@ export function registerJargonTools(
     return ok(result.sequence)
   }
 
-  async function execStartSequence(projectId: string, startAt?: number | string, contactIds?: string[]) {
+  function enrolledOk(projectId: string, result: { enrolled: number; listed: number; skipped: number }) {
+    return ok({
+      projectId,
+      enrolled: result.enrolled,
+      listed: result.listed,
+      skipped: result.skipped,
+      nextAction:
+        'This did not open a workspace. If these people still need personalized copy, call save_research and do not call show_email_workspace or show_tasks. save_research opens the one workspace. If copy is already saved, call show_tasks once.'
+    })
+  }
+
+  async function execStartSequence(
+    projectId: string,
+    startAt?: number | string,
+    contactIds?: string[],
+    opts?: { forApp?: boolean }
+  ) {
     const project = findOrgProject(store, actor.orgId, projectId)
     if (!project) return fail('Project not found')
     if (!isPriorityPipelinePrompt(project.prompt || '')) {
@@ -1008,7 +1027,16 @@ export function registerJargonTools(
       sandbox
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'sequence', actor.userId)
+    if (opts?.forApp) {
+      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId, { embed: false })
+    }
+    return ok({
+      projectId,
+      contacts: result.contacts,
+      queued: result.queued,
+      nextAction:
+        'This did not open a workspace. If personalized copy is already saved, call show_tasks once. Do not call show_tasks or show_email_workspace when save_research will run in this turn — save_research opens the one workspace.'
+    })
   }
 
   async function execSaveDraft(
@@ -1176,8 +1204,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll people who are already in this workspace into the sequence and open To-dos. Use this when the user says to enroll these people and they are already contacts here. Never call this before save_research has written their copy — save_research enrolls new people itself. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Enroll people who are already in this workspace into the sequence. Does not open a workspace. Use this when the user says to enroll these people and they are already contacts here. Never call this before save_research has written their copy — save_research enrolls new people and opens the one workspace. If this enroll is the last step, call show_tasks once afterward. Do not call show_tasks in the same turn as save_research. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
       inputSchema: StartSequenceInput
     },
     async ({ projectId, startAt, contactIds }) => execStartSequence(projectId, startAt, contactIds)
@@ -1191,7 +1218,7 @@ export function registerJargonTools(
       _meta: APP_ONLY_META,
       inputSchema: StartSequenceInput.omit({ summary: true })
     },
-    async ({ projectId, startAt, contactIds }) => execStartSequence(projectId, startAt, contactIds)
+    async ({ projectId, startAt, contactIds }) => execStartSequence(projectId, startAt, contactIds, { forApp: true })
   )
 
   server.registerTool(
@@ -1199,8 +1226,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. People already on the sequence are updated (new email/phone/LinkedIn steps are added). Manual steps become their to-dos.',
-      _meta: EMAIL_WORKSPACE_TOOL_META,
+        'Pull people from the connected HubSpot portal and enroll them into this sequence. Does not open a workspace. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. People already on the sequence are updated (new email/phone/LinkedIn steps are added). Manual steps become their to-dos. If you still need personalized copy, call save_research next and do not call show_email_workspace or show_tasks. If copy is already saved, call show_tasks once.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -1215,7 +1241,7 @@ export function registerJargonTools(
       if (warmth !== 'all') {
         const result = await enrollHubSpotContacts(store, config, actor.orgId, projectId, [], sandbox, warmth)
         if (!result.ok) return fail(result.error)
-        return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'contacts', actor.userId)
+        return enrolledOk(projectId, result)
       }
       const query = people.trim().toLowerCase()
       const enrollAll = query === 'all' || query === 'everyone'
@@ -1241,7 +1267,7 @@ export function registerJargonTools(
         sandbox
       )
       if (!result.ok) return fail(result.error)
-      return workspaceOk(store, config, actor.orgId, projectId, sandbox, 'sequence', actor.userId)
+      return enrolledOk(projectId, result)
     }
   )
 
@@ -1264,11 +1290,10 @@ export function registerJargonTools(
     {
       ...display('Resume the saved outbound workspace', HINTS.read),
       description:
-        'Open the latest saved workspace for this account: brief, sequence, warmth, and what a scheduled run should do. Call this first in a new Claude chat, and first on a scheduled run, before import_list or deploy_tool.',
+        'Read the latest saved workspace as JSON: brief, whether copy is still a template, and what to do next. Does not open a workspace. Call this first in a new Claude chat, and first on a scheduled run, before import_list or deploy_tool. If the user is building a new sequence, do not open this workspace. If they are continuing work that already has personalized copy, call show_email_workspace or show_tasks once.',
       inputSchema: z.object({
-        projectId: z.string().optional().describe('Workspace to resume. Omit to open the most recently updated one.')
-      }),
-      _meta: EMAIL_WORKSPACE_TOOL_META
+        projectId: z.string().optional().describe('Workspace to resume. Omit to read the most recently updated one.')
+      })
     },
     async ({ projectId }) => {
       const project = projectId
@@ -1278,10 +1303,17 @@ export function registerJargonTools(
       const brief = project.brief ?? saveWorkspaceBrief(store, actor.orgId, project.id)
       const ws = getEmailWorkspace(store, config, actor.orgId, project.id, { sandbox, userId: actor.userId })
       if (!ws) return fail('Project not found')
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ ...ws, brief }) }],
-        _meta: EMAIL_WORKSPACE_TOOL_META
-      }
+      return ok({
+        projectId: project.id,
+        name: ws.name,
+        contactCount: ws.contactCount,
+        researchPending: ws.researchPending,
+        enrolled: ws.taskStats.enrolled,
+        brief,
+        nextAction: ws.researchPending
+          ? 'Copy is still the template. Do not open a workspace. Finish personalization with save_research — that opens the one workspace.'
+          : 'This did not open a workspace. If the user is continuing this one, call show_email_workspace once. If they asked to build a new sequence, do not open this one.'
+      })
     }
   )
 
@@ -1407,7 +1439,7 @@ export function registerJargonTools(
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Required after import_list / deploy_tool. Write personalized talk tracks, email copy, and LinkedIn notes from each contact\'s fields (context and attrs from its source) — this enrolls the cadence and opens the flow. Do not invent funding, hiring, or tenure. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
+        'Required after import_list / deploy_tool. Write personalized talk tracks, email copy, and LinkedIn notes from each contact\'s fields (context and attrs from its source) — this enrolls the cadence and opens the one workspace for the build. Do not also call show_email_workspace or show_tasks. Do not invent funding, hiring, or tenure. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: SaveResearchInput
     },

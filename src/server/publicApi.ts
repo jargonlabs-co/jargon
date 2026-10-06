@@ -505,7 +505,7 @@ export async function deployPublicTool(
         context: c.context?.length ? c.context : undefined
       }))
       body.nextAction = willEnrollLater
-        ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from the source) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the flow. Do not leave {{first_name}} placeholders as the send copy.`
+        ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from the source) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence. Do not leave {{first_name}} placeholders as the send copy.`
         : `Write personalized email copy from each contact's fields for project ${projectId}. Do not invent company facts. Do not start a sequence.`
     }
     if (requestedFields.length) {

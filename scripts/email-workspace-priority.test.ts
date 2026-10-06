@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { BillingService } from '../src/server/billing/types.ts'
 import type { ServerConfig } from '../src/server/config.ts'
 import {
   getEmailWorkspace,
@@ -7,6 +8,7 @@ import {
   withoutDashboard,
   workspaceBrief
 } from '../src/server/emailWorkspace.ts'
+import { registerJargonTools } from '../src/server/mcpTools.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Project } from '../src/server/types.ts'
 
@@ -160,5 +162,68 @@ describe('Claude chat should not link the web workspace', () => {
       billingUrl: 'https://jargonlabs.co/billing',
       project: { id: 'proj_1' }
     })
+  })
+})
+
+describe('a build opens one workspace', () => {
+  it('does not render the template sequence before personalized copy is saved', async () => {
+    assert.equal(/After a sequence is created, keep the user in Claude \(show_email_workspace/i.test(JARGON_MCP_INSTRUCTIONS), false)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /save_research enrolls everyone and opens the one workspace/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /Do not call show_email_workspace, show_tasks, or get_sequence to preview the template/)
+
+    const db = emptyDb()
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'Outbound',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: '',
+      team: '',
+      description: '',
+      answers: { goal: 'Book a meeting' },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    db.contacts.push(contact({ id: 'c1', source: 'manual', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }))
+
+    type ToolDef = { description?: string; _meta?: { ui?: { resourceUri?: string }; 'ui/resourceUri'?: string } }
+    type Tool = (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; _meta?: unknown; isError?: boolean }>
+    const defs = new Map<string, ToolDef>()
+    const tools = new Map<string, Tool>()
+    registerJargonTools(
+      {
+        registerTool: (name: string, def: ToolDef, handler: Tool) => {
+          defs.set(name, def)
+          tools.set(name, handler)
+        }
+      } as unknown as Parameters<typeof registerJargonTools>[0],
+      memoryStore(db),
+      config,
+      { userId: 'user_1', orgId: 'org_1', environment: 'live', via: 'oauth' },
+      {} as BillingService
+    )
+
+    const opens = (name: string) => {
+      const meta = defs.get(name)?._meta
+      return Boolean(meta?.ui?.resourceUri || meta?.['ui/resourceUri'])
+    }
+    for (const name of ['get_sequence', 'resume_workspace', 'deploy_tool', 'import_list', 'start_sequence', 'enroll_hubspot']) {
+      assert.equal(opens(name), false, name)
+    }
+    for (const name of ['save_research', 'show_email_workspace', 'show_tasks']) {
+      assert.equal(opens(name), true, name)
+    }
+
+    const sequence = await tools.get('get_sequence')!({ projectId: 'proj_1' })
+    assert.equal(sequence._meta, undefined)
+    assert.equal(sequence.isError, undefined)
+    const resumed = await tools.get('resume_workspace')!({})
+    assert.equal(resumed._meta, undefined)
+    assert.equal(resumed.isError, undefined)
+    const brief = JSON.parse(resumed.content[0].text)
+    assert.equal(brief.projectId, 'proj_1')
+    assert.equal(brief.researchPending, true)
+    assert.match(brief.nextAction, /Do not open a workspace/)
   })
 })

@@ -235,13 +235,27 @@ export function emailFooter(input: { unsubscribeUrl: string; postalAddress?: str
   return lines.join('\n')
 }
 
+/** The do-not-call note for this number, when one exists. */
+export function doNotCallNote(
+  db: Pick<Database, 'suppressions'>,
+  orgId: string,
+  contact: Pick<Contact, 'email' | 'phone' | 'linkedinUrl'> & { attrs?: Contact['attrs'] }
+): string | null {
+  const suppressed = findSuppression(db, orgId, 'call', contact)
+  if (!suppressed || suppressed.reason !== 'do_not_call') return null
+  return suppressionMessage(suppressed)
+}
+
 /** Every pre-dial check. Returns a user-facing reason when the call must not happen. */
 export function callBlockReason(
   db: Pick<Database, 'suppressions'>,
-  contact: Contact
+  contact: Contact,
+  opts?: { allowDoNotCall?: boolean }
 ): string | null {
   const suppressed = findSuppression(db, contact.orgId, 'call', contact)
-  return suppressed ? suppressionMessage(suppressed) : null
+  if (!suppressed) return null
+  if (opts?.allowDoNotCall && suppressed.reason === 'do_not_call') return null
+  return suppressionMessage(suppressed)
 }
 
 export class OutboundBlockedError extends Error {

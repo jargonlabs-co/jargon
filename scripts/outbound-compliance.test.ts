@@ -4,6 +4,7 @@ import {
   addSuppression,
   addSuppressions,
   callBlockReason,
+  doNotCallNote,
   findSuppression,
   readUnsubscribeToken,
   unsubscribeUrl
@@ -208,6 +209,9 @@ describe('pre-dial checks', () => {
     assert.equal(callBlockReason(db, c), null)
     db.suppressions.push({ id: 's', orgId: 'org_a', kind: 'phone', value: '+14155550100', reason: 'do_not_call', createdAt: 0 })
     assert.match(callBlockReason(db, c) ?? '', /do-not-call/)
+    assert.match(doNotCallNote(db, 'org_a', c) ?? '', /do-not-call/)
+    assert.equal(callBlockReason(db, c, { allowDoNotCall: true }), null)
+    assert.match(doNotCallNote(db, 'org_a', c) ?? '', /Number is on the do-not-call list/)
   })
 })
 

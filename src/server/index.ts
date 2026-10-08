@@ -54,7 +54,6 @@ import { plivoSipUsername, poolHealth, PoolBudgetError } from './outboundPools'
 import { isProduction } from './env'
 import {
   addSuppression,
-  callBlockReason,
   OutboundBlockedError,
   readUnsubscribeToken,
   unsubscribePageHtml
@@ -113,6 +112,7 @@ import {
   isSequenceStopStatus,
   completePublicCall,
   dashboardFor,
+  outboundCallBlockReason,
   sendPublicMessage,
   startPublicCall
 } from './publicApi'
@@ -1126,7 +1126,9 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       return
     }
     const dialTo = call?.to || (contact && toE164(contact.phone)) || to
-    const blocked = contact ? callBlockReason(store.db, { ...contact, phone: dialTo }) : null
+    const blocked = contact
+      ? outboundCallBlockReason(store, { ...contact, phone: dialTo })
+      : null
     if (blocked) {
       console.warn(`[jargon] Plivo answer blocked for ${callId}: ${blocked}`)
       attachPlivoCall(callId, callUuid, 'failed', callerMemberId)

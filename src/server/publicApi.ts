@@ -43,7 +43,7 @@ import { missingRequestedFields, parseRequestedFields } from '../shared/requeste
 import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
-import { orgWaitsForHubSpotEnrichment } from './planLimits'
+import { orgAllowsDncCalls, orgWaitsForHubSpotEnrichment } from './planLimits'
 import { channelsFromSteps, formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
@@ -787,6 +787,13 @@ async function sendEmailForOrg(
   return sendPlatformGmail(config, { ...message, refreshToken: pool.refreshToken })
 }
 
+/** Do-not-call still blocks every org except the account override. */
+export function outboundCallBlockReason(store: DataStore, contact: Contact): string | null {
+  return callBlockReason(store.db, contact, {
+    allowDoNotCall: orgAllowsDncCalls(store, contact.orgId)
+  })
+}
+
 export function startPublicCall(
   store: DataStore,
   config: ServerConfig,
@@ -798,7 +805,7 @@ export function startPublicCall(
   const callId = uid('call')
   const dialTo = toE164(to ?? '') || toE164(contact.phone ?? '') || undefined
   if (!sandbox) {
-    const blocked = callBlockReason(store.db, { ...contact, phone: dialTo ?? '' })
+    const blocked = outboundCallBlockReason(store, { ...contact, phone: dialTo ?? '' })
     if (blocked) throw new OutboundBlockedError(blocked)
   }
   const live = inspectLiveVoice(config)

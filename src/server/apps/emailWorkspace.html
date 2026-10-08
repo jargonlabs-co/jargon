@@ -1313,11 +1313,7 @@ function dueLabel(task) {
             setNotice(`Connected with ${contact.name}.`, 'ok');
           },
           onDisconnect: () => {
-            if (dialState === 'dialing' || dialState === 'connected') {
-              clearInterval(dialTicker);
-              dialState = dialSeconds ? 'ended' : 'idle';
-              render();
-            }
+            if (dialState === 'dialing' || dialState === 'connected') finishDial();
           },
           onError: (message) => {
             void callTool({
@@ -1574,26 +1570,47 @@ function dueLabel(task) {
     void startCall(contact);
   }
 
-  function hangUp() {
+  /** Ended-call UI belongs only to the person who was just dialed. */
+  function dialEndedFor(contactId) {
+    return dialState === 'ended' && !!contactId && dialContactId === contactId;
+  }
+
+  function finishDial() {
     stopCallPoll();
     void hangupPlivo();
     clearTimeout(dialConnect);
     clearInterval(dialTicker);
-    dialState = dialSeconds ? 'ended' : 'idle';
+    const task = activeTask();
+    const movedOn = task?.channel === 'call' && task.contactId !== dialContactId;
+    dialState = dialSeconds && !movedOn ? 'ended' : 'idle';
+    if (dialState !== 'ended') {
+      dialSeconds = 0;
+      if (movedOn) {
+        dialContactId = task.contactId;
+        dialDigits = '';
+        dialSeedContactId = null;
+      }
+    }
     render();
   }
 
-  function renderDialer(step) {
+  function hangUp() {
+    finishDial();
+  }
+
+  function renderDialer(step, preferContact) {
     const people = ws.contacts || [];
-    const contact = dialerContact();
+    const liveSession = dialState === 'dialing' || dialState === 'connected';
+    const contact = (liveSession && dialerContact()) || preferContact || dialerContact();
     seedDialDigits(contact);
     const number = dialerNumber();
-    const live = dialState === 'dialing' || dialState === 'connected';
-    const status = dialState === 'dialing'
+    const ended = dialEndedFor(contact?.id);
+    const live = (dialState === 'dialing' || dialState === 'connected') && (!contact || contact.id === dialContactId);
+    const status = live && dialState === 'dialing'
       ? 'Calling…'
-      : dialState === 'connected'
+      : live && dialState === 'connected'
         ? 'On the line'
-        : dialState === 'ended'
+        : ended
           ? `Ended · ${clockText(dialSeconds)}`
           : [contact?.title, contact?.company].filter(Boolean).join(' · ') || 'Ready';
     const script = contact ? interpolate(step.body || '', contact) : step.body || '';
@@ -1632,10 +1649,10 @@ function dueLabel(task) {
             <button class="btn end" id="dial-end">End call</button>
           ` : `
             ${dialDigits ? `<button class="btn" id="dial-back">Delete</button>` : ''}
-            <button class="btn call" id="dial-call">${dialState === 'ended' ? 'Call again' : 'Call'}</button>
+            <button class="btn call" id="dial-call">${ended ? 'Call again' : 'Call'}</button>
           `}
         </div>
-        ${dialState === 'ended' ? `
+        ${ended ? `
           <label>Log outcome</label>
           <div class="row">
             <button class="btn" data-disp="interested" ${busy ? 'disabled' : ''}>Interested</button>
@@ -2038,6 +2055,7 @@ function dueLabel(task) {
     return `
       <div class="composer call-panel">
         <div class="to">${esc(contact.name)} · ${esc(contact.phone || 'No number on file')}</div>
+        ${task?.reason ? `<div class="banner">${esc(task.reason)}</div>` : ''}
         ${phase === 'dialing' ? '<p class="empty">Connecting…</p>' : ''}
         ${phase === 'connected' ? '<p class="kicker">On the line</p>' : ''}
         ${done && !call ? '<p class="sub">Call logged.</p>' : ''}
@@ -2107,7 +2125,9 @@ function dueLabel(task) {
     selectedMessageId = task.messageId || null;
     actionPane = task.channel;
     pendingSend = false;
-    if (dialState !== 'dialing' && dialState !== 'connected') dialContactId = task.contactId;
+    const live = dialState === 'dialing' || dialState === 'connected';
+    if (!live && task.contactId !== dialContactId) resetDialer(task.contactId);
+    else if (!live) dialContactId = task.contactId;
     const idx = emailSteps().findIndex((s) => s.id === task.stepId);
     if (idx >= 0) peopleStep = idx;
   }
@@ -2198,7 +2218,7 @@ function dueLabel(task) {
               <button class="btn" id="task-next" ${position >= tasks.length ? 'disabled' : ''}>Skip</button>
             </div>
           </div>
-          ${current.reason ? `<div class="banner">${esc(current.reason)}</div>` : ''}
+          ${current.reason && current.channel !== 'call' ? `<div class="banner">${esc(current.reason)}</div>` : ''}
           ${taskAction(current)}
         </div>
       ` : ''}
@@ -2482,7 +2502,7 @@ function dueLabel(task) {
     if (!contact) return '<p class="empty">Contact missing.</p>';
     const step = stepOf(task);
     if (task.channel === 'call') {
-      const dispositions = dialState === 'ended' ? '' : `
+      const dispositions = dialEndedFor(contact.id) ? '' : `
         <label>Log outcome</label>
         <div class="row">
           <button class="btn" data-disp="interested" ${busy ? 'disabled' : ''}>Interested</button>
@@ -2492,7 +2512,8 @@ function dueLabel(task) {
         </div>`;
       return `
         <div class="work-top"><button class="btn" id="work-back">Back</button><div class="who">${esc(contact.name)}</div></div>
-        ${renderDialer({ ...(step || {}), body: task.body || step?.body || '', label: task.stepLabel || 'Call', channel: 'call' })}
+        ${task.reason ? `<div class="banner">${esc(task.reason)}</div>` : ''}
+        ${renderDialer({ ...(step || {}), body: task.body || step?.body || '', label: task.stepLabel || 'Call', channel: 'call' }, contact)}
         ${dispositions}
       `;
     }

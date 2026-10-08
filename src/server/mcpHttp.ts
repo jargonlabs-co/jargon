@@ -21,7 +21,7 @@ import {
 } from './mcpOauth'
 import { registerJargonTools } from './mcpTools'
 import type { BillingService } from './billing/types'
-import { JARGON_MCP_INSTRUCTIONS, SAMPLE_QUEUE_WORKSPACE, SAMPLE_TASKS_WORKSPACE } from './emailWorkspace'
+import { jargonMcpInstructions, SAMPLE_QUEUE_WORKSPACE, SAMPLE_TASKS_WORKSPACE } from './emailWorkspace'
 import { emailWorkspacePreviewHtml, registerEmailWorkspaceApp } from './mcpApps'
 
 const actorStore = new AsyncLocalStorage<McpActor>()
@@ -37,7 +37,7 @@ export function mountMcp(
     if (!actor) throw new Error('MCP actor missing')
     const server = new McpServer(
       { name: 'jargon', version: '1.1.0' },
-      { instructions: JARGON_MCP_INSTRUCTIONS }
+      { instructions: jargonMcpInstructions(store, actor.orgId) }
     )
     registerJargonTools(server, store, config, actor, billing)
     registerEmailWorkspaceApp(server)

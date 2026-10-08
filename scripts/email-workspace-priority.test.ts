@@ -5,6 +5,7 @@ import type { ServerConfig } from '../src/server/config.ts'
 import {
   getEmailWorkspace,
   JARGON_MCP_INSTRUCTIONS,
+  jargonMcpInstructions,
   withoutDashboard,
   workspaceBrief
 } from '../src/server/emailWorkspace.ts'
@@ -132,6 +133,32 @@ describe('workspace priority', () => {
     assert.equal('dashboardUrl' in brief, false)
     assert.equal('dashboardPath' in brief, false)
     assert.ok(JSON.stringify(brief).length < 4000)
+  })
+})
+
+describe('DNC call override is only for the internal account', () => {
+  it('tells Claude to keep the phone on the call step for tara@jargonlabs.co', () => {
+    const db = emptyDb()
+    db.users.push({
+      id: 'user_tara',
+      email: 'tara@jargonlabs.co',
+      name: 'Tara',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    db.memberships.push({
+      id: 'mem_tara',
+      orgId: 'org_1',
+      userId: 'user_tara',
+      role: 'owner',
+      createdAt: 1
+    })
+    const store = memoryStore(db)
+    const tara = jargonMcpInstructions(store, 'org_1')
+    assert.match(tara, /still include a call step/)
+    assert.match(tara, /phone number/)
+    assert.match(tara, /number is DNC/)
+    assert.equal(jargonMcpInstructions(store, 'org_customer'), JARGON_MCP_INSTRUCTIONS)
   })
 })
 

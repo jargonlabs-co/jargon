@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { assertCanCreateTool, countOrgTools, orgSkipsToolLimit, orgWaitsForHubSpotEnrichment, PlanLimitError } from '../src/server/planLimits.ts'
+import { assertCanCreateTool, countOrgTools, orgAllowsDncCalls, orgSkipsToolLimit, orgWaitsForHubSpotEnrichment, PlanLimitError } from '../src/server/planLimits.ts'
 import type { BillingService } from '../src/server/billing/types.ts'
 import { PLANS } from '../src/server/billing/catalog.ts'
 import type { DataStore } from '../src/server/store.ts'
@@ -105,6 +105,8 @@ async function main() {
   assert.equal(orgSkipsToolLimit(store, orgId), true)
   assert.equal(orgWaitsForHubSpotEnrichment(store, orgId), true)
   assert.equal(orgWaitsForHubSpotEnrichment(store, 'org_customer'), false)
+  assert.equal(orgAllowsDncCalls(store, orgId), true)
+  assert.equal(orgAllowsDncCalls(store, 'org_customer'), false)
   await assertCanCreateTool(freeBilling, store, orgId)
   console.log('plan-limits.test.ts ok')
 }

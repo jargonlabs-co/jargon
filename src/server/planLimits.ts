@@ -43,6 +43,14 @@ export function orgWaitsForHubSpotEnrichment(store: DataStore, orgId: string): b
   return orgHasMemberIn(store, orgId, emailFlag('JARGON_HUBSPOT_ENRICHMENT_WAIT_EMAILS'))
 }
 
+/**
+ * Orgs with a member in JARGON_ALLOW_DNC_CALLS_EMAILS can dial a number that is
+ * on the do-not-call list. The DNC note stays on the call step.
+ */
+export function orgAllowsDncCalls(store: DataStore, orgId: string): boolean {
+  return orgHasMemberIn(store, orgId, emailFlag('JARGON_ALLOW_DNC_CALLS_EMAILS'))
+}
+
 /** Enforce Free-tier maxTools before creating a tool. */
 export async function assertCanCreateTool(
   billing: BillingService,

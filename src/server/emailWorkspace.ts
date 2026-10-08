@@ -2,6 +2,8 @@ import type { DataStore } from './store'
 import type { ServerConfig } from './config'
 import type { Channel, FieldDef, Project } from './types'
 import { toPublicConnection } from './connections'
+import { doNotCallNote } from './compliance'
+import { orgAllowsDncCalls } from './planLimits'
 import { interpolateTemplate } from '../shared/fieldCatalog'
 import { voiceIsLive } from './providers/voice'
 import { platformGmailReady } from './providers/gmail'
@@ -26,6 +28,7 @@ import {
 } from '../shared/priorityOverlay'
 import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
 import {
+  annotateOpenCallNotes,
   buildWorkspaceTasks,
   summarizeTasks,
   type TaskStats,
@@ -33,7 +36,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=personcopy1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=dnc1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -71,6 +74,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=onect1',
   'ui://jargon/email-workspace.html?v=priorityhml1',
   'ui://jargon/email-workspace.html?v=mailfmt1',
+  'ui://jargon/email-workspace.html?v=personcopy1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -262,7 +266,10 @@ export function getEmailWorkspace(
   const openCallRow = store.db.calls.find(
     (c) => c.projectId === projectId && c.phase !== 'completed' && c.phase !== 'failed'
   )
-  const tasks = buildWorkspaceTasks({ contacts, steps, messages, calls: projectCalls })
+  const tasks = annotateOpenCallNotes(
+    buildWorkspaceTasks({ contacts, steps, messages, calls: projectCalls }),
+    dncNotesFor(store, orgId, contacts)
+  )
   if (priorityById.size) {
     tasks.sort(
       (a, b) =>
@@ -739,6 +746,28 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
     queued: 3,
     sent: 2
   }
+}
+
+const DNC_CALL_OVERRIDE = `Account override: if a contact is do-not-call or DNC, still include a call step and put their phone number on it. Keep the note that says the number is DNC. The rep can place the call.`
+
+export function jargonMcpInstructions(store: DataStore, orgId: string): string {
+  if (!orgAllowsDncCalls(store, orgId)) return JARGON_MCP_INSTRUCTIONS
+  return `${JARGON_MCP_INSTRUCTIONS}\n\n${DNC_CALL_OVERRIDE}`
+}
+
+function dncNotesFor(
+  store: DataStore,
+  orgId: string,
+  contacts: Array<Pick<PublicContact, 'id' | 'email' | 'phone' | 'linkedinUrl'>>
+): Map<string, string> {
+  const notes = new Map<string, string>()
+  if (!orgAllowsDncCalls(store, orgId)) return notes
+  for (const contact of contacts) {
+    if (!contact.phone?.trim()) continue
+    const note = doNotCallNote(store.db, orgId, contact)
+    if (note) notes.set(contact.id, note)
+  }
+  return notes
 }
 
 export const JARGON_MCP_INSTRUCTIONS = `Jargon runs outbound for this account: email sends from the mailbox the customer connected at jargonlabs.co (Account → Data → Sending mailbox, Gmail or Outlook), and replies there stop the sequence; phone and LinkedIn are sent by Jargon (customers do not bring API keys). If an email send says to connect or reconnect a mailbox, tell the user to do that on the Data page. Jargon stores contacts and builds the requested tool — including the cadence ladder (days, channels, labels). Contact and company facts come from the customer's source — HubSpot, a Railway or Postgres table, or a list they paste — including whatever enrichment tool wrote into it. Each contact carries those facts in context and attrs. Claude writes send copy and talk tracks from those fields via save_research, which opens the one workspace.

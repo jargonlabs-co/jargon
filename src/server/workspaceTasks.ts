@@ -221,6 +221,20 @@ export function buildWorkspaceTasks(input: {
 }
 
 /** One open to-do per contact: the soonest step still assigned to the rep. */
+/** Keep an open call step dialable and attach a note (for example do-not-call). */
+export function annotateOpenCallNotes(
+  tasks: WorkspaceTask[],
+  notes: ReadonlyMap<string, string>
+): WorkspaceTask[] {
+  if (!notes.size) return tasks
+  return tasks.map((task) => {
+    if (task.channel !== 'call' || task.state === 'done' || task.state === 'skipped') return task
+    const note = notes.get(task.contactId)
+    if (!note || task.reason) return task
+    return { ...task, reason: note, target: task.target }
+  })
+}
+
 export function nextOpenTasksByContact(tasks: WorkspaceTask[]): WorkspaceTask[] {
   const best = new Map<string, WorkspaceTask>()
   for (const task of tasks) {

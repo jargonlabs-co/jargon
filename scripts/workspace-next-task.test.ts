@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { nextOpenTasksByContact, type WorkspaceTask } from '../src/server/workspaceTasks.ts'
+import { annotateOpenCallNotes, nextOpenTasksByContact, type WorkspaceTask } from '../src/server/workspaceTasks.ts'
 
 function task(partial: Partial<WorkspaceTask> & Pick<WorkspaceTask, 'id' | 'contactId' | 'dueAt'>): WorkspaceTask {
   return {
@@ -38,5 +38,24 @@ describe('nextOpenTasksByContact', () => {
       task({ id: 'open', contactId: 'a', dueAt: 9, stepOrder: 2 })
     ]
     assert.equal(nextOpenTasksByContact(tasks)[0]?.id, 'open')
+  })
+})
+
+describe('annotateOpenCallNotes', () => {
+  it('keeps the phone on a due call and adds the do-not-call note', () => {
+    const tasks = [
+      task({
+        id: 'call',
+        contactId: 'ada',
+        dueAt: 1,
+        channel: 'call',
+        target: '+14155550100',
+        stepLabel: 'Call'
+      })
+    ]
+    const next = annotateOpenCallNotes(tasks, new Map([['ada', 'Number is on the do-not-call list']]))
+    assert.equal(next[0]?.state, 'due')
+    assert.equal(next[0]?.target, '+14155550100')
+    assert.equal(next[0]?.reason, 'Number is on the do-not-call list')
   })
 })

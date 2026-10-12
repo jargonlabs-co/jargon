@@ -18,6 +18,7 @@ import {
   enrollPublicSequence,
   latestWorkspace,
   listHubSpotContactsForEnroll,
+  promoteToRep,
   saveWorkspaceBrief,
   findOrgCall,
   findOrgContact,
@@ -52,6 +53,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
 import { toE164 } from '../shared/phone'
 import { platformGmailReady } from './providers/gmail'
+import { bookPublicMeeting } from './calendar'
 import { getEmailWorkspace, withoutDashboard, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
@@ -65,7 +67,8 @@ const ContactStatus = z.enum([
   'replied',
   'no_answer',
   'interested',
-  'not_interested'
+  'not_interested',
+  'meeting_booked'
 ])
 
 // Claude's Allow card dumps nested objects/arrays as a JSON fence. Write tools
@@ -177,7 +180,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask about a schedule and create the Claude task only after they confirm with Schedule. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
+        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. The Claude scheduled task, after they confirm with Schedule, only calls resume_workspace then show_tasks. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
       })
     }
   )
@@ -1276,10 +1279,13 @@ export function registerJargonTools(
     {
       ...display('Pull CRM contacts by warmth', HINTS.read),
       description:
-        'Pull contacts from the connected HubSpot portal that have an email, phone, or LinkedIn URL. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals from HubSpot fields (intent, seniority, hiring, whatever your enrichment tool wrote). Sorted best-first. Does not enroll them. If pendingEnrichment is set, enrichment is still writing contact info — call this again before enroll_hubspot or save_research. Do not regroup by warmth.'
+        'Pull contacts from the connected HubSpot portal that have an email, phone, or LinkedIn URL. When the workspace has a saved segment (lead status, lifecycle stage, or list), only that slice is returned. Each contact includes priority.rank, priority.motion (inbound or outbound), and priority.signals from HubSpot fields (intent, seniority, hiring, whatever your enrichment tool wrote). Sorted best-first. Does not enroll them. If pendingEnrichment is set, enrichment is still writing contact info — call this again before enroll_hubspot or save_research. Do not regroup by warmth.',
+      inputSchema: z.object({
+        projectId: z.string().optional().describe('Workspace whose saved segment to apply. Omit to use the latest workspace.')
+      })
     },
-    async () => {
-      const result = await listHubSpotContactsForEnroll(store, config, actor.orgId)
+    async ({ projectId }) => {
+      const result = await listHubSpotContactsForEnroll(store, config, actor.orgId, projectId)
       if (!result.ok) return fail(result.error)
       return ok(result)
     }
@@ -1312,7 +1318,9 @@ export function registerJargonTools(
         brief,
         nextAction: ws.researchPending
           ? 'Copy is still the template. Do not open a workspace. Finish personalization with save_research — that opens the one workspace.'
-          : 'This did not open a workspace. If the user is continuing this one, call show_email_workspace once. If they asked to build a new sequence, do not open this one.'
+          : project.brief?.unattended === 'accepted'
+            ? 'Call show_tasks once. That opens the sequence. Do not enroll, research, or send.'
+            : 'This did not open a workspace. If the user is continuing this one, call show_email_workspace once. If they asked to build a new sequence, do not open this one.'
       })
     }
   )
@@ -1322,19 +1330,79 @@ export function registerJargonTools(
     {
       ...display('Remember the schedule answer', HINTS.write),
       description:
-        'Record whether the user approved a Claude scheduled task for this workspace. Call this after they answer the schedule question. accepted means they confirmed with Schedule. declined means they said no. This does not create the Claude task.',
+        'Record whether the user allowed Jargon to run this workspace on its own. accepted is the one grant: Jargon pulls the segment, enrolls the agent lane, and promotes ready people with no further prompt. declined means they said no. Also pass the segment they named. This does not create the Claude task — that task only opens the sequence with show_tasks after they confirm with Schedule.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
         choice: z.enum(['accepted', 'declined']),
-        cadence: z.string().optional().describe('The cadence they approved, such as "every Sunday at 6pm".')
+        cadence: z.string().optional().describe('The cadence they approved, such as "every Sunday at 6pm".'),
+        leadStatus: z.string().optional().describe('HubSpot lead status to work, such as Disqualified.'),
+        lifecycleStage: z.string().optional().describe('HubSpot lifecycle stage to work.'),
+        listId: z.string().optional().describe('HubSpot list id to work.')
       })
     },
-    async ({ projectId, choice, cadence }) => {
+    async ({ projectId, choice, cadence, leadStatus, lifecycleStage, listId }) => {
       if (!findOrgProject(store, actor.orgId, projectId)) return fail('Project not found')
-      const brief = saveWorkspaceBrief(store, actor.orgId, projectId, { scheduleChoice: choice, cadence })
+      const segment =
+        leadStatus?.trim() || lifecycleStage?.trim() || listId?.trim()
+          ? {
+              leadStatus: leadStatus?.trim() || undefined,
+              lifecycleStage: lifecycleStage?.trim() || undefined,
+              listId: listId?.trim() || undefined
+            }
+          : undefined
+      const brief = saveWorkspaceBrief(store, actor.orgId, projectId, {
+        scheduleChoice: choice,
+        cadence,
+        unattended: choice,
+        nextAgentRunAt: choice === 'accepted' ? Date.now() : undefined,
+        ...(segment ? { segment } : {})
+      })
       if (!brief) return fail('Project not found')
       return ok({ brief })
+    }
+  )
+
+  server.registerTool(
+    'promote_to_rep',
+    {
+      ...display('Queue people for a rep', HINTS.write),
+      description:
+        'Move people off the agent lane and onto the rep queue in this workspace. summary is the sentence on Claude\'s Allow card. Use this when someone the agent worked is ready for a human. Does not open a workspace. Call show_tasks once afterward if the user is in the chat.',
+      inputSchema: z.object({
+        summary: Summary,
+        contactIds: z.string().describe('Contact ids, separated by commas or newlines.')
+      })
+    },
+    async ({ contactIds }) => {
+      const ids = contactIds.split(/[\s,;]+/).map((id) => id.trim()).filter(Boolean)
+      const result = promoteToRep(store, actor.orgId, ids)
+      if (!result.ok) return fail(result.error)
+      return ok(result)
+    }
+  )
+
+  server.registerTool(
+    'book_meeting',
+    {
+      ...display('Send a calendar invite', HINTS.send),
+      description:
+        'Create a calendar event on the connected Gmail or Outlook mailbox and email the invite to the contact. summary is the sentence on Claude\'s Allow card. start is an ISO date. This stops the sequence for that person and logs the meeting.',
+      inputSchema: z.object({
+        summary: Summary,
+        contactId: z.string(),
+        start: z.string().describe('ISO 8601 start, such as 2026-10-14T18:00:00Z'),
+        durationMinutes: z.number().int().min(15).max(240).optional(),
+        title: z.string().max(200).optional(),
+        note: z.string().max(2000).optional()
+      })
+    },
+    async ({ contactId, start, durationMinutes, title, note }) => {
+      const contact = findOrgContact(store, actor.orgId, contactId)
+      if (!contact) return fail('Contact not found')
+      const result = await bookPublicMeeting(store, config, contact, { start, durationMinutes, title, note })
+      if (!result.ok) return fail(result.error)
+      return ok(result)
     }
   )
 

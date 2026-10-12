@@ -18,7 +18,7 @@ export function analyticsFor(db: Database, projectId: string): AnalyticsSummary 
   const enrolled = contacts.length
   const contacted = contacts.filter((c) => c.status !== 'queued').length
   const replied = contacts.filter((c) => c.status === 'replied' || c.status === 'interested').length
-  const booked = contacts.filter((c) => c.status === 'interested').length
+  const booked = contacts.filter((c) => c.status === 'interested' || c.status === 'meeting_booked').length
   const emailsSent = messages.filter((m) => m.status === 'sent').length
   const completedCalls = calls.filter((c) => c.phase === 'completed')
   const answered = completedCalls.filter(
@@ -141,7 +141,7 @@ export function nextQueueContact(
   projectId: string
 ): { contact: Contact; step: SequenceStep | null; remaining: number } | null {
   const queueable = db.contacts.filter(
-    (c) => c.projectId === projectId && QUEUE_STATUSES.includes(c.status)
+    (c) => c.projectId === projectId && c.lane !== 'agent' && QUEUE_STATUSES.includes(c.status)
   )
   if (!queueable.length) return null
 
@@ -169,7 +169,8 @@ export function isContactStatus(value: unknown): value is ContactStatus {
       'replied',
       'no_answer',
       'interested',
-      'not_interested'
+      'not_interested',
+      'meeting_booked'
     ].includes(value)
   )
 }

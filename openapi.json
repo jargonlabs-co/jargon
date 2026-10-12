@@ -969,7 +969,8 @@
           "replied",
           "no_answer",
           "interested",
-          "not_interested"
+          "not_interested",
+          "meeting_booked"
         ]
       },
       "ProjectKind": {

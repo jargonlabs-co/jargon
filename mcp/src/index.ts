@@ -11,7 +11,8 @@ const ContactStatus = z.enum([
   'replied',
   'no_answer',
   'interested',
-  'not_interested'
+  'not_interested',
+  'meeting_booked'
 ])
 
 // Claude renders the raw argument object on its approval card and truncates it

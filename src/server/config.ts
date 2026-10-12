@@ -244,7 +244,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       clientSecret: process.env.HUBSPOT_CLIENT_SECRET ?? '',
       scopes:
         process.env.HUBSPOT_SCOPES ??
-        'crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read oauth'
+        'oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read crm.objects.notes.write crm.objects.calls.write crm.objects.emails.write crm.objects.meetings.write crm.lists.read'
     },
     plivo: {
       authId: (process.env.PLIVO_AUTH_ID ?? '').trim(),

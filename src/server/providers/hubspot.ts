@@ -2,7 +2,7 @@ import { encryptJson, uid } from '../crypto'
 import type { ServerConfig } from '../config'
 import { isProduction } from '../env'
 import { createOAuthState, oauthRedirectUri, readSecrets, type ProviderSecrets } from '../connections'
-import type { Connection } from '../types'
+import type { Connection, CrmSegment } from '../types'
 import type { DataStore } from '../store'
 import { hasReachableContact, isRealEmail } from '../../shared/priorityOverlay'
 import { prospectsToContacts, factsFromProspect, type ContextProspect } from './prospects'
@@ -157,10 +157,61 @@ export async function fetchHubSpotContacts(
   return pull.reachable
 }
 
+export function crmSegmentActive(segment?: CrmSegment): boolean {
+  if (!segment) return false
+  return Boolean(segment.leadStatus?.trim() || segment.lifecycleStage?.trim() || segment.listId?.trim())
+}
+
+export type HubSpotSearchFilter = {
+  propertyName: string
+  operator: string
+  value?: string
+  values?: string[]
+}
+
+/** Search filters for a CRM segment. No segment still matches every modified contact. */
+export function hubspotSearchFilters(segment?: CrmSegment, memberIds?: string[]): HubSpotSearchFilter[] {
+  const filters: HubSpotSearchFilter[] = [
+    { propertyName: 'lastmodifieddate', operator: 'GTE', value: '0' }
+  ]
+  const lead = segment?.leadStatus?.trim()
+  if (lead) filters.push({ propertyName: 'hs_lead_status', operator: 'EQ', value: lead })
+  const stage = segment?.lifecycleStage?.trim()
+  if (stage) filters.push({ propertyName: 'lifecyclestage', operator: 'EQ', value: stage })
+  if (memberIds?.length) {
+    filters.push({ propertyName: 'hs_object_id', operator: 'IN', values: memberIds.slice(0, 100) })
+  }
+  return filters
+}
+
+async function fetchHubSpotListMemberIds(accessToken: string, listId: string): Promise<string[]> {
+  const ids: string[] = []
+  let after: string | undefined
+  for (let page = 0; page < 5 && ids.length < 100; page++) {
+    const url = new URL(`https://api.hubapi.com/crm/v3/lists/${encodeURIComponent(listId)}/memberships`)
+    url.searchParams.set('limit', '100')
+    if (after) url.searchParams.set('after', after)
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+    if (!res.ok) throw new Error(`HubSpot list ${listId} failed (${res.status})`)
+    const json = (await res.json()) as {
+      results?: Array<{ recordId?: string }>
+      paging?: { next?: { after?: string } }
+    }
+    for (const row of json.results ?? []) {
+      if (row.recordId) ids.push(String(row.recordId))
+      if (ids.length >= 100) break
+    }
+    after = json.paging?.next?.after
+    if (!after) break
+  }
+  return ids
+}
+
 export async function pullHubSpotContacts(
   accessToken: string,
   limit: number,
-  demo: boolean
+  demo: boolean,
+  segment?: CrmSegment
 ): Promise<HubSpotContactPull> {
   const capped = Math.min(Math.max(limit, 1), 200)
   if (demo || accessToken === 'demo-hubspot-token') {
@@ -168,12 +219,17 @@ export async function pullHubSpotContacts(
   }
 
   const props = await hubspotPropertyNames(accessToken)
+  let memberIds: string[] | undefined
+  if (segment?.listId?.trim()) {
+    memberIds = await fetchHubSpotListMemberIds(accessToken, segment.listId.trim())
+    if (!memberIds.length) return { reachable: [], pending: [], recentlyPending: 0 }
+  }
   const rows: Array<{ id: string; properties?: Record<string, string | null> }> = []
   let after: string | undefined
   let pages = 0
   while (rows.length < 500 && pages < 6) {
     const pageSize = Math.min(100, 500 - rows.length)
-    const page = await fetchHubSpotContactPage(accessToken, props, pageSize, after)
+    const page = await fetchHubSpotContactPage(accessToken, props, pageSize, after, segment, memberIds)
     if (!page) break
     for (const row of page.results) {
       rows.push(row)
@@ -203,14 +259,14 @@ export async function pullHubSpotContactsUntilReady(
   accessToken: string,
   limit: number,
   demo: boolean,
-  opts?: { attempts?: number; delayMs?: number }
+  opts?: { attempts?: number; delayMs?: number; segment?: CrmSegment }
 ): Promise<HubSpotContactPull> {
   const attempts = Math.max(1, opts?.attempts ?? ENRICH_ATTEMPTS)
   const delayMs = Math.max(0, opts?.delayMs ?? ENRICH_DELAY_MS)
-  let pull = await pullHubSpotContacts(accessToken, limit, demo)
+  let pull = await pullHubSpotContacts(accessToken, limit, demo, opts?.segment)
   for (let i = 1; i < attempts && pull.recentlyPending > 0; i++) {
     if (delayMs) await sleep(delayMs)
-    pull = await pullHubSpotContacts(accessToken, limit, demo)
+    pull = await pullHubSpotContacts(accessToken, limit, demo, opts?.segment)
   }
   return pull
 }
@@ -224,10 +280,13 @@ async function fetchHubSpotContactPage(
   accessToken: string,
   props: string[],
   pageSize: number,
-  after?: string
+  after?: string,
+  segment?: CrmSegment,
+  memberIds?: string[]
 ): Promise<HubSpotPage | null> {
-  const searched = await searchHubSpotContactPage(accessToken, props, pageSize, after)
+  const searched = await searchHubSpotContactPage(accessToken, props, pageSize, after, segment, memberIds)
   if (searched) return searched
+  if (crmSegmentActive(segment) || memberIds?.length) return null
   return listHubSpotContactPage(accessToken, props, pageSize, after)
 }
 
@@ -235,7 +294,9 @@ async function searchHubSpotContactPage(
   accessToken: string,
   props: string[],
   pageSize: number,
-  after?: string
+  after?: string,
+  segment?: CrmSegment,
+  memberIds?: string[]
 ): Promise<HubSpotPage | null> {
   try {
     const res = await fetch(HUBSPOT_SEARCH, {
@@ -247,7 +308,7 @@ async function searchHubSpotContactPage(
       body: JSON.stringify({
         filterGroups: [
           {
-            filters: [{ propertyName: 'lastmodifieddate', operator: 'GTE', value: '0' }]
+            filters: hubspotSearchFilters(segment, memberIds)
           }
         ],
         sorts: [{ propertyName: 'lastmodifieddate', direction: 'DESCENDING' }],

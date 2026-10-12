@@ -177,7 +177,7 @@ export function isEmailMotion(project: Project, steps: Array<{ channel: string }
 }
 
 export function scheduleAsk(projectId: string): string {
-  return `Ask the user once whether to run project ${projectId} on a schedule. Default: every Sunday at 6pm in their timezone. If they name another cadence, use that. If they say yes, propose a Claude scheduled task and wait for them to confirm with Schedule. Do not say it is scheduled until they confirm. The task instructions must say: call resume_workspace for this project, then list_crm_contacts, enroll everyone with enroll_hubspot people "all", research anyone new, and save_research. Tell them the task must be allowed to use Jargon's write tools, or a later run stops on an Allow card. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+  return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must say: call resume_workspace for this project, then show_tasks. Do not enroll, research, or send from that task. The task only opens the sequence in Claude. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
 }
 
 export function getEmailWorkspace(
@@ -193,7 +193,9 @@ export function getEmailWorkspace(
   if (!sequence) return null
   const steps = sequence.steps.filter((step): step is PublicStep => Boolean(step))
   const dashboard = dashboardFor(project.id, config.appUrl)
-  const projectRows = store.db.contacts.filter((c) => c.projectId === projectId && isPriorityContact(c))
+  const projectRows = store.db.contacts.filter(
+    (c) => c.projectId === projectId && isPriorityContact(c) && c.lane !== 'agent'
+  )
   const rankedRows = rankLeads(projectRows, leadIdentity).slice(0, 50)
   const listed = { contacts: rankedRows.map(toPublicContact), total: projectRows.length }
   const priorityById = new Map(
@@ -790,7 +792,7 @@ Ownership — do not compete with Jargon on structure:
 - If nextAction / pendingEnrichment is set, HubSpot contacts were just added and enrichment is still writing email, phone, LinkedIn, or company fields. Call list_crm_contacts again until those fields exist. Do not enroll and do not save_research until HubSpot has the enrichment.
 - Once people are reachable, write personalized talk tracks, email copy, and LinkedIn notes from each contact's fields (context and attrs). Do not invent funding, hiring, tenure, or other company facts the source did not provide. Then save_research. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
-- After the sequence is saved, follow nextAction: ask once whether to run this workspace on a schedule. Default every Sunday at 6pm. Create the Claude scheduled task only after they confirm with Schedule, then call note_schedule_choice. An Allow click on a Jargon tool does not create that schedule.
+- After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. That task calls resume_workspace, then show_tasks, and does not enroll or send. An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Neither opens a workspace. If personalized copy is already saved, call show_tasks once afterward. If you still need save_research, do not open a workspace until that returns. Use show_tasks only when they want to work what is due.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.

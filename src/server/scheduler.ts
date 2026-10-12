@@ -10,10 +10,12 @@ import { isProduction } from './env'
 import type { DataStore } from './store'
 import { log, reportError } from './observability'
 import { flushHubSpotOutbox } from './hubspotWriteback'
+import { runDueUnattendedAgents } from './unattended'
 
 const BOUNCE_POLL_MS = 10 * 60 * 1000
 const REPLY_POLL_MS = 3 * 60 * 1000
 const SWEEP_MS = 60 * 60 * 1000
+const AGENT_MS = 60 * 1000
 
 function bouncePollEnabled(): boolean {
   return isProduction() || process.env.JARGON_BOUNCE_POLL === '1'
@@ -88,6 +90,7 @@ export function startOutboundScheduler(
   let lastBouncePoll = 0
   let lastReplyPoll = 0
   let lastSweep = 0
+  let lastAgentRun = 0
   const tick = async () => {
     if (running) return
     running = true
@@ -120,6 +123,15 @@ export function startOutboundScheduler(
         }
       }
       await runOutboundSchedulerTick(store, config, billing)
+      if (Date.now() - lastAgentRun >= AGENT_MS) {
+        lastAgentRun = Date.now()
+        try {
+          const ran = await runDueUnattendedAgents(store, config)
+          if (ran) console.log(`[jargon] Unattended agent ran ${ran} workspace(s)`)
+        } catch (err) {
+          reportError(err, { source: 'unattended-agent' })
+        }
+      }
       if (store.db.hubspotOutbox.length) {
         try {
           await flushHubSpotOutbox(store, config)

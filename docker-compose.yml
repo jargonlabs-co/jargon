@@ -12,7 +12,7 @@ services:
       JARGON_DB_PATH: /data/jargon-db.json
       HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID:-}
       HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET:-}
-      HUBSPOT_SCOPES: ${HUBSPOT_SCOPES:-crm.objects.contacts.read crm.objects.companies.read oauth}
+      HUBSPOT_SCOPES: ${HUBSPOT_SCOPES:-oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read crm.objects.notes.write crm.objects.calls.write crm.objects.emails.write crm.objects.meetings.write crm.lists.read}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}

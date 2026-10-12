@@ -60,8 +60,8 @@ export function DataPage({
         <p className="eyebrow">Account</p>
         <h1>Data</h1>
         <p className="section-lede">
-          Sequences load people from HubSpot or Railway Postgres. Email sends from your own mailbox, and
-          replies stop the sequence automatically.
+          Sequences load people from your CRM or Railway Postgres. Connect the CRM and Jargon logs
+          every call, email, note, and meeting back to the matching person.
         </p>
       </div>
       <div className="context-grid">
@@ -118,11 +118,17 @@ export function DataPage({
             <span className="context-role">CRM</span>
             <span className={`context-status ${hubspotOk ? 'ok' : ''}`}>{statusLabel(hubspot)}</span>
           </div>
-          <h3>HubSpot</h3>
+          <h3>Your CRM</h3>
           <p>
-            People in your portal become the queue in every sequence. Calls, emails, and notes are
-            logged back to the contact in HubSpot.
+            Choose where Jargon logs calls, emails, LinkedIn notes, meetings, and dispositions.
+            People who are not already in the CRM are matched by email.
           </p>
+          <label className="context-field">
+            CRM
+            <select value="hubspot" disabled={hubspotOk} onChange={() => undefined}>
+              <option value="hubspot">HubSpot</option>
+            </select>
+          </label>
           {hubspotOk && hubspot?.meta?.writebackError ? (
             <>
               <p className="section-lede">{hubspot.meta.writebackError}</p>
@@ -147,7 +153,9 @@ export function DataPage({
             </button>
           ) : (
             <>
-              <span className="context-connected">Ready</span>
+              <span className="context-connected">
+                Logging activity to {hubspot?.accountLabel ?? 'HubSpot'}
+              </span>
               <button
                 type="button"
                 className="btn ghost btn-sm"
@@ -155,6 +163,14 @@ export function DataPage({
                 onClick={onSyncHubSpot}
               >
                 {busy === 'sync' ? 'Syncing…' : 'Reload contacts'}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={busy === 'disconnect-hubspot'}
+                onClick={() => onDisconnect('hubspot')}
+              >
+                {busy === 'disconnect-hubspot' ? 'Disconnecting…' : 'Disconnect'}
               </button>
             </>
           )}

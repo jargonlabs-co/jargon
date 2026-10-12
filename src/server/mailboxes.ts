@@ -26,9 +26,10 @@ const GOOGLE_SCOPES = [
   'openid',
   'email',
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.readonly'
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar.events'
 ].join(' ')
-const MS_SCOPES = 'offline_access openid email User.Read Mail.Send Mail.ReadWrite'
+const MS_SCOPES = 'offline_access openid email User.Read Mail.Send Mail.ReadWrite Calendars.ReadWrite'
 /** Replies to anything older than this are not tracked. */
 const THREAD_WINDOW_MS = 60 * 24 * 60 * 60 * 1000
 

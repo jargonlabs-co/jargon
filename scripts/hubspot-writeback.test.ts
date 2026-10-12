@@ -78,12 +78,15 @@ function fakeHubSpot(respond: (url: string) => { status: number; json?: unknown 
 }
 
 describe('HubSpot writeback', () => {
-  it('only queues activity for contacts that came from HubSpot, and respects the off switch', () => {
+  it('queues activity for any contact once HubSpot is connected, and respects the off switch', () => {
     const store = fixture()
-    assert.equal(enqueueHubSpotActivity(store, store.db.contacts[1], { kind: 'note', body: 'x' }), false)
+    assert.equal(enqueueHubSpotActivity(store, store.db.contacts[1], { kind: 'note', body: 'x' }), true)
     assert.equal(enqueueHubSpotActivity(store, store.db.contacts[0], { kind: 'note', body: 'x' }), true)
     const off = fixture(undefined, { writeback: 'off' })
     assert.equal(enqueueHubSpotActivity(off, off.db.contacts[0], { kind: 'note', body: 'x' }), false)
+    const noEmail = fixture()
+    noEmail.db.contacts[1].email = ''
+    assert.equal(enqueueHubSpotActivity(noEmail, noEmail.db.contacts[1], { kind: 'note', body: 'x' }), false)
   })
 
   it('logs notes, dispositions, and live calls; skips demo calls', () => {
@@ -103,6 +106,21 @@ describe('HubSpot writeback', () => {
     const call = store.db.hubspotOutbox[2].properties
     assert.equal(call.hs_call_status, 'COMPLETED')
     assert.ok(Number(call.hs_call_duration) >= 59_000)
+  })
+
+  it('matches a non-HubSpot contact by email, then logs the activity', async () => {
+    const store = fixture()
+    const postgres = store.db.contacts[1]
+    assert.equal(enqueueHubSpotActivity(store, postgres, { kind: 'note', body: 'Called from the queue' }), true)
+    const hs = fakeHubSpot((url) => {
+      if (url.includes('/contacts/search')) return { status: 200, json: { results: [{ id: '555' }] } }
+      return { status: 201, json: { id: 'note_1' } }
+    })
+    const result = await flushHubSpotOutbox(store, config, hs.fetcher)
+    assert.deepEqual(result, { sent: 1, failed: 0 })
+    assert.match(hs.calls[0].url, /\/contacts\/search$/)
+    assert.equal(hs.calls[1].body.associations[0].to.id, '555')
+    assert.equal(store.db.contacts[1].attrs?.hubspot_id, '555')
   })
 
   it('posts each activity associated to the HubSpot contact and clears the outbox', async () => {

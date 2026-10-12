@@ -10,6 +10,7 @@ export type LeadStatus =
   | 'no_answer'
   | 'interested'
   | 'not_interested'
+  | 'meeting_booked'
 
 export type Channel = 'email' | 'call' | 'linkedin'
 

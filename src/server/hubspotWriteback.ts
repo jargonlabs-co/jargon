@@ -8,8 +8,18 @@ import { log, reportError } from './observability'
 
 const OBJECTS = 'https://api.hubapi.com/crm/v3/objects'
 /** HubSpot-defined association type ids: engagement → contact. */
-const ASSOCIATION_TYPE: Record<HubSpotOutboxItem['kind'], number> = { email: 198, call: 194, note: 202 }
-const PATH: Record<HubSpotOutboxItem['kind'], string> = { email: 'emails', call: 'calls', note: 'notes' }
+const ASSOCIATION_TYPE: Record<HubSpotOutboxItem['kind'], number> = {
+  email: 198,
+  call: 194,
+  note: 202,
+  meeting: 200
+}
+const PATH: Record<HubSpotOutboxItem['kind'], string> = {
+  email: 'emails',
+  call: 'calls',
+  note: 'notes',
+  meeting: 'meetings'
+}
 const MAX_ATTEMPTS = 6
 const BATCH = 50
 
@@ -17,6 +27,7 @@ export type HubSpotActivity =
   | { kind: 'email'; subject: string; body: string; at?: number }
   | { kind: 'call'; disposition: string; durationMs?: number; notes?: string; at?: number }
   | { kind: 'note'; body: string; at?: number }
+  | { kind: 'meeting'; title: string; body?: string; start: number; end: number; url?: string; at?: number }
 
 function humanize(status: string): string {
   return status.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
@@ -44,21 +55,43 @@ function propertiesFor(activity: HubSpotActivity): Record<string, string> {
       ...(activity.durationMs ? { hs_call_duration: String(Math.max(0, Math.round(activity.durationMs))) } : {})
     }
   }
+  if (activity.kind === 'meeting') {
+    return {
+      hs_timestamp: at,
+      hs_meeting_title: activity.title.slice(0, 500),
+      hs_meeting_body: (activity.body ?? '').slice(0, 60_000),
+      hs_meeting_start_time: String(activity.start),
+      hs_meeting_end_time: String(activity.end),
+      hs_meeting_outcome: 'SCHEDULED',
+      ...(activity.url ? { hs_meeting_external_url: activity.url } : {})
+    }
+  }
   return { hs_timestamp: at, hs_note_body: activity.body.slice(0, 60_000) }
 }
 
-/** Queues an activity for the contact's HubSpot record. No-op unless the contact came from HubSpot. */
+function cachedHubSpotId(contact: Contact): string | undefined {
+  if (contact.source === 'hubspot' && contact.externalId) return contact.externalId
+  const cached = contact.attrs?.hubspot_id
+  return typeof cached === 'string' && cached.trim() ? cached.trim() : undefined
+}
+
+/**
+ * Queue an activity for the org's connected CRM. People who did not start in HubSpot
+ * are matched by email when the outbox flushes, and created there if they are missing.
+ */
 export function enqueueHubSpotActivity(store: DataStore, contact: Contact, activity: HubSpotActivity): boolean {
-  if (contact.source !== 'hubspot' || !contact.externalId) return false
   const conn = getConnection(store, contact.orgId, 'hubspot')
   if (!conn || conn.status !== 'connected' || conn.meta?.writeback === 'off') return false
+  const hubspotContactId = cachedHubSpotId(contact)
+  if (!hubspotContactId && !contact.email?.trim()) return false
   const now = Date.now()
   store.update((db) => {
     db.hubspotOutbox.push({
       id: uid('hso'),
       orgId: contact.orgId,
       contactId: contact.id,
-      hubspotContactId: contact.externalId!,
+      hubspotContactId,
+      email: contact.email?.trim() || undefined,
       kind: activity.kind,
       properties: propertiesFor(activity),
       attempts: 0,
@@ -67,6 +100,69 @@ export function enqueueHubSpotActivity(store: DataStore, contact: Contact, activ
     })
   })
   return true
+}
+
+function splitName(name: string): { firstname?: string; lastname?: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return {}
+  if (parts.length === 1) return { firstname: parts[0] }
+  return { firstname: parts[0], lastname: parts.slice(1).join(' ') }
+}
+
+/** Find a HubSpot contact by email, or create one so the activity has a record to land on. */
+export async function resolveHubSpotContactId(
+  fetcher: typeof fetch,
+  token: string,
+  contact: Pick<Contact, 'email' | 'name' | 'company' | 'title' | 'phone'>
+): Promise<string | null> {
+  const email = contact.email?.trim()
+  if (!email) return null
+  const search = await fetcher(`${OBJECTS}/contacts/search`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
+      properties: ['email'],
+      limit: 1
+    })
+  })
+  if (search.ok) {
+    const json = (await search.json()) as { results?: Array<{ id?: string }> }
+    const found = json.results?.[0]?.id
+    if (found) return String(found)
+  } else if (search.status === 403 || search.status === 401) {
+    throw new Error(`HubSpot contact search failed (${search.status})`)
+  }
+  const created = await fetcher(`${OBJECTS}/contacts`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      properties: {
+        email,
+        ...splitName(contact.name),
+        ...(contact.company?.trim() ? { company: contact.company.trim() } : {}),
+        ...(contact.title?.trim() ? { jobtitle: contact.title.trim() } : {}),
+        ...(contact.phone?.trim() ? { phone: contact.phone.trim() } : {})
+      }
+    })
+  })
+  if (!created.ok) {
+    if (created.status === 403 || created.status === 401) {
+      throw new Error(`HubSpot contact create failed (${created.status})`)
+    }
+    return null
+  }
+  const json = (await created.json()) as { id?: string }
+  return json.id ? String(json.id) : null
+}
+
+function rememberHubSpotId(store: DataStore, contactId: string, hubspotContactId: string): void {
+  store.update((db) => {
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    row.attrs = { ...(row.attrs ?? {}), hubspot_id: hubspotContactId }
+    row.updatedAt = Date.now()
+  })
 }
 
 function retryDelayMs(attempts: number): number {
@@ -123,6 +219,27 @@ export async function flushHubSpotOutbox(
       continue
     }
     try {
+      let hubspotContactId = item.hubspotContactId
+      if (!hubspotContactId) {
+        const contact = store.db.contacts.find((c) => c.id === item.contactId)
+        hubspotContactId =
+          (await resolveHubSpotContactId(fetcher, token, {
+            email: item.email || contact?.email || '',
+            name: contact?.name ?? '',
+            company: contact?.company ?? '',
+            title: contact?.title ?? '',
+            phone: contact?.phone ?? ''
+          })) ?? undefined
+        if (!hubspotContactId) {
+          retry(item, 'No HubSpot contact for this email')
+          continue
+        }
+        rememberHubSpotId(store, item.contactId, hubspotContactId)
+        store.update((db) => {
+          const row = db.hubspotOutbox.find((x) => x.id === item.id)
+          if (row) row.hubspotContactId = hubspotContactId
+        })
+      }
       const res = await fetcher(`${OBJECTS}/${PATH[item.kind]}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -130,7 +247,7 @@ export async function flushHubSpotOutbox(
           properties: item.properties,
           associations: [
             {
-              to: { id: item.hubspotContactId },
+              to: { id: hubspotContactId },
               types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPE[item.kind] }]
             }
           ]

@@ -454,7 +454,7 @@ export interface components {
             remaining: number;
         };
         /** @enum {string} */
-        ContactStatus: "queued" | "active" | "completed" | "replied" | "no_answer" | "interested" | "not_interested";
+        ContactStatus: "queued" | "active" | "completed" | "replied" | "no_answer" | "interested" | "not_interested" | "meeting_booked";
         /** @enum {string} */
         ProjectKind: "dialer" | "sequencer" | "cadence" | "list" | "today" | "generic";
         /** @enum {string} */

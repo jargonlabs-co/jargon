@@ -32,6 +32,7 @@ import {
   patchPublicMessage,
   sendPublicMessage,
   startPublicCall,
+  promoteToRep,
   toPublicProject,
   toPublicQueueNext,
   updatePublicSequence,
@@ -49,6 +50,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { voiceIsLive } from './providers/voice'
 import { platformGmailReady } from './providers/gmail'
 import { mountComplianceRoutes } from './complianceRoutes'
+import { bookPublicMeeting } from './calendar'
 
 function paramId(value: string | string[] | undefined): string {
   if (!value) return ''
@@ -553,6 +555,42 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     res.json(applyDisposition(store, contact.id, { status, note, advanceStep }))
+  })
+
+  router.post('/contacts/promote', auth, (req, res) => {
+    const contactIds = Array.isArray(req.body?.contactIds)
+      ? (req.body.contactIds as unknown[]).filter((id): id is string => typeof id === 'string' && id.length > 0)
+      : []
+    const result = promoteToRep(store, req.auth!.org.id, contactIds)
+    if (!result.ok) {
+      res.status(400).json({ error: result.error })
+      return
+    }
+    res.json(result)
+  })
+
+  router.post('/contacts/:id/meeting', auth, async (req, res) => {
+    const contact = findOrgContact(store, req.auth!.org.id, paramId(req.params.id))
+    if (!contact) {
+      res.status(404).json({ error: 'Contact not found' })
+      return
+    }
+    const { start, durationMinutes, title, note } = req.body as {
+      start?: string
+      durationMinutes?: number
+      title?: string
+      note?: string
+    }
+    if (!start) {
+      res.status(400).json({ error: 'start required' })
+      return
+    }
+    const result = await bookPublicMeeting(store, config, contact, { start, durationMinutes, title, note })
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error })
+      return
+    }
+    res.status(201).json(result)
   })
 
   router.post('/contacts/:id/notes', auth, (req, res) => {

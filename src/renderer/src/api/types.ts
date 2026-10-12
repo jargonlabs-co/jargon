@@ -8,6 +8,7 @@ export type ContactStatus =
   | 'no_answer'
   | 'interested'
   | 'not_interested'
+  | 'meeting_booked'
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
 export type Channel = 'email' | 'call' | 'linkedin'

@@ -20,6 +20,23 @@ export type ContactStatus =
   | 'no_answer'
   | 'interested'
   | 'not_interested'
+  | 'meeting_booked'
+
+/** HubSpot slice an unattended agent works. Reps only see people promoted out of it. */
+export interface CrmSegment {
+  leadStatus?: string
+  lifecycleStage?: string
+  listId?: string
+}
+
+export interface BookedMeeting {
+  provider: 'gmail' | 'outlook'
+  eventId: string
+  htmlLink?: string
+  start: string
+  end: string
+  title: string
+}
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type CallMode = 'demo' | 'plivo'
 export type MessageStatus = 'draft' | 'queued' | 'sent' | 'failed' | 'cancelled'
@@ -36,6 +53,12 @@ export interface WorkspaceBrief {
   /** Set after Claude asks and the user answers. The cadence itself lives on the Claude task. */
   scheduleChoice?: 'accepted' | 'declined'
   cadence?: string
+  /** CRM slice the agent enrolls. Absent means the whole portal, on the rep lane. */
+  segment?: CrmSegment
+  /** User allowed Jargon to pull, enroll, and promote this workspace with no further prompt. */
+  unattended?: 'accepted' | 'declined'
+  /** Unix ms. The scheduler runs the agent lane when this is due. */
+  nextAgentRunAt?: number
   summary: string
 }
 
@@ -290,6 +313,9 @@ export interface Contact {
   context?: string[]
   /** Source-specific fields that are not part of the core identity. */
   attrs?: Record<string, unknown>
+  /** Agent-lane contacts stay out of the rep queue until promoted. Missing means rep. */
+  lane?: 'agent' | 'rep'
+  meeting?: BookedMeeting
   enrichedAt?: number
   createdAt: number
   updatedAt: number
@@ -447,8 +473,10 @@ export interface HubSpotOutboxItem {
   id: string
   orgId: string
   contactId: string
-  hubspotContactId: string
-  kind: 'email' | 'call' | 'note'
+  /** Empty until flush matches or creates the HubSpot person (by id or email). */
+  hubspotContactId?: string
+  email?: string
+  kind: 'email' | 'call' | 'note' | 'meeting'
   properties: Record<string, string>
   attempts: number
   nextAttemptAt: number

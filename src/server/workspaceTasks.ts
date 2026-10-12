@@ -3,7 +3,7 @@ import type { PublicCall, PublicContact, PublicMessage, PublicStep } from './pub
 
 const DAY_MS = 86_400_000
 
-const STOP_STATUSES: ContactStatus[] = ['replied', 'interested', 'not_interested']
+const STOP_STATUSES: ContactStatus[] = ['replied', 'interested', 'not_interested', 'meeting_booked']
 
 /** due: act now · scheduled: waiting on its send day · blocked: missing an address or number */
 export type TaskState = 'due' | 'scheduled' | 'done' | 'skipped' | 'blocked'
@@ -72,6 +72,7 @@ export function buildWorkspaceTasks(input: {
 
   const tasks: WorkspaceTask[] = []
   for (const contact of input.contacts) {
+    if (contact.lane === 'agent') continue
     const messages = byContact.get(contact.id) ?? []
     const anchor =
       enrollmentAnchor(messages, stepDays) ??

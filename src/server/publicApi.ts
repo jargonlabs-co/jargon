@@ -14,6 +14,7 @@ import type {
   Channel,
   Contact,
   ContactStatus,
+  CrmSegment,
   Database,
   FieldDef,
   Message,
@@ -27,6 +28,7 @@ import type { ServerConfig } from './config'
 import { uid } from './crypto'
 import { getConnection, readSecrets } from './connections'
 import {
+  crmSegmentActive,
   hubspotEnrichmentWaitMessage,
   pullHubSpotContacts,
   pullHubSpotContactsUntilReady,
@@ -114,6 +116,8 @@ export type PublicContact = {
   companySize?: string
   companyDomain?: string
   channelsDone?: Contact['channelsDone']
+  lane?: Contact['lane']
+  meeting?: Contact['meeting']
   enrichedAt?: number
   createdAt: number
   updatedAt: number
@@ -216,6 +220,8 @@ export function toPublicContact(contact: Contact): PublicContact {
     companySize: contact.companySize,
     companyDomain: contact.companyDomain,
     channelsDone: contact.channelsDone?.length ? contact.channelsDone : undefined,
+    lane: contact.lane,
+    meeting: contact.meeting,
     enrichedAt: contact.enrichedAt,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt
@@ -590,11 +596,21 @@ export function addPublicContacts(
   }
 }
 
+/** Replace cadence tokens with the contact's own fields. Does not invent facts. */
+export function mergeTemplate(text: string, contact: Pick<Contact, 'name' | 'company' | 'title'>): string {
+  const first = contact.name.trim().split(/\s+/)[0] ?? ''
+  return text
+    .replaceAll('{{first_name}}', first)
+    .replaceAll('{{company}}', contact.company)
+    .replaceAll('{{title}}', contact.title)
+}
+
 export const SEQUENCE_STOP_STATUSES: ContactStatus[] = [
   'replied',
   'not_interested',
   'completed',
-  'interested'
+  'interested',
+  'meeting_booked'
 ]
 
 const DAY_MS = 86_400_000
@@ -1850,9 +1866,10 @@ export async function enrollPublicSequence(
         continue
       }
       const auto = step.channel === 'email' && step.mode === 'auto'
+      const personalized = contact.lane === 'agent'
       const result = await sendPublicMessage(store, config, contact, {
-        subject: step.subject,
-        body: step.body ?? '',
+        subject: personalized && step.subject ? mergeTemplate(step.subject, contact) : step.subject,
+        body: personalized ? mergeTemplate(step.body ?? '', contact) : (step.body ?? ''),
         channel: step.channel,
         // Manual steps stay drafts until the rep sends them. Auto emails queue for their day.
         status: auto ? 'queued' : 'draft',
@@ -1962,19 +1979,21 @@ async function hubSpotPullForOrg(
   store: DataStore,
   orgId: string,
   accessToken: string,
-  demo: boolean
+  demo: boolean,
+  segment?: CrmSegment
 ) {
   const wait = orgWaitsForHubSpotEnrichment(store, orgId)
   const pull = wait
-    ? await pullHubSpotContactsUntilReady(accessToken, 200, demo)
-    : await pullHubSpotContacts(accessToken, 200, demo)
+    ? await pullHubSpotContactsUntilReady(accessToken, 200, demo, { segment })
+    : await pullHubSpotContacts(accessToken, 200, demo, segment)
   return { pull, wait }
 }
 
 export async function listHubSpotContactsForEnroll(
   store: DataStore,
   config: ServerConfig,
-  orgId: string
+  orgId: string,
+  projectId?: string
 ): Promise<
   | {
       ok: true
@@ -1987,6 +2006,10 @@ export async function listHubSpotContactsForEnroll(
     }
   | { ok: false; error: string }
 > {
+  const project = projectId
+    ? findOrgProject(store, orgId, projectId)
+    : latestWorkspace(store, orgId)
+  if (projectId && !project) return { ok: false, error: 'Project not found' }
   const conn = getConnection(store, orgId, 'hubspot')
   if (!conn || conn.status !== 'connected') {
     return { ok: true, connected: false, contacts: [], counts: { hot: 0, warm: 0, cold: 0, unknown: 0 } }
@@ -1994,7 +2017,13 @@ export async function listHubSpotContactsForEnroll(
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
   try {
-    const { pull, wait } = await hubSpotPullForOrg(store, orgId, await hubspotAccessToken(store, config, conn), demo)
+    const { pull, wait } = await hubSpotPullForOrg(
+      store,
+      orgId,
+      await hubspotAccessToken(store, config, conn),
+      demo,
+      project?.brief?.segment
+    )
     const contacts = rankLeads(
       pull.reachable.map((p) => ({
         externalId: p.externalId,
@@ -2034,7 +2063,8 @@ function upsertHubSpotProspects(
   store: DataStore,
   orgId: string,
   projectId: string,
-  prospects: ContextProspect[]
+  prospects: ContextProspect[],
+  lane: 'agent' | 'rep'
 ): { ok: true; contactIds: string[] } | { ok: false; error: string } {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return { ok: false, error: 'Project not found' }
@@ -2075,6 +2105,8 @@ function upsertHubSpotProspects(
       const [created] = prospectsToContacts(orgId, projectId, [prospect], 'hubspot')
       if (!created) continue
       created.status = 'queued'
+      created.lane = lane
+      if (lane === 'agent') created.enrichedAt = now
       db.contacts.push(created)
       contactIds.push(created.id)
     }
@@ -2129,6 +2161,10 @@ export function saveWorkspaceBrief(
       lastSyncAt: patch && 'lastSyncAt' in patch ? patch.lastSyncAt : project.brief?.lastSyncAt,
       scheduleChoice: patch?.scheduleChoice ?? project.brief?.scheduleChoice,
       cadence: patch?.cadence ?? project.brief?.cadence,
+      segment: patch && 'segment' in patch ? patch.segment : project.brief?.segment,
+      unattended: patch && 'unattended' in patch ? patch.unattended : project.brief?.unattended,
+      nextAgentRunAt:
+        patch && 'nextAgentRunAt' in patch ? patch.nextAgentRunAt : project.brief?.nextAgentRunAt,
       summary
     }
     project.brief = brief
@@ -2158,10 +2194,19 @@ export async function enrollHubSpotContacts(
   if (!conn || conn.status !== 'connected') return { ok: false, error: 'HubSpot is not connected' }
   const secrets = readSecrets(conn)
   const demo = secrets.accessToken === 'demo-hubspot-token' || !config.hubspot.clientId
+  const project = findOrgProject(store, orgId, projectId)
+  const segment = project?.brief?.segment
+  const lane = crmSegmentActive(segment) ? 'agent' : 'rep'
   let pull: Awaited<ReturnType<typeof pullHubSpotContacts>>
   let wait = false
   try {
-    const loaded = await hubSpotPullForOrg(store, orgId, await hubspotAccessToken(store, config, conn), demo)
+    const loaded = await hubSpotPullForOrg(
+      store,
+      orgId,
+      await hubspotAccessToken(store, config, conn),
+      demo,
+      segment
+    )
     pull = loaded.pull
     wait = loaded.wait
   } catch (err) {
@@ -2184,7 +2229,7 @@ export async function enrollHubSpotContacts(
   const fresh = listed.filter((p) => !existingIds.has(p.externalId)).slice(0, Math.max(0, MAX_CONTACTS - inProject.length))
   const fitting = [...already, ...fresh]
   if (!fitting.length) return { ok: false, error: `workspace can hold ${MAX_CONTACTS} contacts` }
-  const upserted = upsertHubSpotProspects(store, orgId, projectId, fitting)
+  const upserted = upsertHubSpotProspects(store, orgId, projectId, fitting, lane)
   if (!upserted.ok) return upserted
   const enrollIds = store.db.contacts
     .filter((c) => {
@@ -2207,6 +2252,45 @@ export async function enrollHubSpotContacts(
     listed: upserted.contactIds.length,
     skipped: upserted.contactIds.length - enrollIds.length
   }
+}
+
+/** Move agent-lane contacts onto the rep queue. Step index and copy stay put. */
+export function promoteToRep(
+  store: DataStore,
+  orgId: string,
+  contactIds: string[]
+): { ok: true; promoted: string[] } | { ok: false; error: string } {
+  const wanted = new Set(contactIds)
+  if (!wanted.size) return { ok: false, error: 'Pick at least one contact' }
+  const promoted: string[] = []
+  const now = Date.now()
+  store.update((db) => {
+    for (const contact of db.contacts) {
+      if (contact.orgId !== orgId || !wanted.has(contact.id)) continue
+      contact.lane = 'rep'
+      if (contact.status !== 'active') contact.status = 'queued'
+      contact.updatedAt = now
+      promoted.push(contact.id)
+    }
+  })
+  if (!promoted.length) return { ok: false, error: 'No contacts matched' }
+  return { ok: true, promoted }
+}
+
+/** Agent-lane people a reply or an interested outcome has made ready for a rep. */
+export function promoteReadyAgentContacts(store: DataStore, orgId: string, projectId: string): string[] {
+  const ids = store.db.contacts
+    .filter(
+      (contact) =>
+        contact.orgId === orgId &&
+        contact.projectId === projectId &&
+        contact.lane === 'agent' &&
+        (contact.status === 'replied' || contact.status === 'interested')
+    )
+    .map((contact) => contact.id)
+  if (!ids.length) return []
+  const result = promoteToRep(store, orgId, ids)
+  return result.ok ? result.promoted : []
 }
 
 export async function dispatchDueMessages(

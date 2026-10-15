@@ -117,6 +117,9 @@ function failCharge(charge: { error: string; billingUrl?: string }) {
   )
 }
 
+/** Stay under Claude's ~150k tool-result cutoff so the app still receives the view. */
+const WORKSPACE_VIEW_CAP = 100_000
+
 function workspaceOk(
   store: DataStore,
   config: ServerConfig,
@@ -134,14 +137,23 @@ function workspaceOk(
       userId
     })
     if (!ws) return fail('Project not found')
-    const forModel = opts?.embed === false ? ws : workspaceBrief(ws)
+    const show = opts?.embed !== false
+    const view = withoutDashboard(ws) as Record<string, unknown>
+    const forModel = show ? workspaceBrief(ws) : view
+    const viewJson = JSON.stringify(view)
     const body: {
       content: Array<{ type: 'text'; text: string }>
+      structuredContent?: Record<string, unknown>
       _meta?: typeof EMAIL_WORKSPACE_TOOL_META
     } = {
       content: [{ type: 'text', text: JSON.stringify(forModel, null, 2) }]
     }
-    if (opts?.embed !== false) body._meta = EMAIL_WORKSPACE_TOOL_META
+    if (show) {
+      body._meta = EMAIL_WORKSPACE_TOOL_META
+      // The model reads the brief. The app paints from structuredContent, so a
+      // scheduled run can show the sequence without a second tool call.
+      if (viewJson.length <= WORKSPACE_VIEW_CAP) body.structuredContent = view
+    }
     return body
   } catch (err) {
     return fail(err)
@@ -181,7 +193,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. The Claude scheduled task, after they confirm with Schedule, only calls resume_workspace then show_tasks. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
+        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. The Claude scheduled task, after they confirm with Schedule, only calls resume_workspace then show_tasks. show_tasks is what displays the sequence when they open that run. If they say a scheduled run is missing from the chat, call show_tasks once. Do not tell them a scheduled run cannot display the workspace. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
       })
     }
   )

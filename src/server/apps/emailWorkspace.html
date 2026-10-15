@@ -22,10 +22,10 @@
       font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; background: var(--cream); color: var(--fg); }
+    html, body { margin: 0; background: var(--cream); color: var(--fg); min-height: 520px; }
     button, input, textarea, select { font: inherit; color: inherit; }
     button { cursor: pointer; }
-    .wrap { padding: var(--pad); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
+    .wrap { min-height: 520px; padding: var(--pad); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
     header {
       display: flex; align-items: flex-start; justify-content: space-between;
       gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
@@ -3090,6 +3090,15 @@ function dueLabel(task) {
     }
   }
 
+  let connected = false;
+
+  function scheduleLoad() {
+    if (ws || admin || !toolProjectId || !connected) return;
+    setTimeout(() => {
+      if (!ws && !admin && toolProjectId) void fetchWorkspace();
+    }, 0);
+  }
+
   app.ontoolinput = rememberProject;
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
@@ -3099,21 +3108,19 @@ function dueLabel(task) {
     }
     if (parsed?.projectId) toolProjectId = parsed.projectId;
     if (acceptWorkspace(parsed)) return;
-    if (!ws && toolProjectId) {
-      void fetchWorkspace();
-      return;
-    }
     if (parsed?.error && !ws) {
       notice = parsed.error;
       noticeTone = 'err';
       render();
     }
+    scheduleLoad();
   };
   app.onhostcontextchanged = themeFromHost;
   await app.connect();
+  connected = true;
   themeFromHost();
   render();
-  if (!ws && toolProjectId) void fetchWorkspace();
+  scheduleLoad();
 })();
   </script>
 </body>

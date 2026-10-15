@@ -36,7 +36,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=admin1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=sched1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -76,6 +76,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=mailfmt1',
   'ui://jargon/email-workspace.html?v=personcopy1',
   'ui://jargon/email-workspace.html?v=dnc1',
+  'ui://jargon/email-workspace.html?v=admin1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -178,7 +179,7 @@ export function isEmailMotion(project: Project, steps: Array<{ channel: string }
 }
 
 export function scheduleAsk(projectId: string): string {
-  return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must say: call resume_workspace for this project, then show_tasks. Do not enroll, research, or send from that task. The task only opens the sequence in Claude. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+  return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must say: call resume_workspace for this project, then show_tasks. Do not enroll, research, or send from that task. show_tasks is the call that puts the sequence in the chat when they open the finished run. If they say it is missing, call show_tasks once. Do not tell them a scheduled run cannot display the workspace. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
 }
 
 export function getEmailWorkspace(
@@ -793,7 +794,7 @@ Ownership — do not compete with Jargon on structure:
 - If nextAction / pendingEnrichment is set, HubSpot contacts were just added and enrichment is still writing email, phone, LinkedIn, or company fields. Call list_crm_contacts again until those fields exist. Do not enroll and do not save_research until HubSpot has the enrichment.
 - Once people are reachable, write personalized talk tracks, email copy, and LinkedIn notes from each contact's fields (context and attrs). Do not invent funding, hiring, tenure, or other company facts the source did not provide. Then save_research. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
-- After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. That task calls resume_workspace, then show_tasks, and does not enroll or send. An Allow click on any other Jargon tool does not create that schedule or that grant.
+- After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. That task calls resume_workspace, then show_tasks, and does not enroll or send. show_tasks is what displays the sequence when they open the finished run. If a scheduled run built a new sequence, save_research already opened it; if they say it is not in the chat, call show_tasks once with that projectId. Do not tell them a scheduled run cannot display the workspace. An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Neither opens a workspace. If personalized copy is already saved, call show_tasks once afterward. If you still need save_research, do not open a workspace until that returns. Use show_tasks only when they want to work what is due.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - When the user asks how the team or org performed — a rep productivity drilldown, meetings booked, calls, emails, or replies over a period such as last quarter — call show_admin once. That opens the org view. Pass range quarter for last quarter, or 7d, 30d, or 90d. Pass focus reps, sequences, or meetings. Summarize the summary field in one sentence. Do not paste the table, and do not call show_tasks or get_usage for that.

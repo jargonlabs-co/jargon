@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import type { BillingService } from '../src/server/billing/types.ts'
 import type { ServerConfig } from '../src/server/config.ts'
@@ -252,5 +253,58 @@ describe('a build opens one workspace', () => {
     assert.equal(brief.projectId, 'proj_1')
     assert.equal(brief.researchPending, true)
     assert.match(brief.nextAction, /Do not open a workspace/)
+  })
+
+  it('gives the app a workspace it can paint without another tool call', async () => {
+    assert.match(JARGON_MCP_INSTRUCTIONS, /call show_tasks once/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /scheduled run cannot display/)
+
+    const db = emptyDb()
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'Stalled deal champions',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: '',
+      team: '',
+      description: '',
+      answers: { goal: 'Re-open the stalled deal' },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    db.contacts.push(contact({ id: 'c1', source: 'manual', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }))
+
+    type ToolDef = { description?: string; _meta?: { ui?: { resourceUri?: string } } }
+    type ToolResult = {
+      content: Array<{ text: string }>
+      structuredContent?: { projectId?: string; contacts?: unknown[]; tasks?: unknown[] }
+      _meta?: unknown
+    }
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<ToolResult>>()
+    registerJargonTools(
+      {
+        registerTool: (name: string, _def: ToolDef, handler: (args: Record<string, unknown>) => Promise<ToolResult>) => {
+          tools.set(name, handler)
+        }
+      } as unknown as Parameters<typeof registerJargonTools>[0],
+      memoryStore(db),
+      config,
+      { userId: 'user_1', orgId: 'org_1', environment: 'live', via: 'oauth' },
+      {} as BillingService
+    )
+
+    const shown = await tools.get('show_email_workspace')!({ projectId: 'proj_1' })
+    const forModel = JSON.parse(shown.content[0].text)
+    assert.equal(forModel.projectId, 'proj_1')
+    assert.equal('contacts' in forModel, false)
+    assert.equal(Array.isArray(shown.structuredContent?.contacts), true)
+    assert.equal(Array.isArray(shown.structuredContent?.tasks), true)
+    assert.equal('dashboardUrl' in (shown.structuredContent ?? {}), false)
+
+    const html = readFileSync(new URL('../src/server/apps/emailWorkspace.html', import.meta.url), 'utf8')
+    const handler = html.slice(html.indexOf('app.ontoolresult'), html.indexOf('app.onhostcontextchanged'))
+    assert.equal(handler.includes('fetchWorkspace'), false)
+    assert.match(html, /await app\.connect\(\);\s*connected = true/)
   })
 })

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import type { BillingService } from '../src/server/billing/types.ts'
 import type { ServerConfig } from '../src/server/config.ts'
 import {
+  fitWorkspaceView,
   getEmailWorkspace,
   JARGON_MCP_INSTRUCTIONS,
   jargonMcpInstructions,
@@ -12,7 +13,7 @@ import {
 } from '../src/server/emailWorkspace.ts'
 import { registerJargonTools } from '../src/server/mcpTools.ts'
 import type { DataStore } from '../src/server/store.ts'
-import type { Contact, Database, Project } from '../src/server/types.ts'
+import type { Contact, Database, Project, SequenceStep } from '../src/server/types.ts'
 
 function emptyDb(): Database {
   return {
@@ -236,10 +237,10 @@ describe('a build opens one workspace', () => {
       const meta = defs.get(name)?._meta
       return Boolean(meta?.ui?.resourceUri || meta?.['ui/resourceUri'])
     }
-    for (const name of ['get_sequence', 'resume_workspace', 'deploy_tool', 'import_list', 'start_sequence', 'enroll_hubspot']) {
+    for (const name of ['get_sequence', 'resume_workspace', 'deploy_tool', 'import_list']) {
       assert.equal(opens(name), false, name)
     }
-    for (const name of ['save_research', 'show_email_workspace', 'show_tasks', 'show_admin']) {
+    for (const name of ['save_research', 'show_email_workspace', 'show_tasks', 'show_admin', 'start_sequence', 'enroll_hubspot']) {
       assert.equal(opens(name), true, name)
     }
 
@@ -257,7 +258,11 @@ describe('a build opens one workspace', () => {
 
   it('gives the app a workspace it can paint without another tool call', async () => {
     assert.match(JARGON_MCP_INSTRUCTIONS, /call show_tasks once/)
-    assert.match(JARGON_MCP_INSTRUCTIONS, /scheduled run cannot display/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /scheduled run cannot build or display/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /save_research enrolls everyone and opens the sequence/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /deploy_tool or import_list/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /Do not finish on a text summary alone/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /Do not ask questions and do not wait/)
 
     const db = emptyDb()
     db.projects.push({
@@ -305,6 +310,152 @@ describe('a build opens one workspace', () => {
     const html = readFileSync(new URL('../src/server/apps/emailWorkspace.html', import.meta.url), 'utf8')
     const handler = html.slice(html.indexOf('app.ontoolresult'), html.indexOf('app.onhostcontextchanged'))
     assert.equal(handler.includes('fetchWorkspace'), false)
+    assert.match(handler, /display === false/)
+    assert.match(handler, /requestTeardown/)
     assert.match(html, /await app\.connect\(\);\s*connected = true/)
+
+    const huge = fitWorkspaceView({
+      projectId: 'proj_1',
+      contacts: Array.from({ length: 40 }, (_, i) => ({
+        id: `c${i}`,
+        name: `Person ${i}`,
+        preview: { subject: 'Hello', body: 'x'.repeat(8000) }
+      })),
+      tasks: Array.from({ length: 40 }, (_, i) => ({ id: `t${i}`, contactId: `c${i}`, body: 'y'.repeat(8000) })),
+      messages: Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, body: 'z'.repeat(8000) }))
+    })
+    assert.equal(Array.isArray(huge.contacts), true)
+    assert.equal(Array.isArray(huge.tasks), true)
+    assert.ok(JSON.stringify(huge).length <= 100_000)
+  })
+
+  it('opens the sequence when a scheduled enroll starts people who already have copy', async () => {
+    const db = emptyDb()
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'Stalled deal champions',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: '',
+      team: '',
+      description: '',
+      answers: { goal: 'Re-open the stalled deal' },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    db.steps.push({
+      id: 'step_1',
+      orgId: 'org_1',
+      sequenceId: 'seq_1',
+      projectId: 'proj_1',
+      day: 0,
+      channel: 'email',
+      label: 'Re-engage',
+      subject: 'Hi',
+      body: 'Hello',
+      order: 0
+    } as SequenceStep)
+    db.contacts.push({
+      ...contact({ id: 'c1', source: 'manual', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }),
+      enrichedAt: 1
+    })
+
+    type ToolResult = {
+      content: Array<{ text: string }>
+      structuredContent?: { projectId?: string; contacts?: unknown[]; tasks?: unknown[] }
+      _meta?: unknown
+      isError?: boolean
+    }
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<ToolResult>>()
+    registerJargonTools(
+      {
+        registerTool: (name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<ToolResult>) => {
+          tools.set(name, handler)
+        }
+      } as unknown as Parameters<typeof registerJargonTools>[0],
+      memoryStore(db),
+      config,
+      { userId: 'user_1', orgId: 'org_1', environment: 'live', via: 'oauth' },
+      {} as BillingService
+    )
+
+    const started = await tools.get('start_sequence')!({
+      summary: 'Enroll Ada at Acme',
+      projectId: 'proj_1'
+    })
+    assert.equal(started.isError, undefined)
+    const forModel = JSON.parse(started.content[0].text)
+    assert.match(forModel.nextAction, /sequence is open/)
+    assert.equal(Array.isArray(started.structuredContent?.contacts), true)
+    assert.equal(Array.isArray(started.structuredContent?.tasks), true)
+    assert.ok(started._meta)
+
+    const early = await tools.get('start_sequence')!({
+      summary: 'Enroll the template',
+      projectId: 'proj_1',
+      contactIds: ['missing']
+    })
+    db.contacts[0].enrichedAt = undefined
+    const pending = await tools.get('start_sequence')!({
+      summary: 'Enroll before copy',
+      projectId: 'proj_1'
+    })
+    assert.equal(pending.isError, true)
+    assert.equal(pending.structuredContent, undefined)
+    assert.equal(early.isError, true)
+  })
+
+  it('tells a scheduled run to build the sequence instead of stopping', async () => {
+    const db = emptyDb()
+    type ToolResult = { content: Array<{ text: string }>; isError?: boolean }
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<ToolResult>>()
+    registerJargonTools(
+      {
+        registerTool: (name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<ToolResult>) => {
+          tools.set(name, handler)
+        }
+      } as unknown as Parameters<typeof registerJargonTools>[0],
+      memoryStore(db),
+      config,
+      { userId: 'user_1', orgId: 'org_1', environment: 'live', via: 'oauth' },
+      {} as BillingService
+    )
+
+    const missing = await tools.get('resume_workspace')!({})
+    assert.equal(missing.isError, true)
+    assert.match(missing.content[0].text, /deploy_tool or import_list/)
+    assert.match(missing.content[0].text, /scheduled run/)
+
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'Stalled deal champions',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: '',
+      team: '',
+      description: '',
+      answers: { goal: 'Re-open the stalled deal' },
+      brief: {
+        goal: 'Re-open the stalled deal',
+        warmthRule: '',
+        summary: 'Stalled deals',
+        scheduleChoice: 'accepted',
+        unattended: 'accepted'
+      },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    db.contacts.push({
+      ...contact({ id: 'c1', source: 'hubspot', email: 'ada@acme.com', company: 'Acme', title: 'VP Sales' }),
+      enrichedAt: 1
+    })
+    const resumed = await tools.get('resume_workspace')!({})
+    assert.equal(resumed.isError, undefined)
+    const brief = JSON.parse(resumed.content[0].text)
+    assert.match(brief.nextAction, /enroll_hubspot/)
+    assert.match(brief.nextAction, /save_research/)
+    assert.equal(/Do not enroll, research/.test(brief.nextAction), false)
   })
 })

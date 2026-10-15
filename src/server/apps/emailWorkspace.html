@@ -3145,6 +3145,10 @@ function dueLabel(task) {
   app.ontoolinput = rememberProject;
   app.ontoolresult = (result) => {
     const parsed = parseToolResult(result);
+    if (parsed?.display === false) {
+      if (typeof app.requestTeardown === 'function') void app.requestTeardown();
+      return;
+    }
     if (parsed?.view === 'admin') {
       applyAdmin(parsed);
       return;
@@ -3155,6 +3159,7 @@ function dueLabel(task) {
       notice = parsed.error;
       noticeTone = 'err';
       render();
+      return;
     }
     scheduleLoad();
   };

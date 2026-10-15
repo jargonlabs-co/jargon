@@ -36,7 +36,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=territory1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=sched2'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -78,6 +78,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=dnc1',
   'ui://jargon/email-workspace.html?v=admin1',
   'ui://jargon/email-workspace.html?v=sched1',
+  'ui://jargon/email-workspace.html?v=territory1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -179,8 +180,12 @@ export function isEmailMotion(project: Project, steps: Array<{ channel: string }
   return steps.some((step) => step.channel === 'email')
 }
 
+/** What a Claude scheduled task must do. The task runs with no one in the chat. */
+export const SCHEDULED_BUILD =
+  'A Claude scheduled task builds the sequence with the Jargon connector the same way a person asking in chat does. Do not ask questions and do not wait for the user. Call resume_workspace first. If there is no workspace yet, or copy is still the template, call deploy_tool or import_list for whoever is connected — HubSpot, Railway, Postgres, or the people named in the task. Do not open the template sequence. Then write personalized copy from each contact\'s fields and call save_research once. save_research enrolls everyone and opens the sequence in that chat. If copy is already saved, call enroll_hubspot for new people — that opens the sequence — and save_research only for people still on the template. Do not create a second workspace when one already has copy. Do not finish on a text summary alone. Do not outline the day ladder. If the sequence is not in the chat, call show_tasks once. Do not say a scheduled run cannot build or display the workspace.'
+
 export function scheduleAsk(projectId: string): string {
-  return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must say: call resume_workspace for this project, then show_tasks. Do not enroll, research, or send from that task. show_tasks is the call that puts the sequence in the chat when they open the finished run. If they say it is missing, call show_tasks once. Do not tell them a scheduled run cannot display the workspace. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+  return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must be: ${SCHEDULED_BUILD} Use project ${projectId}. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
 }
 
 export function getEmailWorkspace(
@@ -359,10 +364,80 @@ export function workspaceBrief(ws: EmailWorkspace) {
     focus: ws.focus,
     defaultTab: ws.defaultTab,
     researchPending: ws.researchPending,
-    nextAction: ws.nextAction,
+    nextAction:
+      ws.nextAction ??
+      'The sequence is open in this chat. Say what is due in one sentence. Do not outline the day ladder. Do not call show_email_workspace or show_tasks again.',
     taskStats: ws.taskStats,
     stats: ws.stats
   }
+}
+
+/** Claude drops tool results around 150k characters and the app then cannot paint a scheduled run. */
+export const WORKSPACE_VIEW_CAP = 100_000
+
+function clipText(value: unknown, max: number): unknown {
+  return typeof value === 'string' && value.length > max ? value.slice(0, max) : value
+}
+
+function clipPreview(value: unknown, max: number): unknown {
+  if (!value || typeof value !== 'object') return value
+  const row = { ...(value as Record<string, unknown>) }
+  row.body = clipText(row.body, max)
+  if ('subject' in row) row.subject = clipText(row.subject, 80)
+  return row
+}
+
+/**
+ * Keep a payload the in-chat app can draw (projectId, contacts, tasks) without a second tool call.
+ * Scheduled runs cannot fetch the workspace after the fact.
+ */
+export function fitWorkspaceView(view: Record<string, unknown>, cap = WORKSPACE_VIEW_CAP): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...view }
+  const size = () => JSON.stringify(next).length
+  if (size() <= cap) return next
+
+  const messages = Array.isArray(next.messages) ? next.messages : []
+  next.messages = messages.map((message) => {
+    if (!message || typeof message !== 'object') return message
+    const row = { ...(message as Record<string, unknown>) }
+    row.body = clipText(row.body, 180)
+    row.subject = clipText(row.subject, 80)
+    return row
+  })
+  if (size() <= cap) return next
+
+  next.messages = []
+  let contacts = (Array.isArray(next.contacts) ? next.contacts : []).map((contact) => {
+    if (!contact || typeof contact !== 'object') return contact
+    const row = { ...(contact as Record<string, unknown>) }
+    row.preview = clipPreview(row.preview, 180)
+    row.linkedinPreview = clipPreview(row.linkedinPreview, 180)
+    return row
+  })
+  next.contacts = contacts
+  if (size() <= cap) return next
+
+  let tasks = Array.isArray(next.tasks) ? [...next.tasks] : []
+  while (size() > cap && (contacts.length > 1 || tasks.length > 1)) {
+    if (tasks.length > 1) tasks = tasks.slice(0, tasks.length - 1)
+    next.tasks = tasks
+    if (size() > cap && contacts.length > 1) contacts = contacts.slice(0, contacts.length - 1)
+    next.contacts = contacts
+  }
+  if (size() <= cap) return next
+
+  next.catalog = []
+  next.calls = []
+  next.contacts = contacts.map((contact) => {
+    if (!contact || typeof contact !== 'object') return contact
+    const row = { ...(contact as Record<string, unknown>) }
+    delete row.attrs
+    delete row.context
+    delete row.preview
+    delete row.linkedinPreview
+    return row
+  })
+  return next
 }
 
 /** Drop web-workspace links from model-facing MCP JSON. Keep billingUrl. */
@@ -800,8 +875,8 @@ Ownership — do not compete with Jargon on structure:
 - If nextAction / pendingEnrichment is set, HubSpot contacts were just added and enrichment is still writing email, phone, LinkedIn, or company fields. Call list_crm_contacts again until those fields exist. Do not enroll and do not save_research until HubSpot has the enrichment.
 - Once people are reachable, write personalized talk tracks, email copy, and LinkedIn notes from each contact's fields (context and attrs). Do not invent funding, hiring, tenure, or other company facts the source did not provide. Then save_research. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
-- After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. That task calls resume_workspace, then show_tasks, and does not enroll or send. show_tasks is what displays the sequence when they open the finished run. If a scheduled run built a new sequence, save_research already opened it; if they say it is not in the chat, call show_tasks once with that projectId. Do not tell them a scheduled run cannot display the workspace. An Allow click on any other Jargon tool does not create that schedule or that grant.
-- Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Neither opens a workspace. If personalized copy is already saved, call show_tasks once afterward. If you still need save_research, do not open a workspace until that returns. Use show_tasks only when they want to work what is due.
+- After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. ${SCHEDULED_BUILD} An Allow click on any other Jargon tool does not create that schedule or that grant.
+- Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. When personalized copy is already saved, that call opens the sequence — do not also call show_tasks or show_email_workspace. If you still need save_research, this enroll does not open a workspace; save_research does. Use show_tasks when they want to work what is due and nothing else has opened the sequence.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
 - When the user asks how the team or org performed — a rep productivity drilldown, meetings booked, calls, emails, or replies over a period such as last quarter — call show_admin once. That opens the org view. Pass range quarter for last quarter, or 7d, 30d, or 90d. Pass focus reps, sequences, meetings, or territories. Use territories when they ask for sales territory, productivity by territory, or which message converts in a territory. Summarize the summary field in one sentence. Do not paste the table, and do not call show_tasks or get_usage for that.
 - Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.

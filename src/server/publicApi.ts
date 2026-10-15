@@ -708,7 +708,7 @@ export function skipPublicTask(
 export function applyDisposition(
   store: DataStore,
   contactId: string,
-  input: { status: ContactStatus; note?: string; advanceStep?: boolean; channel?: Channel }
+  input: { status: ContactStatus; note?: string; advanceStep?: boolean; channel?: Channel; userId?: string }
 ): { contact: PublicContact; next: QueueNextPublic } {
   const now = Date.now()
   const doAdvance = shouldAdvanceStep(input.status, input.advanceStep)
@@ -738,7 +738,8 @@ export function applyDisposition(
       summary: input.note?.trim()
         ? `Disposition ${input.status.replace('_', ' ')} · ${input.note.trim()}`
         : `Disposition ${input.status.replace('_', ' ')}`,
-      createdAt: now
+      createdAt: now,
+      ...(input.userId ? { userId: input.userId } : {})
     })
     if (input.status !== 'active' && input.status !== 'queued') {
       const next = db.contacts.find(
@@ -815,7 +816,8 @@ export function startPublicCall(
   config: ServerConfig,
   contact: Contact,
   sandbox = false,
-  to?: string
+  to?: string,
+  userId?: string
 ): PublicCall {
   const now = Date.now()
   const callId = uid('call')
@@ -857,7 +859,8 @@ export function startPublicCall(
       poolMemberId,
       fromNumber,
       to: dialTo,
-      startedAt: now
+      startedAt: now,
+      ...(userId ? { userId } : {})
     })
     db.activities.unshift({
       id: uid('act'),
@@ -866,7 +869,8 @@ export function startPublicCall(
       contactId: contact.id,
       kind: 'call',
       summary: `Dialing ${contact.name}`,
-      createdAt: now
+      createdAt: now,
+      ...(userId ? { userId } : {})
     })
     const project = db.projects.find((p) => p.id === contact.projectId)
     if (project) project.updatedAt = now
@@ -886,7 +890,8 @@ export function startPublicCall(
           contactId: call.contactId,
           kind: 'call',
           summary: `Connected with ${contact.name}`,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          ...(call.userId ? { userId: call.userId } : {})
         })
       })
     }, 1100)
@@ -971,7 +976,8 @@ export function completePublicCall(
       contactId: c.contactId,
       kind: 'call',
       summary: `Call completed · ${disposition.replace('_', ' ')}`,
-      createdAt: now
+      createdAt: now,
+      ...(c.userId ? { userId: c.userId } : {})
     })
     const project = db.projects.find((p) => p.id === c.projectId)
     if (project) project.updatedAt = now
@@ -1005,6 +1011,7 @@ export async function sendPublicMessage(
     sandbox?: boolean
     sendAt?: number
     stepId?: string
+    userId?: string
   }
 ): Promise<
   | { ok: true; status: 201; body: { message: PublicMessage } }
@@ -1118,7 +1125,8 @@ export async function sendPublicMessage(
       updatedAt: now,
       sentAt: finalStatus === 'sent' ? now : undefined,
       sendAt,
-      stepId: input.stepId
+      stepId: input.stepId,
+      ...(input.userId ? { userId: input.userId } : {})
     })
     const c = db.contacts.find((x) => x.id === contact.id)
     if (c && finalStatus === 'sent') {
@@ -1152,7 +1160,8 @@ export async function sendPublicMessage(
           : finalStatus === 'failed'
             ? `Failed to ${messageChannel === 'linkedin' ? 'message' : 'email'} ${contact.name}: ${error}`
             : `Saved ${messageChannel} draft for ${contact.name}`,
-      createdAt: now
+      createdAt: now,
+      ...(input.userId ? { userId: input.userId } : {})
     })
     const project = db.projects.find((p) => p.id === contact.projectId)
     if (project) project.updatedAt = now
@@ -1351,7 +1360,8 @@ export async function deliverPublicMessage(
   config: ServerConfig,
   orgId: string,
   messageId: string,
-  sandbox?: boolean
+  sandbox?: boolean,
+  userId?: string
 ): Promise<DeliverResult> {
   const message = findOrgMessage(store, orgId, messageId)
   if (!message) return { ok: false, status: 404, body: { error: 'Message not found' } }
@@ -1366,7 +1376,7 @@ export async function deliverPublicMessage(
   }
   sendsInFlight.add(messageId)
   try {
-    return await deliverClaimedMessage(store, config, orgId, message, sandbox)
+    return await deliverClaimedMessage(store, config, orgId, message, sandbox, userId)
   } finally {
     sendsInFlight.delete(messageId)
   }
@@ -1377,7 +1387,8 @@ async function deliverClaimedMessage(
   config: ServerConfig,
   orgId: string,
   message: Message,
-  sandbox?: boolean
+  sandbox?: boolean,
+  userId?: string
 ): Promise<DeliverResult> {
   const messageId = message.id
   const contact = findOrgContact(store, orgId, message.contactId)
@@ -1473,6 +1484,7 @@ async function deliverClaimedMessage(
     row.error = error
     row.updatedAt = now
     row.sentAt = finalStatus === 'sent' ? now : undefined
+    if (finalStatus === 'sent' && userId) row.userId = userId
     if (finalStatus === 'sent') {
       const c = db.contacts.find((x) => x.id === contact.id)
       if (c) {

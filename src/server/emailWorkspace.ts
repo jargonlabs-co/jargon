@@ -36,7 +36,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=dnc1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=admin1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -75,6 +75,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=priorityhml1',
   'ui://jargon/email-workspace.html?v=mailfmt1',
   'ui://jargon/email-workspace.html?v=personcopy1',
+  'ui://jargon/email-workspace.html?v=dnc1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -795,6 +796,7 @@ Ownership — do not compete with Jargon on structure:
 - After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. That task calls resume_workspace, then show_tasks, and does not enroll or send. An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment is a chat action, never a button in the app. When the user says to enroll people, call enroll_hubspot if they are in HubSpot, or start_sequence if they are already in the workspace. Neither opens a workspace. If personalized copy is already saved, call show_tasks once afterward. If you still need save_research, do not open a workspace until that returns. Use show_tasks only when they want to work what is due.
 - Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
+- When the user asks how the team or org performed — a rep productivity drilldown, meetings booked, calls, emails, or replies over a period such as last quarter — call show_admin once. That opens the org view. Pass range quarter for last quarter, or 7d, 30d, or 90d. Pass focus reps, sequences, or meetings. Summarize the summary field in one sentence. Do not paste the table, and do not call show_tasks or get_usage for that.
 - Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.
 - Never share dashboardUrl, dashboardPath, or a jargonlabs.co/tools/… link. A build displays one in-chat workspace: the one save_research opens after personalized copy is saved. A priority pipeline displays one workspace: the show_tasks call after deploy. Do not tell them to open the web workspace.
 - Send the user to the web dashboard only to update billing or plans (call create_billing_link, or https://jargonlabs.co/billing) or to contact support (https://jargonlabs.co).

@@ -53,6 +53,7 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
 import { toE164 } from '../shared/phone'
 import { platformGmailReady } from './providers/gmail'
+import { buildAdminReport, type AdminFocus, type AdminRange } from './adminReport'
 import { bookPublicMeeting } from './calendar'
 import { getEmailWorkspace, withoutDashboard, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
@@ -587,7 +588,8 @@ export function registerJargonTools(
       channel: input.channel,
       status: input.status,
       sandbox,
-      sendAt: Number.isFinite(sendAt) ? sendAt : undefined
+      sendAt: Number.isFinite(sendAt) ? sendAt : undefined,
+      userId: actor.userId
     })
     if (!result.ok) {
       if (charge?.ok && charge.creditsUsed > 0) {
@@ -619,7 +621,7 @@ export function registerJargonTools(
     if (!charge.ok) return failCharge(charge)
     try {
       return ok({
-        call: startPublicCall(store, config, contact, sandbox, to),
+        call: startPublicCall(store, config, contact, sandbox, to, actor.userId),
         creditsUsed: charge.creditsUsed,
         creditsRemaining: charge.remaining
       })
@@ -765,7 +767,7 @@ export function registerJargonTools(
       if (!isContactStatus(status)) return fail('invalid status')
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel }))
+      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel, userId: actor.userId }))
     }
   )
 
@@ -781,7 +783,7 @@ export function registerJargonTools(
       if (!isContactStatus(status)) return fail('invalid status')
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel }))
+      return ok(applyDisposition(store, contact.id, { status, note, advanceStep, channel, userId: actor.userId }))
     }
   )
 
@@ -871,6 +873,41 @@ export function registerJargonTools(
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
     async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+  )
+
+  server.registerTool(
+    'show_admin',
+    {
+      ...display('Show team performance', HINTS.read),
+      description:
+        'Open the org admin view in Claude: meetings, calls, connects, emails, and replies for the whole account. Call this once when the user asks how the team performed, for a rep productivity drilldown, which sequence booked meetings, or results over a period such as last quarter. Pass range quarter for last quarter (the previous calendar quarter), or 7d, 30d, or 90d. If they do not name a window, pass 30d. Pass focus reps for a productivity drilldown, sequences for a breakdown by sequence, or meetings for meetings booked. The app shows the numbers. Summarize the summary field in one sentence. Do not paste the table. Do not call show_tasks, list_tasks, or get_usage for this.',
+      inputSchema: z.object({
+        range: z
+          .enum(['7d', '30d', '90d', 'quarter'])
+          .optional()
+          .describe('quarter is the previous calendar quarter. Use it for "last quarter".'),
+        start: z.string().optional().describe('ISO start. Pass with end instead of range.'),
+        end: z.string().optional().describe('ISO end, or YYYY-MM-DD inclusive.'),
+        focus: z
+          .enum(['reps', 'sequences', 'meetings'])
+          .optional()
+          .describe('reps, sequences, or meetings. Defaults to reps.')
+      }),
+      _meta: EMAIL_WORKSPACE_TOOL_META
+    },
+    async ({ range, start, end, focus }) => {
+      const built = buildAdminReport(store, actor.orgId, {
+        range: range as AdminRange | undefined,
+        start,
+        end,
+        focus: focus as AdminFocus | undefined
+      })
+      if (!built.ok) return fail(built.error)
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(built.report, null, 2) }],
+        _meta: EMAIL_WORKSPACE_TOOL_META
+      }
+    }
   )
 
   server.registerTool(
@@ -1166,7 +1203,7 @@ export function registerJargonTools(
       projectId: message.projectId
     })
     if (!charge.ok) return failCharge(charge)
-    const result = await deliverPublicMessage(store, config, actor.orgId, messageId, sandbox)
+    const result = await deliverPublicMessage(store, config, actor.orgId, messageId, sandbox, actor.userId)
     if (!result.ok) {
       if (charge.creditsUsed > 0) {
         await refundCredits(billing, actor.orgId, charge.creditsUsed, 'refund')
@@ -1400,7 +1437,13 @@ export function registerJargonTools(
     async ({ contactId, start, durationMinutes, title, note }) => {
       const contact = findOrgContact(store, actor.orgId, contactId)
       if (!contact) return fail('Contact not found')
-      const result = await bookPublicMeeting(store, config, contact, { start, durationMinutes, title, note })
+      const result = await bookPublicMeeting(store, config, contact, {
+        start,
+        durationMinutes,
+        title,
+        note,
+        userId: actor.userId
+      })
       if (!result.ok) return fail(result.error)
       return ok(result)
     }

@@ -238,7 +238,7 @@ describe('a build opens one workspace', () => {
     for (const name of ['get_sequence', 'resume_workspace', 'deploy_tool', 'import_list', 'start_sequence', 'enroll_hubspot']) {
       assert.equal(opens(name), false, name)
     }
-    for (const name of ['save_research', 'show_email_workspace', 'show_tasks']) {
+    for (const name of ['save_research', 'show_email_workspace', 'show_tasks', 'show_admin']) {
       assert.equal(opens(name), true, name)
     }
 

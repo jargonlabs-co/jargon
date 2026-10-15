@@ -445,7 +445,8 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
             channel,
             sandbox,
             sendAt: sendAtMs,
-            stepId: typeof stepId === 'string' ? stepId : undefined
+            stepId: typeof stepId === 'string' ? stepId : undefined,
+            userId: req.auth!.user.id
           })
     if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')
@@ -504,7 +505,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       return
     }
     try {
-      const call = startPublicCall(store, config, contact, sandbox)
+      const call = startPublicCall(store, config, contact, sandbox, undefined, req.auth!.user.id)
       const body = { call, creditsUsed: charge.creditsUsed, creditsRemaining: charge.remaining }
       res.setHeader('X-Credits-Used', String(charge.creditsUsed))
       res.setHeader('X-Credits-Remaining', String(charge.remaining))
@@ -554,7 +555,7 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    res.json(applyDisposition(store, contact.id, { status, note, advanceStep }))
+    res.json(applyDisposition(store, contact.id, { status, note, advanceStep, userId: req.auth!.user.id }))
   })
 
   router.post('/contacts/promote', auth, (req, res) => {
@@ -779,7 +780,8 @@ export function createV1Router(store: DataStore, config: ServerConfig, billing: 
       config,
       req.auth!.org.id,
       message.id,
-      sandbox
+      sandbox,
+      req.auth!.user.id
     )
     if (!result.ok && charge.creditsUsed > 0) {
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')

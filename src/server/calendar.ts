@@ -60,7 +60,7 @@ export async function bookPublicMeeting(
   store: DataStore,
   config: ServerConfig,
   contact: Contact,
-  input: { start: string; durationMinutes?: number; title?: string; note?: string },
+  input: { start: string; durationMinutes?: number; title?: string; note?: string; userId?: string },
   fetcher: Fetcher = fetch
 ): Promise<
   | { ok: true; contactId: string; eventId: string; htmlLink?: string; start: string; end: string }
@@ -133,13 +133,23 @@ export async function bookPublicMeeting(
   store.update((db) => {
     const row = db.contacts.find((c) => c.id === contact.id)
     if (!row) return
-    row.meeting = { provider, eventId: json.id!, htmlLink, start: window.start, end: window.end, title }
+    row.meeting = {
+      provider,
+      eventId: json.id!,
+      htmlLink,
+      start: window.start,
+      end: window.end,
+      title,
+      bookedAt: Date.now(),
+      ...(input.userId ? { userId: input.userId } : {})
+    }
     row.updatedAt = Date.now()
   })
   const note = [input.note?.trim(), htmlLink].filter(Boolean).join('\n')
   applyDisposition(store, contact.id, {
     status: 'meeting_booked',
-    note: note || undefined
+    note: note || undefined,
+    userId: input.userId
   })
   const updated = store.db.contacts.find((c) => c.id === contact.id)
   if (updated) {

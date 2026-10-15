@@ -36,6 +36,10 @@ export interface BookedMeeting {
   start: string
   end: string
   title: string
+  /** When the invite was sent. Missing on invites booked before this field existed. */
+  bookedAt?: number
+  /** Member who sent the invite. */
+  userId?: string
 }
 export type CallPhase = 'dialing' | 'ringing' | 'connected' | 'completed' | 'failed'
 export type CallMode = 'demo' | 'plivo'
@@ -339,6 +343,8 @@ export interface CallSession {
   startedAt: number
   connectedAt?: number
   endedAt?: number
+  /** Member who placed the call. Missing on older calls. */
+  userId?: string
 }
 
 export interface Message {
@@ -366,6 +372,8 @@ export interface Message {
   error?: string
   /** Sequence step this message was enrolled from. */
   stepId?: string
+  /** Member who sent it. Missing on agent sends and older messages. */
+  userId?: string
 }
 
 export interface Activity {
@@ -376,6 +384,8 @@ export interface Activity {
   kind: 'call' | 'email' | 'draft' | 'linkedin' | 'note' | 'campaign' | 'system' | 'sync'
   summary: string
   createdAt: number
+  /** Member who took the action. Missing on inbound replies, agent sends, and older rows. */
+  userId?: string
 }
 
 /** @deprecated Use orgBilling. Kept so hosted JSON/Postgres blobs migrate cleanly. */

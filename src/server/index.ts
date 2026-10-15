@@ -1442,7 +1442,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     const nextStatus = body.status
     const isOutcome = nextStatus !== undefined && nextStatus !== 'active' && nextStatus !== 'queued'
     if (isOutcome && nextStatus !== contact.status) {
-      applyDisposition(store, contact.id, { status: nextStatus, advanceStep: false })
+      applyDisposition(store, contact.id, { status: nextStatus, advanceStep: false, userId: req.auth!.user.id })
     }
     store.update((db) => {
       const c = db.contacts.find((x) => x.id === paramId(req.params.id))
@@ -1480,7 +1480,7 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       res.status(404).json({ error: 'Contact not found' })
       return
     }
-    applyDisposition(store, contactId, { status, note, advanceStep })
+    applyDisposition(store, contactId, { status, note, advanceStep, userId: req.auth!.user.id })
     const updated = store.db.contacts.find((c) => c.id === contactId)!
     const next = nextQueueContact(store.db, updated.projectId)
     res.json({
@@ -1542,7 +1542,9 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
         store,
         config,
         contact,
-        req.auth!.environment === 'sandbox'
+        req.auth!.environment === 'sandbox',
+        undefined,
+        req.auth!.user.id
       )
       res.status(201).json({
         ...call,
@@ -1673,7 +1675,8 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
       body,
       status: finalStatus,
       channel: messageChannel,
-      sandbox: req.auth!.environment === 'sandbox'
+      sandbox: req.auth!.environment === 'sandbox',
+      userId: req.auth!.user.id
     })
     if (!result.ok && charge?.ok && charge.creditsUsed > 0) {
       await refundCredits(billing, req.auth!.org.id, charge.creditsUsed, 'refund')

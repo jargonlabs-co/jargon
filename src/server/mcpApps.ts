@@ -66,7 +66,7 @@ export function registerEmailWorkspaceApp(server: McpServer): void {
       `Jargon email workspace (${uri})`,
       uri,
       {
-        description: 'Outbound in Claude: Contacts, Sequence, and Tasks.',
+        description: 'Outbound in Claude: Contacts, Sequence, Tasks, and Admin.',
         mimeType: RESOURCE_MIME_TYPE,
         _meta: { ui: EMAIL_WORKSPACE_UI_META }
       },

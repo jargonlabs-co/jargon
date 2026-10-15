@@ -178,17 +178,26 @@
     .admin-grid { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
     .admin-head, .admin-row {
       display: grid;
-      grid-template-columns: minmax(108px, 1.5fr) repeat(5, minmax(48px, 0.7fr));
+      grid-template-columns: minmax(0, 1.6fr) repeat(5, minmax(44px, 0.55fr));
       gap: 6px; align-items: center; padding: 8px 12px; width: 100%; text-align: left;
     }
     .admin-head { font-size: 11px; color: var(--muted); background: var(--cream); }
     .admin-row { border: 0; border-top: 1px solid var(--line); background: var(--bg); }
     .admin-row:hover, .admin-row.on { background: var(--bg2); }
-    .admin-name { font-weight: 600; }
+    .admin-name { font-weight: 600; min-width: 0; }
     .admin-num { font-variant-numeric: tabular-nums; }
     .admin-rate { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
     .admin-drill { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
     .admin-drill .who { font-weight: 650; }
+    .admin-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 500; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .admin-copy {
+      margin-top: 12px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--bg); padding: 12px 14px;
+    }
+    .admin-copy .kicker { margin-bottom: 4px; }
+    .admin-copy .title { font-weight: 650; }
+    .admin-copy .preview { color: var(--muted); margin: 6px 0 0; }
+    .admin-copy .meta { margin-top: 8px; color: var(--muted); font-size: 12px; }
     .chan-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
     .chan {
       border: 1px solid var(--line); background: var(--bg); border-radius: 999px;
@@ -2591,7 +2600,13 @@ function dueLabel(task) {
     if (!admin) return { emails: 0, calls: 0, connects: 0, replies: 0, meetings: 0, linkedin: 0 };
     const drilled = adminDrillId ? (admin.reps || []).find((row) => row.id === adminDrillId) : null;
     if (adminSelectedId) {
-      const list = drilled ? drilled.sequences || [] : adminFocus === 'sequences' ? admin.sequences : admin.reps;
+      const list = drilled
+        ? drilled.sequences || []
+        : adminFocus === 'sequences'
+          ? admin.sequences
+          : adminFocus === 'territories'
+            ? admin.territories
+            : admin.reps;
       const row = (list || []).find((item) => item.id === adminSelectedId);
       if (row) return row;
     }
@@ -2611,6 +2626,7 @@ function dueLabel(task) {
   function adminTitle() {
     if (adminFocus === 'sequences') return 'Sequences';
     if (adminFocus === 'meetings') return 'Meetings';
+    if (adminFocus === 'territories') return 'Territories';
     return 'Rep productivity';
   }
 
@@ -2622,11 +2638,37 @@ function dueLabel(task) {
 
   function adminRows() {
     if (adminFocus === 'sequences') return admin.sequences || [];
+    if (adminFocus === 'territories') return admin.territories || [];
     if (adminDrillId) {
       const rep = (admin.reps || []).find((row) => row.id === adminDrillId);
       return rep?.sequences || [];
     }
     return admin.reps || [];
+  }
+
+  function adminMessageLine(row) {
+    const msg = row && row.message;
+    if (!msg) return '';
+    const pct = adminRate(msg.basis === 'meetings' ? msg.meetings : msg.replies, msg.sent);
+    const word = msg.basis === 'meetings' ? 'meetings' : 'replies';
+    return `<span class="admin-sub">${esc(msg.subject)} · ${pct} ${word}</span>`;
+  }
+
+  function renderTerritoryCopy() {
+    if (adminFocus !== 'territories') return '';
+    const rows = admin.territories || [];
+    const picked = adminSelectedId ? rows.find((row) => row.id === adminSelectedId) : rows.find((row) => row.message);
+    if (!picked || !picked.message) return '';
+    const msg = picked.message;
+    const pct = adminRate(msg.basis === 'meetings' ? msg.meetings : msg.replies, msg.sent);
+    return `
+      <div class="admin-copy">
+        <div class="kicker">Highest converting in ${esc(picked.name)}</div>
+        <div class="title">${esc(msg.subject)}</div>
+        ${msg.preview ? `<p class="preview">${esc(msg.preview)}</p>` : ''}
+        <div class="meta">${adminNum(msg.sent)} sent · ${adminNum(msg.meetings)} meetings · ${adminNum(msg.replies)} replies · ${pct}</div>
+      </div>
+    `;
   }
 
   function renderAdminTable(rows) {
@@ -2636,7 +2678,7 @@ function dueLabel(task) {
         <div class="admin-head"><span></span><span>Emails</span><span>Calls</span><span>Connects</span><span>Replies</span><span>Meetings</span></div>
         ${rows.map((row) => `
           <button type="button" class="admin-row ${adminSelectedId === row.id ? 'on' : ''}" data-admin-row="${esc(row.id)}">
-            <span class="admin-name">${esc(row.name)}</span>
+            <span class="admin-name">${esc(row.name)}${adminMessageLine(row)}</span>
             <span class="admin-num">${adminNum(row.emails)}</span>
             <span class="admin-num">${adminNum(row.calls)}</span>
             <span class="admin-num">${adminNum(row.connects)}<span class="admin-rate">${adminRate(row.connects, row.calls)}</span></span>
@@ -2693,7 +2735,7 @@ function dueLabel(task) {
         ${ranges.map(([id, label]) => `<button type="button" class="${admin.range === id ? 'on' : ''}" data-admin-range="${id}" ${busy ? 'disabled' : ''}>${label}</button>`).join('')}
       </div>
       <div class="page-tabs">
-        ${[['reps', 'Reps'], ['sequences', 'Sequences'], ['meetings', 'Meetings']].map(([id, label]) => `
+        ${[['reps', 'Reps'], ['sequences', 'Sequences'], ['territories', 'Territories'], ['meetings', 'Meetings']].map(([id, label]) => `
           <button type="button" class="page-tab ${adminFocus === id ? 'on' : ''}" data-admin-focus="${id}">${label}</button>
         `).join('')}
       </div>
@@ -2701,8 +2743,9 @@ function dueLabel(task) {
         ${stats.map(([label, value]) => `<div><strong>${adminNum(value)}</strong><span>${label}</span></div>`).join('')}
       </div>
       ${admin.unattributed && adminFocus === 'reps' && !adminDrillId ? '<p class="admin-note">Activity in this window is not tied to a person yet. New calls, sends, and meetings are saved to the rep who did them.</p>' : ''}
+      ${adminFocus === 'territories' && (admin.territories || []).every((row) => row.id === 'none') ? '<p class="admin-note">Territory is read from the CRM field territory, region, or state.</p>' : ''}
       ${drilled ? `<div class="admin-drill"><button type="button" class="btn" id="admin-back">All reps</button><div class="who">${esc(drilled.name)}</div></div>` : ''}
-      <div id="panel">${adminFocus === 'meetings' ? renderAdminMeetings() : renderAdminTable(adminRows())}</div>
+      <div id="panel">${adminFocus === 'meetings' ? renderAdminMeetings() : renderAdminTable(adminRows())}${renderTerritoryCopy()}</div>
     `;
     bindAdmin();
   }

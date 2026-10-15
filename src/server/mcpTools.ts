@@ -53,9 +53,9 @@ import { claudeConnectorStatus } from './mcpOauth'
 import { createVoiceToken, inspectLiveVoice, voiceIsLive } from './providers/voice'
 import { toE164 } from '../shared/phone'
 import { platformGmailReady } from './providers/gmail'
-import { buildAdminReport, type AdminFocus, type AdminRange } from './adminReport'
+import { buildAdminReport, isAdminReportAsk, type AdminFocus, type AdminRange } from './adminReport'
 import { bookPublicMeeting } from './calendar'
-import { getEmailWorkspace, withoutDashboard, workspaceBrief } from './emailWorkspace'
+import { ADMIN_REPORT_ROUTE, getEmailWorkspace, withoutDashboard, workspaceBrief } from './emailWorkspace'
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 import { isPriorityContact, isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
@@ -193,7 +193,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        'If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. The Claude scheduled task, after they confirm with Schedule, only calls resume_workspace then show_tasks. show_tasks is what displays the sequence when they open that run. If they say a scheduled run is missing from the chat, call show_tasks once. Do not tell them a scheduled run cannot display the workspace. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.'
+        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. The Claude scheduled task, after they confirm with Schedule, only calls resume_workspace then show_tasks. show_tasks is what displays the sequence when they open that run. If they say a scheduled run is missing from the chat, call show_tasks once. Do not tell them a scheduled run cannot display the workspace. Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
       })
     }
   )
@@ -212,7 +212,8 @@ export function registerJargonTools(
     'get_usage',
     {
       ...display('Check your usage this period', HINTS.read),
-      description: 'Credit and outbound usage for the current billing period, including by tool.'
+      description:
+        'Credit balance for the current billing period only. Not a rep drilldown and not a date range such as last quarter. Call show_admin for that.'
     },
     async () => ok(await billing.getUsage(actor.orgId, projectNamesFor(store, actor.orgId)))
   )
@@ -309,7 +310,8 @@ export function registerJargonTools(
     'list_projects',
     {
       ...display('List your outbound workspaces', HINTS.read),
-      description: 'List workspaces for this account. Do not share dashboardUrl — reopen one in Claude with show_email_workspace.'
+      description:
+        'List workspaces for this account. Not a performance report. For a rep drilldown or last quarter, call show_admin. Do not share dashboardUrl — reopen one in Claude with show_email_workspace.'
     },
     async () => ok({ projects: listPublicProjects(store, actor.orgId, config.appUrl) })
   )
@@ -382,6 +384,11 @@ export function registerJargonTools(
   })
 
   async function execDeploy(prompt: string, contacts: unknown, spec: unknown) {
+    if (isAdminReportAsk(prompt)) {
+      return fail(
+        'This is a report, not a cadence. Call show_admin once. For last quarter pass range quarter and focus reps. Do not create a workspace.'
+      )
+    }
     const parsed = parseDeployContacts(contacts)
     if (!parsed.ok) return fail(parsed.error)
     const pipeline = isPriorityPipelinePrompt(prompt)
@@ -451,7 +458,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
+        'Create an outbound workspace (structure only). Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -890,9 +897,9 @@ export function registerJargonTools(
   server.registerTool(
     'show_admin',
     {
-      ...display('Show team performance', HINTS.read),
+      ...display('Rep drilldown', HINTS.read),
       description:
-        'Open the org admin view in Claude: meetings, calls, connects, emails, and replies for the whole account. Call this once when the user asks how the team performed, for a rep productivity drilldown, which sequence booked meetings, or results over a period such as last quarter. Pass range quarter for last quarter (the previous calendar quarter), or 7d, 30d, or 90d. If they do not name a window, pass 30d. Pass focus reps for a productivity drilldown, sequences for a breakdown by sequence, or meetings for meetings booked. The app shows the numbers. Summarize the summary field in one sentence. Do not paste the table. Do not call show_tasks, list_tasks, or get_usage for this.',
+        'This is the reporting tool. Open the rep drilldown in Claude: meetings, calls, connects, emails, and replies for the whole account. Call this once when the user asks how the team performed, for a rep productivity drilldown, which sequence booked meetings, productivity by sales territory, the highest converting message in a territory, or results over a period such as last quarter. Pass range quarter for last quarter (the previous calendar quarter), or 7d, 30d, or 90d. If they do not name a window, pass 30d. Pass focus reps for a productivity drilldown, sequences for a breakdown by sequence, meetings for meetings booked, or territories for territory productivity and the winning message in each territory. The app shows the numbers. Summarize the summary field in one sentence. Do not paste the table. Do not call deploy_tool, list_projects, show_tasks, list_tasks, or get_usage for this.',
       inputSchema: z.object({
         range: z
           .enum(['7d', '30d', '90d', 'quarter'])
@@ -901,9 +908,9 @@ export function registerJargonTools(
         start: z.string().optional().describe('ISO start. Pass with end instead of range.'),
         end: z.string().optional().describe('ISO end, or YYYY-MM-DD inclusive.'),
         focus: z
-          .enum(['reps', 'sequences', 'meetings'])
+          .enum(['reps', 'sequences', 'meetings', 'territories'])
           .optional()
-          .describe('reps, sequences, or meetings. Defaults to reps.')
+          .describe('reps, sequences, meetings, or territories. Defaults to reps.')
       }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -917,6 +924,7 @@ export function registerJargonTools(
       if (!built.ok) return fail(built.error)
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(built.report, null, 2) }],
+        structuredContent: built.report,
         _meta: EMAIL_WORKSPACE_TOOL_META
       }
     }
@@ -1345,7 +1353,7 @@ export function registerJargonTools(
     {
       ...display('Resume the saved outbound workspace', HINTS.read),
       description:
-        'Read the latest saved workspace as JSON: brief, whether copy is still a template, and what to do next. Does not open a workspace. Call this first in a new Claude chat, and first on a scheduled run, before import_list or deploy_tool. If the user is building a new sequence, do not open this workspace. If they are continuing work that already has personalized copy, call show_email_workspace or show_tasks once.',
+        'Read the latest saved workspace as JSON: brief, whether copy is still a template, and what to do next. Does not open a workspace. Do not call this for a rep drilldown, team performance, or last quarter — call show_admin. Otherwise call this first in a new Claude chat, and first on a scheduled run, before import_list or deploy_tool. If the user is building a new sequence, do not open this workspace. If they are continuing work that already has personalized copy, call show_email_workspace or show_tasks once.',
       inputSchema: z.object({
         projectId: z.string().optional().describe('Workspace to resume. Omit to read the most recently updated one.')
       })

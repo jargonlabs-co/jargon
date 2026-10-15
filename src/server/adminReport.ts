@@ -1,8 +1,8 @@
 import type { DataStore } from './store'
-import type { Activity, CallSession, Contact, Message, Project } from './types'
+import type { Activity, CallSession, Contact, Message, Project, SequenceStep } from './types'
 
 export type AdminRange = '7d' | '30d' | '90d' | 'quarter' | 'custom'
-export type AdminFocus = 'reps' | 'sequences' | 'meetings'
+export type AdminFocus = 'reps' | 'sequences' | 'meetings' | 'territories'
 
 export type AdminMetrics = {
   emails: number
@@ -34,6 +34,23 @@ export type AdminMeetingRow = {
   title: string
 }
 
+export type AdminMessagePick = {
+  subject: string
+  preview: string
+  sent: number
+  replies: number
+  meetings: number
+  /** Meetings divided by sends when this copy booked any, otherwise replies divided by sends. */
+  rate: number
+  basis: 'meetings' | 'replies'
+}
+
+export type AdminTerritoryRow = AdminMetrics & {
+  id: string
+  name: string
+  message: AdminMessagePick | null
+}
+
 export type AdminReport = {
   view: 'admin'
   orgName: string
@@ -46,6 +63,7 @@ export type AdminReport = {
   reps: AdminRepRow[]
   sequences: AdminSequenceRow[]
   meetings: AdminMeetingRow[]
+  territories: AdminTerritoryRow[]
   /** True when some activity in the window has no member. */
   unattributed: boolean
   summary: string
@@ -54,6 +72,18 @@ export type AdminReport = {
 
 const DAY = 86_400_000
 const UNASSIGNED = 'unassigned'
+
+/** A performance question, not a request to build a cadence. */
+export function isAdminReportAsk(prompt: string): boolean {
+  const text = prompt.toLowerCase()
+  if (/\b(cadence|sequenc|dialer|enroll|campaign)\b/.test(text)) return false
+  if (/\b(drill-?downs?|productivity|performance report|rep report)\b/.test(text)) return true
+  if (/\bhow (did|has) the (team|org|reps?)\b/.test(text)) return true
+  return (
+    /\b(last quarter|this quarter|q[1-4])\b/.test(text) &&
+    /\b(reps?|drill|report|performance|admin|productivity)\b/.test(text)
+  )
+}
 
 export function adminWindow(
   input: { range?: AdminRange; start?: string; end?: string },
@@ -111,8 +141,9 @@ export function buildAdminReport(
   const totals = emptyMetrics()
   const sequenceBuckets = new Map<string, MetricsBucket>()
   const repBuckets = new Map<string, RepBucket>()
+  const territoryBuckets = new Map<string, MetricsBucket>()
 
-  const touch = (userId: string | undefined, projectId: string, key: keyof AdminMetrics) => {
+  const touch = (userId: string | undefined, projectId: string, key: keyof AdminMetrics, contactId?: string) => {
     const project = projects.get(projectId)
     const sequence = bucketFor(sequenceBuckets, projectId, project?.name || 'Sequence')
     add(totals, key)
@@ -123,27 +154,29 @@ export function buildAdminReport(
     add(rep, key)
     const repSequence = bucketFor(rep.sequenceMap, projectId, project?.name || 'Sequence')
     add(repSequence, key)
+    const place = territoryOf(contactId ? contactById.get(contactId) : undefined)
+    add(bucketFor(territoryBuckets, place.id, place.name), key)
   }
 
   for (const message of store.db.messages) {
     if (message.orgId !== orgId || message.status !== 'sent') continue
     const at = message.sentAt ?? message.createdAt
     if (!inRange(at, window.start, window.end)) continue
-    if (message.channel === 'linkedin') touch(message.userId, message.projectId, 'linkedin')
-    else touch(message.userId, message.projectId, 'emails')
+    if (message.channel === 'linkedin') touch(message.userId, message.projectId, 'linkedin', message.contactId)
+    else touch(message.userId, message.projectId, 'emails', message.contactId)
   }
 
   for (const call of store.db.calls) {
     if (call.orgId !== orgId || !inRange(call.startedAt, window.start, window.end)) continue
-    touch(call.userId, call.projectId, 'calls')
-    if (callConnected(call)) touch(call.userId, call.projectId, 'connects')
+    touch(call.userId, call.projectId, 'calls', call.contactId)
+    if (callConnected(call)) touch(call.userId, call.projectId, 'connects', call.contactId)
   }
 
   for (const activity of store.db.activities) {
     if (activity.orgId !== orgId || !inRange(activity.createdAt, window.start, window.end)) continue
     if (!isReply(activity)) continue
     const sender = replyOwner(store.db.messages, activity)
-    touch(sender, activity.projectId, 'replies')
+    touch(sender, activity.projectId, 'replies', activity.contactId)
   }
 
   const countedMeetings = new Set<string>()
@@ -152,7 +185,7 @@ export function buildAdminReport(
     const at = meetingBookedAt(contact)
     if (at == null || !inRange(at, window.start, window.end) || !contact.meeting) continue
     countedMeetings.add(contact.id)
-    touch(contact.meeting.userId, contact.projectId, 'meetings')
+    touch(contact.meeting.userId, contact.projectId, 'meetings', contact.id)
     meetingRows.push(meetingRow(contact, projects))
   }
   for (const activity of store.db.activities) {
@@ -160,7 +193,7 @@ export function buildAdminReport(
     if (!inRange(activity.createdAt, window.start, window.end) || !isMeetingDisposition(activity)) continue
     const contact = contactById.get(activity.contactId)
     countedMeetings.add(activity.contactId)
-    touch(activity.userId, activity.projectId, 'meetings')
+    touch(activity.userId, activity.projectId, 'meetings', activity.contactId)
     meetingRows.push({
       id: activity.id,
       contactName: contact?.name || 'Contact',
@@ -179,6 +212,16 @@ export function buildAdminReport(
   if (onlyTeam && reps[0]) reps[0].name = 'Team'
   const unattributed = reps.some((rep) => !rep.attributed)
   meetingRows.sort((a, b) => Date.parse(b.start) - Date.parse(a.start))
+  const territories = territoryRows(
+    territoryBuckets,
+    store.db.messages.filter((message) => message.orgId === orgId),
+    store.db.activities.filter((activity) => activity.orgId === orgId),
+    store.db.steps.filter((step) => step.orgId === orgId),
+    contactById,
+    countedMeetings,
+    window.start,
+    window.end
+  )
 
   const report: AdminReport = {
     view: 'admin',
@@ -192,8 +235,12 @@ export function buildAdminReport(
     reps,
     sequences,
     meetings: meetingRows.slice(0, 50),
+    territories,
     unattributed,
-    summary: summaryLine(org.name, window.label, totals, window.range),
+    summary:
+      focus === 'territories'
+        ? territorySummary(org.name, window.label, window.range, territories)
+        : summaryLine(org.name, window.label, totals, window.range),
     nextAction:
       'The admin view is open. Say the summary in one sentence. Do not paste the table. Do not call show_tasks.'
   }
@@ -367,6 +414,213 @@ function formatSpan(start: number, endInclusive: number) {
   return `${startLabel} – ${formatDay(endInclusive)}`
 }
 
+const NO_TERRITORY = { id: 'none', name: 'No territory' }
+const TERRITORY_KEYS = [
+  'territory',
+  'sales_territory',
+  'salesterritory',
+  'hs_territory',
+  'territory_name',
+  'region',
+  'sales_region',
+  'state',
+  'hs_state',
+  'company_state',
+  'company_territory'
+]
+
+function territoryOf(contact: Contact | undefined): { id: string; name: string } {
+  if (!contact?.attrs) return NO_TERRITORY
+  const entries = Object.entries(contact.attrs)
+  for (const wanted of TERRITORY_KEYS) {
+    const found = entries.find(([key]) => key.toLowerCase() === wanted)
+    const text = found ? attrText(found[1]) : ''
+    if (!text) continue
+    const name = text.replace(/\s+/g, ' ')
+    return { id: name.toLowerCase(), name }
+  }
+  return NO_TERRITORY
+}
+
+function attrText(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+type CopyBucket = {
+  key: string
+  subject: string
+  preview: string
+  sent: number
+  replies: Set<string>
+  meetings: Set<string>
+}
+
+function territoryRows(
+  buckets: Map<string, MetricsBucket>,
+  messages: Message[],
+  activities: Activity[],
+  steps: SequenceStep[],
+  contacts: Map<string, Contact>,
+  meetingContacts: Set<string>,
+  start: number,
+  end: number
+): AdminTerritoryRow[] {
+  const stepById = new Map(steps.map((step) => [step.id, step]))
+  const copies = new Map<string, Map<string, CopyBucket>>()
+  const copyFor = (contact: Contact, message: Message) => {
+    const place = territoryOf(contact)
+    let group = copies.get(place.id)
+    if (!group) {
+      group = new Map()
+      copies.set(place.id, group)
+    }
+    const identity = messageIdentity(message, contact, stepById)
+    let row = group.get(identity.key)
+    if (!row) {
+      row = { key: identity.key, subject: identity.subject, preview: identity.preview, sent: 0, replies: new Set(), meetings: new Set() }
+      group.set(identity.key, row)
+    }
+    return row
+  }
+
+  for (const message of messages) {
+    if (message.status !== 'sent' || message.channel === 'linkedin') continue
+    const at = message.sentAt ?? message.createdAt
+    if (!inRange(at, start, end)) continue
+    const contact = contacts.get(message.contactId)
+    if (!contact) continue
+    const row = copyFor(contact, message)
+    row.sent += 1
+    if (!row.preview) row.preview = firstLine(message.body)
+  }
+
+  for (const activity of activities) {
+    if (!activity.contactId || !inRange(activity.createdAt, start, end) || !isReply(activity)) continue
+    const contact = contacts.get(activity.contactId)
+    const message = lastTouchEmail(messages, activity.contactId, activity.createdAt, start, end)
+    if (!contact || !message) continue
+    const row = copyFor(contact, message)
+    row.replies.add(contact.id)
+    if (message.body.trim()) row.preview = firstLine(message.body)
+  }
+
+  for (const contactId of meetingContacts) {
+    const contact = contacts.get(contactId)
+    if (!contact) continue
+    const at = meetingBookedAt(contact) ?? 0
+    const message = lastTouchEmail(messages, contactId, at, start, end)
+    if (!message) continue
+    const row = copyFor(contact, message)
+    row.meetings.add(contact.id)
+    if (message.body.trim()) row.preview = firstLine(message.body)
+  }
+
+  return [...buckets.values()]
+    .map((bucket) => ({
+      ...toSequenceRow(bucket),
+      message: bestCopy([...(copies.get(bucket.id)?.values() ?? [])])
+    }))
+    .sort(sortTerritories)
+}
+
+function sortTerritories(a: AdminTerritoryRow, b: AdminTerritoryRow) {
+  if ((a.id === 'none') !== (b.id === 'none')) return a.id === 'none' ? 1 : -1
+  return byMeetings(a, b)
+}
+
+function bestCopy(rows: CopyBucket[]): AdminMessagePick | null {
+  const sent = rows.filter((row) => row.sent > 0)
+  if (!sent.length) return null
+  const volume = sent.some((row) => row.sent >= 3)
+    ? sent.filter((row) => row.sent >= 3)
+    : sent.some((row) => row.sent >= 2)
+      ? sent.filter((row) => row.sent >= 2)
+      : sent
+  volume.sort((a, b) => {
+    const meetings = b.meetings.size / b.sent - a.meetings.size / a.sent
+    if (meetings) return meetings
+    const replies = b.replies.size / b.sent - a.replies.size / a.sent
+    if (replies) return replies
+    return b.sent - a.sent
+  })
+  const best = volume[0]
+  if (!best) return null
+  const meetings = best.meetings.size
+  const replies = best.replies.size
+  const basis = meetings > 0 ? 'meetings' : 'replies'
+  return {
+    subject: best.subject,
+    preview: best.preview,
+    sent: best.sent,
+    replies,
+    meetings,
+    rate: best.sent ? (basis === 'meetings' ? meetings : replies) / best.sent : 0,
+    basis
+  }
+}
+
+function messageIdentity(
+  message: Message,
+  contact: Contact,
+  steps: Map<string, SequenceStep>
+): { key: string; subject: string; preview: string } {
+  const step = message.stepId ? steps.get(message.stepId) : undefined
+  if (step) {
+    return {
+      key: `step:${step.id}`,
+      subject: step.subject?.trim() || step.label || message.subject.trim() || '(no subject)',
+      preview: firstLine(message.body)
+    }
+  }
+  const subject = message.subject.trim() || '(no subject)'
+  return { key: `subj:${normalizeSubject(subject, contact)}`, subject, preview: firstLine(message.body) }
+}
+
+function normalizeSubject(subject: string, contact: Contact): string {
+  const first = (contact.name.split(/\s+/)[0] || '').toLowerCase()
+  let text = subject.toLowerCase().replace(/\s+/g, ' ')
+  if (first) text = text.replaceAll(first, '{{first_name}}')
+  if (contact.company.trim()) text = text.replaceAll(contact.company.trim().toLowerCase(), '{{company}}')
+  return text
+}
+
+function firstLine(body: string): string {
+  const line = body.replace(/\s+/g, ' ').trim()
+  return line.length > 160 ? `${line.slice(0, 157)}…` : line
+}
+
+function lastTouchEmail(
+  messages: Message[],
+  contactId: string,
+  at: number,
+  start: number,
+  end: number
+): Message | undefined {
+  let best: Message | undefined
+  for (const message of messages) {
+    if (message.contactId !== contactId || message.channel === 'linkedin' || message.status !== 'sent') continue
+    const sentAt = message.sentAt ?? message.createdAt
+    if (!inRange(sentAt, start, end) || sentAt > at) continue
+    if (!best || sentAt > (best.sentAt ?? best.createdAt)) best = message
+  }
+  return best
+}
+
+function territorySummary(orgName: string, label: string, range: AdminRange, rows: AdminTerritoryRow[]) {
+  const window = range === 'quarter' ? 'Last quarter' : label
+  const ranked = rows.filter((row) => row.id !== 'none')
+  if (!ranked.length) {
+    return `${window}, ${orgName} has no territory on its contacts. Territory is read from the CRM field territory, region, or state.`
+  }
+  const top = ranked[0]
+  if (!top?.message) return `${window}, ${top?.name ?? 'The top territory'} led ${orgName} with ${top?.meetings ?? 0} meetings.`
+  const pct = Math.round(top.message.rate * 1000) / 10
+  const outcome = top.message.basis === 'meetings' ? 'booked a meeting' : 'got a reply'
+  return `${window}, ${top.name} converted best on “${top.message.subject}” (${pct}% of ${top.message.sent} emails ${outcome}).`
+}
+
 export const SAMPLE_ADMIN_REPORT: AdminReport = {
   view: 'admin',
   orgName: 'Northwind',
@@ -430,6 +684,65 @@ export const SAMPLE_ADMIN_REPORT: AdminReport = {
     { id: 'proj_gtm', name: 'GTM Engineers · US', emails: 40, calls: 30, connects: 12, replies: 8, meetings: 5, linkedin: 3 },
     { id: 'proj_revops', name: 'Series B RevOps', emails: 33, calls: 22, connects: 8, replies: 5, meetings: 4, linkedin: 3 },
     { id: 'proj_dq', name: 'Disqualified re-engage', emails: 18, calls: 17, connects: 6, replies: 3, meetings: 2, linkedin: 2 }
+  ],
+  territories: [
+    {
+      id: 'west',
+      name: 'West',
+      emails: 40,
+      calls: 30,
+      connects: 12,
+      replies: 8,
+      meetings: 5,
+      linkedin: 3,
+      message: {
+        subject: '{{first_name}} — GTM hiring at {{company}}',
+        preview: 'Saw Northwind is hiring GTM engineers. Worth a 20-minute intro?',
+        sent: 24,
+        replies: 6,
+        meetings: 4,
+        rate: 4 / 24,
+        basis: 'meetings'
+      }
+    },
+    {
+      id: 'east',
+      name: 'East',
+      emails: 33,
+      calls: 22,
+      connects: 8,
+      replies: 5,
+      meetings: 4,
+      linkedin: 3,
+      message: {
+        subject: 'RevOps seat at {{company}}',
+        preview: 'Noticed Harbor is opening a RevOps seat this quarter. Open to a short intro?',
+        sent: 20,
+        replies: 4,
+        meetings: 3,
+        rate: 3 / 20,
+        basis: 'meetings'
+      }
+    },
+    {
+      id: 'central',
+      name: 'Central',
+      emails: 18,
+      calls: 17,
+      connects: 6,
+      replies: 3,
+      meetings: 2,
+      linkedin: 2,
+      message: {
+        subject: 'Worth another look, {{first_name}}',
+        preview: 'Circling back in case the earlier note landed at the wrong time.',
+        sent: 12,
+        replies: 2,
+        meetings: 2,
+        rate: 2 / 12,
+        basis: 'meetings'
+      }
+    }
   ],
   meetings: [
     {

@@ -3127,6 +3127,48 @@ button {
   cursor: default;
 }
 
+.home-steps {
+  margin-top: 22px;
+  text-align: left;
+}
+
+.home-steps > p {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.home-steps ol {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.home-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.home-steps li span {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
 .home-or {
   margin: 22px 0 12px;
   color: var(--text-dim);

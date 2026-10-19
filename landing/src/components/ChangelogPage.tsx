@@ -124,7 +124,7 @@ export function ChangelogPage({ signedIn, onOpenApp }: Props) {
         <a className="footer-link" href="/changelog">
           Changelog
         </a>
-        <p>For those who are brave enough to build.</p>
+        <p>Helping sales teams communicate better.</p>
       </footer>
     </div>
   )

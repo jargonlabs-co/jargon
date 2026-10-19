@@ -94,6 +94,23 @@ export function OverviewPage({
             </button>
           </div>
         </form>
+        <div className="home-steps">
+          <p>Use Jargon in Claude</p>
+          <ol>
+            <li>
+              <span>1</span>
+              Click the arrow. Claude opens with the Jargon connector.
+            </li>
+            <li>
+              <span>2</span>
+              Add the connector, then Allow Jargon.
+            </li>
+            <li>
+              <span>3</span>
+              Ask Claude to find people and build outreach. Work the sequence in the chat.
+            </li>
+          </ol>
+        </div>
       </header>
 
       <div className="home-recent">

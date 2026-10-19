@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
-import { type AccountSnapshot, type PortalBuild } from '../../api'
+import { getClaudeConnectorInstallUrl, type AccountSnapshot, type PortalBuild } from '../../api'
 import { ChatGptMark } from '../ChatGptMark'
 import { ClaudeMark } from '../ClaudeMark'
 import {
@@ -20,7 +20,6 @@ export function OverviewPage({
   onOpenTool
 }: {
   snapshot: AccountSnapshot
-  connections?: unknown
   builds: PortalBuild[]
   userName?: string
   userEmail?: string
@@ -33,6 +32,10 @@ export function OverviewPage({
 
   function submit(event?: FormEvent) {
     event?.preventDefault()
+    if (destination === 'claude') {
+      window.open(snapshot.claude?.connectorUrl || getClaudeConnectorInstallUrl(), '_blank', 'noopener,noreferrer')
+      return
+    }
     const text = prompt.trim()
     if (!text) return
     launchChat(destination, text)
@@ -84,27 +87,13 @@ export function OverviewPage({
             <button
               type="submit"
               className="home-send"
-              disabled={!prompt.trim()}
+              disabled={destination === 'chatgpt' && !prompt.trim()}
               aria-label={`Open in ${destination === 'chatgpt' ? 'ChatGPT' : 'Claude'}`}
             >
               <SendIcon />
             </button>
           </div>
         </form>
-        <p className="home-or">Or start from</p>
-        <div className="home-starts">
-          <button type="button" className="home-start" onClick={() => onNavigate('/claude')}>
-            <ClaudeMark size={14} />
-            Connect Claude
-          </button>
-          <button type="button" className="home-start" onClick={() => onNavigate('/claude')}>
-            <ChatGptMark size={14} />
-            Connect ChatGPT
-          </button>
-          <button type="button" className="home-start" onClick={() => onNavigate('/data')}>
-            Import from CRM
-          </button>
-        </div>
       </header>
 
       <div className="home-recent">
@@ -115,9 +104,9 @@ export function OverviewPage({
           </button>
         </div>
         {builds.length === 0 ? (
-          <button type="button" className="home-empty-row" onClick={() => onNavigate('/claude')}>
-            + New sequence — {claudeConnected ? 'type a prompt above to open Claude or ChatGPT' : 'connect Claude or ChatGPT to deploy one'}
-          </button>
+          <p className="home-empty-row">
+            + New sequence — {claudeConnected ? 'type a prompt above to open Claude or ChatGPT' : 'type a prompt above to deploy one'}
+          </p>
         ) : (
           <div className="home-table">
             <div className="home-table-head">

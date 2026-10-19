@@ -3,7 +3,7 @@ export type ChatDestination = 'claude' | 'chatgpt'
 export const STARTER_PROMPT =
   'Before you start, ask me two things: the kind of company I sell to, and the role I want to reach. Then use Jargon to find matching people, build an outbound dialer or cadence, show me the queue, and let me work today’s tasks from this chat.'
 
-export const HOME_PLACEHOLDER = 'Build an outbound dialer for GTM Engineers in the US'
+export const HOME_PLACEHOLDER = 'Use Jargon to find the easiest wins in my CRM and build outreach for them.'
 
 export function firstNameOf(name?: string | null, email?: string | null): string {
   const fromName = name?.trim().split(/\s+/)[0]

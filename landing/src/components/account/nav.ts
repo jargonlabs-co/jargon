@@ -4,9 +4,6 @@ export const ACCOUNT_NAV = [
   { id: 'overview', path: '/', label: 'Home' },
   { id: 'usage', path: '/usage', label: 'Usage' },
   { id: 'billing', path: '/billing', label: 'Billing' },
-  { id: 'data', path: '/data', label: 'Data' },
-  { id: 'claude', path: '/claude', label: 'Connectors' },
-  { id: 'keys', path: '/keys', label: 'API keys' },
   { id: 'tools', path: '/tools', label: 'Sequences' },
   { id: 'admin', path: '/admin', label: 'Admin' },
   { id: 'settings', path: '/settings', label: 'Settings' }
@@ -18,9 +15,6 @@ export function accountPageFromPath(pathname: string): AccountPageId {
   const path = pathname.replace(/\/+$/, '') || '/'
   if (path === '/usage') return 'usage'
   if (path === '/billing') return 'billing'
-  if (path === '/data') return 'data'
-  if (path === '/claude') return 'claude'
-  if (path === '/keys') return 'keys'
   if (path === '/tools') return 'tools'
   if (path === '/admin') return 'admin'
   if (path === '/settings') return 'settings'

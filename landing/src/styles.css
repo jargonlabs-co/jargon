@@ -2332,6 +2332,10 @@ button {
   background: #fff;
 }
 
+.login-form .login-aux {
+  margin-bottom: 14px;
+}
+
 .btn-full {
   width: 100%;
 }
@@ -3204,7 +3208,6 @@ button {
   border: 1px dashed var(--border);
   border-radius: 14px;
   color: var(--text-muted);
-  cursor: pointer;
   background: rgba(255, 255, 255, 0.45);
 }
 

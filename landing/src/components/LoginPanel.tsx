@@ -198,12 +198,12 @@ export function LoginPanel({
             </label>
           ) : null}
           {mode === 'login' ? (
-            <button type="button" className="btn ghost btn-sm" onClick={() => switchMode('forgot')}>
+            <button type="button" className="btn ghost btn-sm login-aux" onClick={() => switchMode('forgot')}>
               Forgot password?
             </button>
           ) : null}
           {mode === 'forgot' ? (
-            <button type="button" className="btn ghost btn-sm" onClick={() => switchMode('login')}>
+            <button type="button" className="btn ghost btn-sm login-aux" onClick={() => switchMode('login')}>
               Back to sign in
             </button>
           ) : null}

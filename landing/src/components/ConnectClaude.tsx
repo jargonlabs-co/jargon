@@ -128,13 +128,14 @@ export function ConnectClaude() {
             </div>
             <StarterPrompt />
             <div className="connect-open-row">
-              <button
-                type="button"
+              <a
                 className="btn primary btn-sm"
-                onClick={() => launchChat('claude', STARTER_PROMPT)}
+                href={getClaudeConnectorInstallUrl()}
+                target="_blank"
+                rel="noreferrer"
               >
                 Open in Claude
-              </button>
+              </a>
               <button
                 type="button"
                 className="btn ghost btn-sm"

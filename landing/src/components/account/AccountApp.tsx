@@ -2,16 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   api,
   type AccountSnapshot,
-  type ApiKeyPublic,
-  type ConnectionPublic,
   type PlanId,
   type PortalBuild
 } from '../../api'
 import { useAuth } from '../../auth'
 import { LogoMark } from '../LogoMark'
 import { BillingPage, checkoutToast } from './BillingPage'
-import { ClaudePage, KeysPage } from './ClaudeKeysPages'
-import { DataPage } from './DataPage'
 import { OverviewPage } from './OverviewPage'
 import { ToolsPage, SettingsPage } from './ToolsSettingsPages'
 import { UsagePage } from './UsagePage'
@@ -40,21 +36,7 @@ export function AccountApp({
   const page = accountPageFromPath(path)
 
   const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(preview ? previewSnapshot() : null)
-  const [connections, setConnections] = useState<ConnectionPublic[]>([])
   const [builds, setBuilds] = useState<PortalBuild[]>(preview ? PREVIEW_BUILDS : [])
-  const [apiKeys, setApiKeys] = useState<ApiKeyPublic[]>([])
-  const [lastKey, setLastKey] = useState<{ key: string; environment: 'live' | 'sandbox' } | null>(null)
-  const [pgTable, setPgTable] = useState('jargon_prospects')
-  const [railwayProjects, setRailwayProjects] = useState<
-    Array<{
-      projectId: string
-      projectName: string
-      environmentId: string
-      environmentName: string
-      postgresServices: Array<{ serviceId: string; serviceName: string }>
-    }>
-  >([])
-  const [selectedKey, setSelectedKey] = useState('')
   const [orgName, setOrgName] = useState(org.name)
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -63,63 +45,12 @@ export function AccountApp({
   const refresh = useCallback(async () => {
     if (preview) {
       setSnapshot(previewSnapshot())
-      setConnections([
-        { id: '1', provider: 'hubspot', status: 'connected', accountLabel: 'Acme HubSpot' },
-        {
-          id: '2',
-          provider: 'railway',
-          status: 'connected',
-          accountLabel: 'outbound-ops · Postgres · jargon_prospects',
-          meta: { rowCount: '50', table: 'jargon_prospects', projectId: 'demo' }
-        }
-      ])
-      setRailwayProjects([
-        {
-          projectId: 'demo',
-          projectName: 'outbound-ops',
-          environmentId: 'env',
-          environmentName: 'production',
-          postgresServices: [{ serviceId: 'pg', serviceName: 'Postgres' }]
-        }
-      ])
-      setSelectedKey('demo|env|pg')
       setBuilds(PREVIEW_BUILDS)
-      setApiKeys([
-        {
-          id: 'key_live',
-          name: 'Claude Code',
-          prefix: 'jarg_a1b2c3d4',
-          environment: 'live',
-          createdAt: Date.now()
-        }
-      ])
       return
     }
-    const [account, conns, buildRes, keys] = await Promise.all([
-      api.account(),
-      api.connections(),
-      api.builds(),
-      api.listApiKeys().catch(() => [] as ApiKeyPublic[])
-    ])
+    const [account, buildRes] = await Promise.all([api.account(), api.builds()])
     setSnapshot(account)
-    setApiKeys(keys)
-    setConnections(conns)
     setBuilds(buildRes.builds)
-    const railway = conns.find((c) => c.provider === 'railway')
-    if (railway?.status === 'connected') {
-      try {
-        const { projects } = await api.listRailwayResources()
-        setRailwayProjects(projects)
-        if (projects[0]) {
-          const svc = projects[0].postgresServices[0]
-          setSelectedKey(`${projects[0].projectId}|${projects[0].environmentId}|${svc?.serviceId || ''}`)
-        }
-      } catch {
-        setRailwayProjects([])
-      }
-    } else {
-      setRailwayProjects([])
-    }
   }, [preview])
 
   useEffect(() => {
@@ -133,8 +64,6 @@ export function AccountApp({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('railway') === 'connected') {
-      setToast('Railway signed in — choose a Postgres project')
-      onNavigate('/data')
       params.delete('railway')
       const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
       window.history.replaceState({}, '', next)
@@ -155,163 +84,13 @@ export function AccountApp({
       const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
       window.history.replaceState({}, '', next)
     }
-  }, [onNavigate, refresh])
+  }, [refresh])
 
   useEffect(() => {
     if (!toast) return
     const id = window.setTimeout(() => setToast(null), 3200)
     return () => window.clearTimeout(id)
   }, [toast])
-
-  async function connect(provider: string) {
-    if (preview) {
-      setToast(`${provider} connect opens OAuth in production`)
-      return
-    }
-    setBusy(provider)
-    setError(null)
-    try {
-      const result = await api.startConnection(provider)
-      if (result.url) {
-        window.location.href = result.url
-        return
-      }
-      setToast(`${provider} connected`)
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function disconnect(provider: string) {
-    if (preview) {
-      setToast(`Would disconnect ${provider}`)
-      return
-    }
-    setBusy(`disconnect-${provider}`)
-    setError(null)
-    try {
-      await api.disconnect(provider)
-      setToast('Mailbox disconnected')
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Disconnect failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function syncHubSpot() {
-    if (preview) {
-      setToast('Would reload HubSpot contacts')
-      return
-    }
-    setBusy('sync')
-    setError(null)
-    try {
-      const result = await api.syncHubSpot()
-      setToast(`Loaded ${result.count} contacts into your sequences`)
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function bindRailway() {
-    if (preview) {
-      setToast('Would bind Railway Postgres')
-      return
-    }
-    const [projectId, environmentId, serviceId] = selectedKey.split('|')
-    const project = railwayProjects.find(
-      (p) => p.projectId === projectId && p.environmentId === environmentId
-    )
-    if (!project) {
-      setError('Choose a Railway project')
-      return
-    }
-    const service = project.postgresServices.find((s) => s.serviceId === serviceId)
-    setBusy('bind-railway')
-    setError(null)
-    try {
-      await api.bindRailway({
-        projectId: project.projectId,
-        environmentId: project.environmentId,
-        serviceId: service?.serviceId,
-        projectName: project.projectName,
-        serviceName: service?.serviceName,
-        table: pgTable.trim() || 'jargon_prospects'
-      })
-      setToast('Railway Postgres ready')
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bind failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function syncRailway() {
-    if (preview) {
-      setToast('Would reload Railway prospects')
-      return
-    }
-    setBusy('sync-railway')
-    setError(null)
-    try {
-      const result = await api.syncRailway()
-      setToast(`Loaded ${result.count} contacts from Railway`)
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function mintKey(environment: 'live' | 'sandbox') {
-    if (preview) {
-      setToast('API keys are created after login')
-      return
-    }
-    setBusy(`apikey-${environment}`)
-    setError(null)
-    try {
-      const created = await api.createApiKey(
-        environment === 'sandbox' ? 'Claude sandbox' : 'Claude Code',
-        environment
-      )
-      setLastKey({ key: created.key, environment: created.environment })
-      setApiKeys(await api.listApiKeys())
-      setToast(
-        environment === 'live'
-          ? 'Live key created — it can send real email and place real calls'
-          : 'Sandbox key created — sends and dials do not reach real people'
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create API key')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function revokeKey(id: string) {
-    if (preview) return
-    setBusy(`revoke-${id}`)
-    try {
-      await api.revokeApiKey(id)
-      setApiKeys((keys) => keys.filter((k) => k.id !== id))
-      setToast('API key revoked')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not revoke key')
-    } finally {
-      setBusy(null)
-    }
-  }
 
   async function checkout(intent: 'upgrade' | 'topup' | 'portal', plan?: PlanId, packId?: string) {
     const busyKey = intent === 'topup' ? `topup-${packId}` : intent === 'upgrade' ? `upgrade-${plan}` : 'portal'
@@ -398,7 +177,6 @@ export function AccountApp({
           {snapshot && page === 'overview' ? (
             <OverviewPage
               snapshot={snapshot}
-              connections={connections}
               builds={builds}
               userName={user.name}
               userEmail={user.email}
@@ -409,32 +187,6 @@ export function AccountApp({
           {snapshot && page === 'usage' ? <UsagePage snapshot={snapshot} preview={preview} /> : null}
           {snapshot && page === 'billing' ? (
             <BillingPage snapshot={snapshot} busy={busy} onCheckout={checkout} />
-          ) : null}
-          {page === 'data' ? (
-            <DataPage
-              connections={connections}
-              railwayProjects={railwayProjects}
-              selectedKey={selectedKey}
-              pgTable={pgTable}
-              busy={busy}
-              onPgTable={setPgTable}
-              onSelectedKey={setSelectedKey}
-              onConnect={(provider) => void connect(provider)}
-              onDisconnect={(provider) => void disconnect(provider)}
-              onSyncHubSpot={() => void syncHubSpot()}
-              onBindRailway={() => void bindRailway()}
-              onSyncRailway={() => void syncRailway()}
-            />
-          ) : null}
-          {page === 'claude' ? <ClaudePage claude={snapshot?.claude} /> : null}
-          {page === 'keys' ? (
-            <KeysPage
-              apiKeys={apiKeys}
-              lastKey={lastKey}
-              busy={busy}
-              onMint={(environment) => void mintKey(environment)}
-              onRevoke={(id) => void revokeKey(id)}
-            />
           ) : null}
           {page === 'tools' ? (
             <ToolsPage builds={builds} onOpenTool={(id) => onOpenTool?.(id)} />

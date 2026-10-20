@@ -4191,6 +4191,212 @@ button {
   }
 }
 
+/* ——— PLG signup ——— */
+
+.signup-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 420px);
+  gap: clamp(36px, 5vw, 72px);
+  align-items: start;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 128px clamp(20px, 4vw, 48px) 72px;
+}
+
+.signup-copy h1 {
+  font-family: var(--display);
+  font-size: clamp(2.4rem, 4.6vw, 3.6rem);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  max-width: 14ch;
+  margin-bottom: 18px;
+}
+
+.signup-lede {
+  max-width: 38rem;
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+}
+
+.signup-points {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+  max-width: 34rem;
+}
+
+.signup-points li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.signup-points li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.signup-page .hero-available {
+  margin: 0;
+}
+
+.signup-card {
+  position: sticky;
+  top: 88px;
+  scroll-margin-top: 88px;
+}
+
+.signup-section {
+  scroll-margin-top: 88px;
+}
+
+.signup-card .login-panel {
+  width: 100%;
+}
+
+.signup-switch {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.signup-switch a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.signup-section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: clamp(56px, 8vw, 96px) clamp(20px, 4vw, 48px);
+}
+
+.signup-section-head {
+  max-width: 36rem;
+  margin-bottom: 32px;
+}
+
+.signup-section h2 {
+  font-family: var(--display);
+  font-size: clamp(2rem, 3.4vw, 2.8rem);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.signup-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.signup-steps li {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 18px 20px;
+  box-shadow: var(--shadow-soft);
+}
+
+.signup-steps span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.signup-steps h3 {
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.signup-steps p {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.signup-book {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: clamp(28px, 4vw, 64px);
+  align-items: center;
+}
+
+.signup-book-copy p:last-child {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.signup-preview {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.signup-prompts {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+  margin-bottom: 28px;
+}
+
+.signup-prompts li {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-family: var(--display);
+  font-size: 1.25rem;
+  line-height: 1.35;
+  box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 960px) {
+  .signup-hero,
+  .signup-book,
+  .signup-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .signup-card {
+    position: static;
+  }
+
+  .signup-copy h1 {
+    max-width: 16ch;
+  }
+}
+
 @media (max-width: 840px) {
   .account-shell {
     grid-template-columns: 1fr;

@@ -8,7 +8,34 @@ interface Props {
   initialMode?: 'login' | 'register'
   embedded?: boolean
   showBrand?: boolean
+  showTabs?: boolean
+  registerLead?: string
   onModeChange?: (mode: 'login' | 'register') => void
+}
+
+const AUTH_INFO_KEY = 'jargon-auth-info'
+const AUTH_ERROR_KEY = 'jargon-auth-error'
+const AUTH_CONFIRM_KEY = 'jargon-auth-confirm'
+const AUTH_EMAIL_KEY = 'jargon-auth-email'
+
+function peekStorage(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function stashAuthFlash(notice: { info?: string; error?: string; confirm?: boolean; email?: string }) {
+  if (window.location.pathname.replace(/\/$/, '') !== '/signup') return
+  try {
+    if (notice.info) sessionStorage.setItem(AUTH_INFO_KEY, notice.info)
+    if (notice.error) sessionStorage.setItem(AUTH_ERROR_KEY, notice.error)
+    if (notice.confirm) sessionStorage.setItem(AUTH_CONFIRM_KEY, '1')
+    if (notice.email) sessionStorage.setItem(AUTH_EMAIL_KEY, notice.email)
+  } catch {
+    /* private mode */
+  }
 }
 
 export function LoginPanel({
@@ -16,6 +43,8 @@ export function LoginPanel({
   initialMode = 'login',
   embedded = false,
   showBrand = true,
+  showTabs = true,
+  registerLead = 'Sign up, then open a prompt in Claude or ChatGPT.',
   onModeChange
 }: Props) {
   const { refresh } = useAuth()
@@ -42,18 +71,31 @@ export function LoginPanel({
 
   const authPath = window.location.pathname.replace(/\/$/, '')
   const onAuthRoute = authPath === '/login' || authPath === '/signup'
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => peekStorage(AUTH_EMAIL_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get('verified') === '1'
+  const [error, setError] = useState<string | null>(() => peekStorage(AUTH_ERROR_KEY))
+  const [info, setInfo] = useState<string | null>(() => {
+    const flashed = peekStorage(AUTH_INFO_KEY)
+    if (flashed) return flashed
+    return new URLSearchParams(window.location.search).get('verified') === '1'
       ? 'Email confirmed. Sign in to finish setting up.'
       : null
-  )
+  })
   const [busy, setBusy] = useState(false)
-  const [needsConfirm, setNeedsConfirm] = useState(false)
+  const [needsConfirm, setNeedsConfirm] = useState(() => peekStorage(AUTH_CONFIRM_KEY) === '1')
+
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(AUTH_INFO_KEY)
+      sessionStorage.removeItem(AUTH_ERROR_KEY)
+      sessionStorage.removeItem(AUTH_CONFIRM_KEY)
+      sessionStorage.removeItem(AUTH_EMAIL_KEY)
+    } catch {
+      /* private mode */
+    }
+  }, [])
 
   async function resend() {
     setBusy(true)
@@ -89,6 +131,7 @@ export function LoginPanel({
               orgName: orgName.trim() || undefined
             })
       if ('verificationRequired' in payload) {
+        stashAuthFlash({ info: payload.message, confirm: true, email: email.trim() })
         switchMode('login')
         setPassword('')
         setNeedsConfirm(true)
@@ -104,7 +147,9 @@ export function LoginPanel({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Auth failed'
       if (/already registered/i.test(message) && mode === 'register') {
-        setError('That email is already registered — switch to Sign in.')
+        const text = 'That email is already registered — switch to Sign in.'
+        stashAuthFlash({ error: text, email: email.trim() })
+        setError(text)
         switchMode('login')
       } else if (/confirm your email/i.test(message)) {
         setNeedsConfirm(true)
@@ -120,9 +165,9 @@ export function LoginPanel({
   return (
     <div
       className={embedded ? 'login-embedded' : 'login-overlay'}
-      role="dialog"
-      aria-modal={!embedded}
-      aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
+      role={embedded ? undefined : 'dialog'}
+      aria-modal={embedded ? undefined : true}
+      aria-label={embedded ? undefined : mode === 'login' ? 'Sign in' : 'Create account'}
     >
       {embedded ? null : (
         <button type="button" className="login-backdrop" aria-label="Close" onClick={() => onClose?.()} />
@@ -150,13 +195,13 @@ export function LoginPanel({
               ) : (
                 <>
                   <h2>Create your account</h2>
-                  <p>Sign up, then open a prompt in Claude or ChatGPT.</p>
+                  <p>{registerLead}</p>
                 </>
               )}
             </div>
           </div>
         ) : null}
-        {mode !== 'forgot' ? (
+        {showTabs && mode !== 'forgot' ? (
           <div className="login-tabs">
             <a
               href="/login"

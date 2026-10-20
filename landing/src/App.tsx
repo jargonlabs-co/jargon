@@ -8,6 +8,7 @@ import { ChangelogPage } from './components/ChangelogPage'
 import { ConnectClaude } from './components/ConnectClaude'
 import { IconPage } from './components/IconPage'
 import { ResetPasswordPanel } from './components/ResetPasswordPanel'
+import { SignupPage } from './components/SignupPage'
 
 function toolIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/tools\/([^/]+)\/?$/)
@@ -78,15 +79,17 @@ function Root() {
     )
   }
 
-  if (path === '/login' || path === '/login/' || path === '/signup' || path === '/signup/') {
-    const initialMode = path.startsWith('/signup') ? 'register' : 'login'
+  if (path === '/signup' || path === '/signup/') {
+    return <SignupPage onSignIn={() => navigate('/login')} />
+  }
+
+  if (path === '/login' || path === '/login/') {
     return (
       <LoginPanel
-        key="auth"
-        initialMode={initialMode}
+        key="login"
+        initialMode="login"
         onModeChange={(mode) => {
-          const next = mode === 'register' ? '/signup' : '/login'
-          if (window.location.pathname.replace(/\/$/, '') !== next) navigate(next)
+          if (mode === 'register') navigate('/signup')
         }}
         onClose={() => navigate('/')}
       />

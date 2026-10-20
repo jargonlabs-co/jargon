@@ -2300,7 +2300,7 @@ button {
   margin-bottom: 16px;
 }
 
-.login-tabs button {
+.login-tabs a {
   flex: 1;
   padding: 8px;
   border-radius: 8px;
@@ -2309,9 +2309,12 @@ button {
   cursor: pointer;
   color: var(--text-muted);
   font-size: 0.875rem;
+  font-family: inherit;
+  text-align: center;
+  text-decoration: none;
 }
 
-.login-tabs button.active {
+.login-tabs a.active {
   background: var(--bg-elevated);
   color: var(--text);
   border-color: transparent;

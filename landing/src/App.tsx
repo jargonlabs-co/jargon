@@ -78,8 +78,19 @@ function Root() {
     )
   }
 
-  if (path === '/login' || path === '/login/') {
-    return <LoginPanel key="login" initialMode="login" onClose={() => navigate('/')} />
+  if (path === '/login' || path === '/login/' || path === '/signup' || path === '/signup/') {
+    const initialMode = path.startsWith('/signup') ? 'register' : 'login'
+    return (
+      <LoginPanel
+        key="auth"
+        initialMode={initialMode}
+        onModeChange={(mode) => {
+          const next = mode === 'register' ? '/signup' : '/login'
+          if (window.location.pathname.replace(/\/$/, '') !== next) navigate(next)
+        }}
+        onClose={() => navigate('/')}
+      />
+    )
   }
 
   if (toolId) {

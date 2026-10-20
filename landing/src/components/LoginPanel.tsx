@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, setStoredToken } from '../api'
 import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
@@ -21,10 +21,27 @@ export function LoginPanel({
   const { refresh } = useAuth()
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode)
 
+  useEffect(() => {
+    setMode((current) => {
+      if (current === initialMode) return current
+      if (current === 'forgot' && initialMode === 'login') return current
+      return initialMode
+    })
+  }, [initialMode])
+
   function switchMode(next: 'login' | 'register' | 'forgot') {
     setMode(next)
     if (next === 'login' || next === 'register') onModeChange?.(next)
   }
+
+  function onAuthTabClick(e: React.MouseEvent<HTMLAnchorElement>, next: 'login' | 'register') {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    e.preventDefault()
+    switchMode(next)
+  }
+
+  const authPath = window.location.pathname.replace(/\/$/, '')
+  const onAuthRoute = authPath === '/login' || authPath === '/signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -141,20 +158,22 @@ export function LoginPanel({
         ) : null}
         {mode !== 'forgot' ? (
           <div className="login-tabs">
-            <button
-              type="button"
+            <a
+              href="/login"
               className={mode === 'login' ? 'active' : ''}
-              onClick={() => switchMode('login')}
+              aria-current={onAuthRoute && mode === 'login' ? 'page' : undefined}
+              onClick={(e) => onAuthTabClick(e, 'login')}
             >
               Sign in
-            </button>
-            <button
-              type="button"
+            </a>
+            <a
+              href="/signup"
               className={mode === 'register' ? 'active' : ''}
-              onClick={() => switchMode('register')}
+              aria-current={onAuthRoute && mode === 'register' ? 'page' : undefined}
+              onClick={(e) => onAuthTabClick(e, 'register')}
             >
               Create account
-            </button>
+            </a>
           </div>
         ) : null}
         <form onSubmit={submit} className="login-form">

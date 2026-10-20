@@ -4382,6 +4382,15 @@ button {
 }
 
 @media (max-width: 960px) {
+  .signup-page .nav {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .signup-page .nav-links {
+    display: flex;
+    gap: 16px;
+  }
+
   .signup-hero,
   .signup-book,
   .signup-steps {
@@ -4394,6 +4403,12 @@ button {
 
   .signup-copy h1 {
     max-width: 20ch;
+  }
+}
+
+@media (max-width: 640px) {
+  .signup-page .nav-links {
+    display: none;
   }
 }
 

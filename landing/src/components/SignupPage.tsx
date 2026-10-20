@@ -74,9 +74,9 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
           <span>Jargon</span>
         </a>
         <nav className="nav-links">
-          <a href="#start">How it starts</a>
-          <a href="#book">Your book</a>
-          <a href="#ask">What you’d ask</a>
+          <a href="#connect">Connect</a>
+          <a href="#build">Build</a>
+          <a href="#execute">Execute</a>
         </nav>
         <div className="nav-actions">
           <a className="nav-login" href="/login" onClick={signIn}>
@@ -128,10 +128,10 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
           </div>
         </section>
 
-        <section className="signup-section" id="start">
+        <section className="signup-section" id="connect">
           <div className="signup-section-head">
-            <p className="eyebrow">How Jargon works</p>
-            <h2>Execute on the data you already sell from.</h2>
+            <p className="eyebrow">Connect</p>
+            <h2>Bring the data you already sell from.</h2>
           </div>
           <ol className="signup-steps">
             {STEPS.map((step) => (
@@ -144,10 +144,10 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
           </ol>
         </section>
 
-        <section className="signup-section signup-book" id="book">
+        <section className="signup-section signup-book" id="build">
           <div className="signup-book-copy">
-            <p className="eyebrow">In Claude</p>
-            <h2>Your data, executed as outbound.</h2>
+            <p className="eyebrow">Build</p>
+            <h2>Turn that data into a queue and a cadence.</h2>
             <p>
               Jargon sits on the CRM or Clay table you already use and runs the work from Claude —
               email, a call, or a LinkedIn note, with the context on the contact.
@@ -174,9 +174,9 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
           </div>
         </section>
 
-        <section className="signup-section" id="ask">
+        <section className="signup-section" id="execute">
           <div className="signup-section-head">
-            <p className="eyebrow">What you’d ask</p>
+            <p className="eyebrow">Execute</p>
             <h2>Who to work, and what’s due.</h2>
           </div>
           <ul className="signup-prompts">

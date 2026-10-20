@@ -4209,7 +4209,7 @@ button {
   font-weight: 400;
   line-height: 1.08;
   letter-spacing: -0.025em;
-  max-width: 14ch;
+  max-width: 20ch;
   margin-bottom: 18px;
 }
 
@@ -4393,7 +4393,7 @@ button {
   }
 
   .signup-copy h1 {
-    max-width: 16ch;
+    max-width: 20ch;
   }
 }
 

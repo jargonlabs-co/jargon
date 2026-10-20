@@ -22,7 +22,7 @@ const STEPS = [
 ]
 
 const PROMPTS = [
-  'Who on my book is closest to a meeting this week? Build the outreach.',
+  'Multithread into the accounts where the deal has stalled.',
   'Write an 8-day cadence for the economic buyers on my named accounts.',
   'What’s due today? Let me start with the calls.'
 ]
@@ -89,7 +89,7 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
         <section className="signup-hero">
           <div className="signup-copy">
             <p className="eyebrow">For enterprise sales</p>
-            <h1>Work your book from the chat you already use.</h1>
+            <h1>Call, Email, and DM without ever leaving Claude.</h1>
             <p className="signup-lede">
               Jargon lets you execute on top of your data in Claude. Your CRM or Clay table stays
               the source. Email, calls, and LinkedIn run from that chat.
@@ -177,7 +177,7 @@ export function SignupPage({ onSignIn }: { onSignIn: () => void }) {
         <section className="signup-section" id="ask">
           <div className="signup-section-head">
             <p className="eyebrow">What you’d ask</p>
-            <h2>Find who’s closest, write the cadence, and work today’s calls.</h2>
+            <h2>Who to work, and what’s due.</h2>
           </div>
           <ul className="signup-prompts">
             {PROMPTS.map((prompt) => (

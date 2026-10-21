@@ -12,8 +12,9 @@ import {
   workspaceBrief
 } from '../src/server/emailWorkspace.ts'
 import { registerJargonTools } from '../src/server/mcpTools.ts'
+import { isExistingSequenceEdit, updatePublicSequence } from '../src/server/publicApi.ts'
 import type { DataStore } from '../src/server/store.ts'
-import type { Contact, Database, Project, SequenceStep } from '../src/server/types.ts'
+import type { Contact, Database, Message, Project, SequenceStep } from '../src/server/types.ts'
 
 function emptyDb(): Database {
   return {
@@ -457,5 +458,153 @@ describe('a build opens one workspace', () => {
     assert.match(brief.nextAction, /enroll_hubspot/)
     assert.match(brief.nextAction, /save_research/)
     assert.equal(/Do not enroll, research/.test(brief.nextAction), false)
+  })
+})
+
+describe('editing an existing sequence', () => {
+  it('treats copy and ladder edits as the current sequence', () => {
+    assert.equal(isExistingSequenceEdit('Rewrite the sequence copy so the intro is shorter'), true)
+    assert.equal(isExistingSequenceEdit('change the subject on this sequence'), true)
+    assert.equal(isExistingSequenceEdit('Build an outbound dialer for GTM Engineers in the US'), false)
+    assert.equal(isExistingSequenceEdit('Create another sequence for west coast AEs'), false)
+  })
+
+  it('refuses to deploy a second sequence when the user is editing one', async () => {
+    const db = emptyDb()
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'AE sequence',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: '',
+      team: '',
+      description: '',
+      answers: { goal: 'Book a meeting' },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    type Tool = (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>
+    const tools = new Map<string, Tool>()
+    registerJargonTools(
+      {
+        registerTool: (name: string, _def: unknown, handler: Tool) => {
+          tools.set(name, handler)
+        }
+      } as unknown as Parameters<typeof registerJargonTools>[0],
+      memoryStore(db),
+      config,
+      { userId: 'user_1', orgId: 'org_1', environment: 'live', via: 'oauth' },
+      {} as BillingService
+    )
+    const result = await tools.get('deploy_tool')!({
+      summary: 'Rewrite the sequence copy',
+      workspace: 'Rewrite the sequence copy so the intro email is shorter'
+    })
+    assert.equal(result.isError, true)
+    assert.match(result.content[0]!.text, /Do not create a new sequence/)
+    assert.match(result.content[0]!.text, /proj_1/)
+    assert.match(result.content[0]!.text, /update_sequence/)
+    assert.equal(db.projects.length, 1)
+    assert.equal(db.projects[0]!.id, 'proj_1')
+  })
+
+  it('writes edited copy onto the same steps and template drafts', () => {
+    const db = emptyDb()
+    db.projects.push({
+      id: 'proj_1',
+      orgId: 'org_1',
+      name: 'AE sequence',
+      kind: 'sequencer',
+      prompt: 'email the list',
+      segment: 'AEs',
+      team: '',
+      description: '',
+      answers: { goal: 'Book a meeting' },
+      spec: {
+        goal: 'Book a meeting',
+        segment: 'AEs',
+        primarySurface: 'sequence',
+        channels: ['email'],
+        kind: 'sequencer',
+        steps: [{ day: 0, channel: 'email', label: 'Intro', subject: 'Old subject', body: 'Old body' }]
+      },
+      createdAt: 1,
+      updatedAt: 1
+    } as Project)
+    db.sequences.push({
+      id: 'seq_1',
+      orgId: 'org_1',
+      projectId: 'proj_1',
+      name: 'Email · Book a meeting',
+      goal: 'Book a meeting',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    db.steps.push({
+      id: 'step_1',
+      orgId: 'org_1',
+      sequenceId: 'seq_1',
+      projectId: 'proj_1',
+      day: 0,
+      channel: 'email',
+      label: 'Intro',
+      subject: 'Old subject',
+      body: 'Old body',
+      order: 0
+    } as SequenceStep)
+    const draft = {
+      id: 'msg_template',
+      orgId: 'org_1',
+      projectId: 'proj_1',
+      contactId: 'c1',
+      subject: 'Old subject',
+      body: 'Old body',
+      status: 'draft',
+      channel: 'email',
+      mode: 'demo',
+      stepId: 'step_1',
+      createdAt: 1,
+      updatedAt: 1
+    } as Message
+    const personal = {
+      ...draft,
+      id: 'msg_personal',
+      contactId: 'c2',
+      subject: 'Ada, saw the round',
+      body: 'Personal note for Ada'
+    } as Message
+    db.messages.push(draft, personal)
+
+    const updated = updatePublicSequence(memoryStore(db), 'org_1', 'proj_1', {
+      steps: [
+        {
+          day: 0,
+          channel: 'email',
+          label: 'Intro',
+          subject: 'Shorter subject',
+          body: 'The rewritten intro.'
+        }
+      ]
+    })
+    assert.equal(updated.ok, true)
+    assert.equal(db.projects.length, 1)
+    assert.equal(db.sequences.length, 1)
+    assert.equal(db.sequences[0]!.id, 'seq_1')
+    assert.equal(db.steps.length, 1)
+    assert.equal(db.steps[0]!.id, 'step_1')
+    assert.equal(db.steps[0]!.subject, 'Shorter subject')
+    assert.equal(db.steps[0]!.body, 'The rewritten intro.')
+    assert.equal(db.messages.find((m) => m.id === 'msg_template')!.body, 'The rewritten intro.')
+    assert.equal(db.messages.find((m) => m.id === 'msg_personal')!.body, 'Personal note for Ada')
+  })
+
+  it('saves sequence-editor copy onto the steps', () => {
+    const html = readFileSync(new URL('../src/server/apps/emailWorkspace.html', import.meta.url), 'utf8')
+    const save = html.slice(html.indexOf('async function saveSequence'), html.indexOf('function activeTask'))
+    assert.match(save, /copyChanged/)
+    assert.match(save, /subject: nextSubject/)
+    assert.match(save, /body: nextBody/)
+    assert.equal(/body: original\.body/.test(save), false)
   })
 })

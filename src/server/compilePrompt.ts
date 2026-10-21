@@ -22,7 +22,8 @@ Rules:
 - Multi-channel cadence / outbound / today queue → mix channels; primarySurface "queue" or "sequence".
 - LinkedIn-only → linkedin channel; primarySurface "linkedin".
 - Email/LinkedIn body may use {{first_name}} and {{company}}. Call steps omit body.
-- Keep copy short templates, not researched personalization. Claude writes real send copy later via save_research.
+- If the request includes the actual email, LinkedIn, or call wording, put that text in steps[].subject and steps[].body. Do not replace wording the user supplied with a generic template.
+- Otherwise keep copy short templates, not researched personalization. Claude writes per-person send copy later via save_research. Edits to an existing sequence are update_sequence, not a new workspace.
 - segment: extract the audience; if unclear use "HubSpot contacts".
 - Omit fields you are unsure about rather than guessing wildly.`
 

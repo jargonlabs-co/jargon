@@ -116,4 +116,32 @@ describe('compileWorkspaceSpec freeform step span', () => {
     assert.ok(spec.channels.includes('call'))
     assert.ok(spec.steps.some((step) => step.channel === 'call'))
   })
+
+  it('keeps rewritten step copy when missing channels are added', () => {
+    const spec = compileWorkspaceSpec('Build a 7-step sequence over 10 days for VP Sales', {
+      goal: 'Book a meeting',
+      channels: ['email', 'call'],
+      steps: [
+        {
+          day: 0,
+          channel: 'email',
+          label: 'Intro',
+          subject: 'The new subject',
+          body: 'The rewritten intro they asked for.'
+        },
+        {
+          day: 2,
+          channel: 'email',
+          label: 'Follow-up',
+          subject: 'Bump',
+          body: 'The rewritten follow-up.'
+        }
+      ]
+    })
+    const emails = spec.steps.filter((step) => step.channel === 'email')
+    assert.equal(emails[0]?.subject, 'The new subject')
+    assert.equal(emails[0]?.body, 'The rewritten intro they asked for.')
+    assert.equal(emails[1]?.body, 'The rewritten follow-up.')
+    assert.ok(spec.steps.some((step) => step.channel === 'call'))
+  })
 })

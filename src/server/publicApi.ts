@@ -345,6 +345,28 @@ export function listPublicProspects(
   }
 }
 
+/**
+ * True when the user is changing a sequence they already have.
+ * deploy_tool / import_list create a second workspace; those asks belong on update_sequence.
+ */
+export function isExistingSequenceEdit(prompt: string): boolean {
+  const t = prompt.toLowerCase().replace(/\s+/g, ' ').trim()
+  const stay =
+    /\b(don'?t|do not|never)\s+(create|deploy|make|start|build)\b/.test(t) ||
+    /\b(same|existing|current)\s+(sequence|cadence|workspace)\b/.test(t) ||
+    /\b(this|my)\s+(sequence|cadence)\b/.test(t)
+  const fresh =
+    /\b(new|another|separate|second)\s+(sequence|cadence|workspace|dialer)\b/.test(t) ||
+    /\b(start over|from scratch)\b/.test(t)
+  if (fresh && !stay) return false
+  const edit = /\b(edit|update|change|rewrite|revise|tweak|adjust|modify|shorten|reword|soften)\b/.test(t)
+  const target =
+    /\b(copy|subject|subjects|body|bodies|wording|tone|email|emails|sequence|cadence|step|steps|talk track|talk tracks|linkedin note)\b/.test(t)
+  if (stay && (edit || target)) return true
+  if (fresh) return false
+  return edit && target
+}
+
 export async function deployPublicTool(
   store: DataStore,
   config: ServerConfig,
@@ -401,6 +423,18 @@ export async function deployPublicTool(
   const parsedSpec = parseDeploySpec(specOverride)
   if (!parsedSpec.ok) {
     return { ok: false, status: 400, body: { error: parsedSpec.error } }
+  }
+  if (!isPriorityPipelinePrompt(prompt)) {
+    const existing = latestWorkspace(store, orgId)
+    if (existing && isExistingSequenceEdit(prompt)) {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `Do not create a new sequence. Edit project ${existing.id} (${existing.name}) with update_sequence. Pass every step's day, channel, label, subject, and body. The rewritten copy belongs in subject and body on those steps. deploy creates a second workspace and leaves the rewrite off the sequence the user asked about.`
+        }
+      }
+    }
   }
   const inferred = await inferDeployParamsAsync(prompt, parsedSpec.spec, config)
   try {
@@ -1268,21 +1302,36 @@ export function updatePublicSequence(
     const previous = db.steps.filter((s) => s.projectId === projectId).sort((a, b) => a.order - b.order)
     const usedIds = new Set<string>()
     db.steps = db.steps.filter((s) => s.projectId !== projectId)
-    db.steps.push(
-      ...next.spec.steps.map((step, order) => ({
-        id: reuseStepId(previous, step, order, usedIds),
+    const written = next.spec.steps.map((step, order) => {
+      const id = reuseStepId(previous, step, order, usedIds)
+      const prev = previous.find((row) => row.id === id)
+      const subject = step.subject !== undefined ? step.subject : prev?.subject
+      const body = step.body !== undefined ? step.body : prev?.body
+      const row = {
+        id,
         orgId,
         sequenceId: sequence?.id ?? uid('seq'),
         projectId,
         day: step.day,
         channel: step.channel,
         label: step.label,
-        subject: step.subject,
-        body: step.body,
+        subject,
+        body,
         mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' as const : step.mode === 'manual' ? 'manual' as const : undefined,
         order
-      }))
-    )
+      }
+      if (prev) syncTemplateDrafts(db, orgId, projectId, prev, row, now)
+      return row
+    })
+    next.spec.steps = written.map((step) => ({
+      day: step.day,
+      channel: step.channel,
+      label: step.label,
+      subject: step.subject,
+      body: step.body,
+      ...(step.mode ? { mode: step.mode } : {})
+    }))
+    db.steps.push(...written)
   })
   const sequence = getPublicSequence(store, orgId, projectId)
   if (!sequence) return { ok: false, error: 'Sequence update failed' }
@@ -1517,6 +1566,28 @@ export type EnrollSkip = { contactId: string; stepId?: string; reason: string }
 
 function isOpenCadenceMessage(message: Message): boolean {
   return message.status !== 'cancelled' && message.status !== 'failed'
+}
+
+/** Open drafts that still match the previous step template follow the edited sequence copy. Personalized drafts stay. */
+function syncTemplateDrafts(
+  db: Database,
+  orgId: string,
+  projectId: string,
+  prev: SequenceStep,
+  next: { id: string; subject?: string; body?: string },
+  now: number
+) {
+  const subjectChanged = (next.subject || '') !== (prev.subject || '')
+  const bodyChanged = (next.body || '') !== (prev.body || '')
+  if (!subjectChanged && !bodyChanged) return
+  for (const message of db.messages) {
+    if (message.orgId !== orgId || message.projectId !== projectId || message.stepId !== next.id) continue
+    if (message.status === 'sent' || message.status === 'cancelled' || message.status === 'failed') continue
+    if ((message.subject || '') !== (prev.subject || '') || (message.body || '') !== (prev.body || '')) continue
+    message.subject = next.subject || ''
+    message.body = next.body || ''
+    message.updatedAt = now
+  }
 }
 
 function reuseStepId(

@@ -189,8 +189,8 @@ function createServer(): McpServer {
     day: z.number().int().min(0).max(30).optional(),
     channel: z.enum(['email', 'call', 'linkedin']),
     label: z.string().optional(),
-    subject: z.string().optional(),
-    body: z.string().optional()
+    subject: z.string().optional().describe('Email subject stored on this sequence step.'),
+    body: z.string().optional().describe('Email body, LinkedIn note, or call talk track stored on this sequence step.')
   })
   const ContactInput = z
     .object({
@@ -240,7 +240,7 @@ function createServer(): McpServer {
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate Railway, Postgres, or HubSpot. Do not share a web workspace URL — work stays in Claude.',
+        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. summary is the sentence on Claude\'s Allow card. State goal, audience, and any step count / day span in workspace — Jargon builds the cadence; do not outline Day 0…N in chat. Does not open the workspace. If nextAction says enrichment is still writing, wait, then list_crm_contacts. Do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research personalized copy (that enrolls and opens Tasks). Do not treat {{first_name}} placeholders as the send copy. Include a markdown people table or CSV to ingest a list, or omit the table to hydrate Railway, Postgres, or HubSpot. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: z.object({
         summary: Summary,
         workspace: z
@@ -436,7 +436,7 @@ function createServer(): McpServer {
     {
       ...display('Open the outbound workspace', HINTS.read),
       description:
-        'Sequence steps plus field catalog. Shared fallback templates may use {{first_name}}. Personalized send copy lives on drafts — research each prospect and save_draft.',
+        'Sequence steps plus field catalog, including subject and body. Those fields are the sequence copy. When the user edits copy, call update_sequence on this same projectId with the rewritten subject and body. Do not deploy a new workspace.',
       inputSchema: z.object({ projectId: z.string() })
     },
     async ({ projectId }) => {
@@ -453,7 +453,7 @@ function createServer(): McpServer {
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Change cadence structure (days, channels, labels) without redeploying. Do not put per-person researched copy here — use save_draft.',
+        'Edit the sequence the user already has. Do not deploy a new workspace. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. Per-person variants still go to save_draft.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),

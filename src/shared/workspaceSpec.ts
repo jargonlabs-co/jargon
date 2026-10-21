@@ -710,6 +710,23 @@ function mergeChannelLists(preferred?: Channel[], extra?: Channel[]): Channel[] 
   return out.length ? out : undefined
 }
 
+/** Keep subject/body the caller already wrote when a rebuild adds missing channels. */
+function carrySuppliedCopy(built: WorkspaceSpecStep[], supplied: WorkspaceSpecStep[]): WorkspaceSpecStep[] {
+  const seen = new Map<Channel, number>()
+  return built.map((step) => {
+    const index = seen.get(step.channel) ?? 0
+    seen.set(step.channel, index + 1)
+    const hit = supplied.filter((row) => row.channel === step.channel)[index]
+    if (!hit || (hit.body == null && hit.subject == null)) return step
+    return {
+      ...step,
+      label: hit.label || step.label,
+      subject: hit.subject ?? step.subject,
+      body: hit.body ?? step.body
+    }
+  })
+}
+
 /** If channels include call/LinkedIn but the ladder is email-only, put those steps back. */
 function ensureStepsCoverChannels(
   steps: WorkspaceSpecStep[],
@@ -723,15 +740,23 @@ function ensureStepsCoverChannels(
   const tone = /casual|friendly|warm/.test(prompt.toLowerCase()) ? 'Warm & brief' : 'Direct & concise'
   const ladder = parseExplicitDayLadder(prompt)
   if (ladder?.length) {
-    return ladder.slice(0, 8).map((step, i) => ({
-      day: step.day,
-      channel: step.channel,
-      label: defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
-      ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
-    }))
+    return carrySuppliedCopy(
+      ladder.slice(0, 8).map((step, i) => ({
+        day: step.day,
+        channel: step.channel,
+        label: defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
+        ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
+      })),
+      steps
+    )
   }
   const span = parseStepSpan(prompt, channels)
-  if (span) return expandStepSpan(channels, span.count, span.days, goal, tone, span.sequence)
+  if (span) {
+    return carrySuppliedCopy(
+      expandStepSpan(channels, span.count, span.days, goal, tone, span.sequence),
+      steps
+    )
+  }
 
   const covered = new Set(steps.map((step) => step.channel))
   let day = steps.length ? Math.max(...steps.map((step) => step.day)) + 2 : 0

@@ -374,7 +374,18 @@
     .todo:hover, .todo.on { border-color: #f0c2b8; }
     .todo .box {
       width: 16px; height: 16px; border: 1.5px solid var(--line); border-radius: 4px; background: var(--bg);
+      position: relative; flex-shrink: 0;
     }
+    .todo.done { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); cursor: default; }
+    .todo.done:hover { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+    .todo.done .box { border-color: var(--ok); background: var(--ok); }
+    .todo.done .box::after {
+      content: '';
+      position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    }
+    .todo.done .title, .todo.done .preview, .todo.done .signal { color: var(--muted); }
+    .todo-work { margin: 4px 0 8px; }
     .todo-due { text-align: right; color: #17663a; font-size: 12.5px; font-weight: 650; }
     .todo-due span { display: block; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
     .work-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -691,6 +702,36 @@ function dueLabel(task) {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+/** Next still-open to-do after `finishedId`, walking forward only. */
+function nextTodoId(orderedIds, finishedId, openIds) {
+  const open = new Set(openIds);
+  const start = orderedIds.indexOf(finishedId);
+  const from = start >= 0 ? start + 1 : 0;
+  for (let i = from; i < orderedIds.length; i++) {
+    const id = orderedIds[i];
+    if (id !== finishedId && open.has(id)) return id;
+  }
+  return null;
+}
+
+/** Keep the finished row in place and insert steps that appeared because it was finished. */
+function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
+  const ids = previousIds.slice();
+  if (finishedId && !ids.includes(finishedId)) ids.push(finishedId);
+  const at = ids.indexOf(finishedId);
+  let insertAt = at >= 0 ? at + 1 : ids.length;
+  const seen = new Set(ids);
+  const known = new Set(knownIds || []);
+  for (const id of openIds) {
+    if (!id || seen.has(id)) continue;
+    if (known.has(id)) continue;
+    ids.splice(insertAt, 0, id);
+    seen.add(id);
+    insertAt += 1;
+  }
+  return ids;
+}
+
 (async () => {
   const root = document.getElementById('root');
   let tab = 'flows';
@@ -716,6 +757,9 @@ function dueLabel(task) {
   let adminDrillId = null;
   let adminSelectedId = null;
   let selectedTaskId = null;
+  let checkedIds = new Set();
+  let pinnedOrder = [];
+  let scrollTaskId = null;
   let dialState = 'idle';
   let dialContactId = null;
   let dialDigits = '';
@@ -813,7 +857,14 @@ function dueLabel(task) {
       (step.subject || '') === (original.subject || '') && (step.body || '') === (original.body || '');
     if (!untouched) return step;
     const copy = personalizedForStep(step);
-    return { ...step, subject: copy?.subject || '', body: copy?.body || '' };
+    if (copy && (copy.subject || copy.body)) {
+      return {
+        ...step,
+        subject: copy.subject || step.subject || '',
+        body: copy.body || step.body || '',
+      };
+    }
+    return step;
   }
 
   function syncDrafts() {
@@ -840,17 +891,18 @@ function dueLabel(task) {
     render();
   }
 
-  async function reload() {
-    if (!ws?.projectId) return;
+  async function reload(options) {
+    if (!ws?.projectId) return false;
     const result = await callTool({
       name: 'load_email_workspace',
       arguments: { projectId: ws.projectId },
     });
     const next = parseToolResult(result);
-    if (next?.error) { setNotice(next.error, 'err'); return; }
+    if (next?.error) { setNotice(next.error, 'err'); return false; }
     ws = next;
     syncDrafts();
-    render();
+    if (!options?.silent) render();
+    return true;
   }
 
   async function openWorkspace() {
@@ -875,32 +927,42 @@ function dueLabel(task) {
     flushEditor();
     const contactId = flowContactId();
     const draftWrites = [];
-    for (const step of draftSteps) {
-      const shown = personalizedForStep(step);
-      const subject = step.subject || '';
-      const body = step.body || '';
-      if (subject === (shown?.subject || '') && body === (shown?.body || '')) continue;
-      if (isStockCopy(subject) && isStockCopy(body)) continue;
-      const task = (ws.tasks || []).find(
-        (t) => t.stepId === step.id && (!contactId || t.contactId === contactId) && t.messageId
-      );
-      const messageId = task?.messageId || shown?.messageId;
-      if (!messageId) continue;
-      draftWrites.push(
-        callTool({
-          name: 'run_update_draft',
-          arguments: { messageId, subject, body },
-        })
-      );
-    }
     const steps = (draftSteps.length ? draftSteps : ws.steps || []).map((step) => {
       const original = (ws.steps || []).find((s) => s.id === step.id) || step;
+      const shown = viewStep(original);
+      const subject = step.subject || '';
+      const body = step.body || '';
+      const copyChanged = subject !== (shown.subject || '') || body !== (shown.body || '');
+      const nextSubject = copyChanged ? subject : (original.subject || '');
+      const nextBody = copyChanged ? body : (original.body || '');
+      if (copyChanged && step.channel === 'call' && contactId) {
+        draftWrites.push(
+          callTool({
+            name: 'run_save_draft',
+            arguments: { contactId, body: nextBody, channel: 'call', stepId: step.id },
+          })
+        );
+      } else if (copyChanged) {
+        const personalized = personalizedForStep(step);
+        const task = (ws.tasks || []).find(
+          (t) => t.stepId === step.id && (!contactId || t.contactId === contactId) && t.messageId
+        );
+        const messageId = task?.messageId || personalized?.messageId;
+        if (messageId) {
+          draftWrites.push(
+            callTool({
+              name: 'run_update_draft',
+              arguments: { messageId, subject: nextSubject, body: nextBody },
+            })
+          );
+        }
+      }
       return {
         day: Number(step.day || 0),
         channel: step.channel,
         label: step.label,
-        subject: original.subject || '',
-        body: original.body || '',
+        subject: nextSubject,
+        body: nextBody,
         mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
       };
     });
@@ -1012,12 +1074,14 @@ function dueLabel(task) {
       const parsed = parseToolResult(result);
       const failed = sendError(parsed);
       if (failed) { setNotice(failed, 'err'); return; }
-      await reload();
+      const snapshot = completionSnapshot(contact, 'email');
+      const ok = await reload({ silent: true });
+      if (!ok) return;
       if (listSurface()) {
         const next = (ws.contacts || []).find((c) => c.id === contact.id);
         if (nextFor(next) && next) actionPane = nextFor(next);
       }
-      advanceTask();
+      finishAndAdvance(snapshot);
       setNotice(`Sent to ${contact.name}.`, 'ok');
       app.updateModelContext?.({
         content: [{ type: 'text', text: `Sent email to ${contact.name} <${contact.email}>.` }],
@@ -1132,6 +1196,7 @@ function dueLabel(task) {
   async function skipCurrentTask() {
     const task = (ws.tasks || []).find((t) => t.id === selectedTaskId);
     if (!task) { stepTask(1); return; }
+    const snapshot = completionSnapshot();
     busy = true; render();
     const result = await callTool({
       name: 'run_skip_task',
@@ -1140,8 +1205,9 @@ function dueLabel(task) {
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
-    await reload();
-    advanceTask();
+    const ok = await reload({ silent: true });
+    if (!ok) return;
+    finishAndAdvance(snapshot);
     setNotice(`Skipped ${task.contactName}.`, 'ok');
   }
 
@@ -1153,7 +1219,7 @@ function dueLabel(task) {
     const people = (ws.contacts || []).map((c) =>
       `- ${c.id} · ${c.name}${c.company ? ` · ${c.company}` : ''}${c.title ? ` · ${c.title}` : ''}`
     ).join('\n');
-    const research = `Research each contact and their company. Write personalized copy — not the sequence fallback templates (Hi {{first_name}}, noticed {{company}}…). Call save_research once with a JSON array as the tool argument only — never paste the JSON into chat. Use channel "call" for talk tracks, "email" for emails, "linkedin" for LinkedIn notes. Pass stepId for follow-ups. Include short context bullets when you have signals.`;
+    const research = `Rewrite the copy on this existing sequence. Do not call deploy_tool or import_list and do not create a new workspace. Call update_sequence for project ${ws.projectId} with every current step (day, channel, label, subject, body). subject and body are what the sequence stores — put the rewritten email, LinkedIn note, or talk track there. Then call save_research once so each contact's draft matches, as a JSON array tool argument only — never paste the JSON into chat. Use channel "call" for talk tracks, "email" for emails, "linkedin" for LinkedIn notes. Pass stepId for follow-ups. Do not leave the rewrite only in chat.`;
     await app.sendMessage({
       role: 'user',
       content: [{
@@ -1384,10 +1450,12 @@ function dueLabel(task) {
     busy = false;
     const parsed = parseToolResult(result);
     if (parsed?.error) { setNotice(parsed.error, 'err'); return; }
-    await reload();
+    const snapshot = completionSnapshot(contact, 'call');
+    const ok = await reload({ silent: true });
+    if (!ok) return;
     const next = (ws.contacts || []).find((c) => c.id === contact.id);
     if (nextFor(next) && next) actionPane = nextFor(next);
-    advanceTask();
+    finishAndAdvance(snapshot);
     resetDialer();
     setNotice(`Logged ${status.replace('_', ' ')} for ${contact.name}.`, 'ok');
   }
@@ -1448,10 +1516,12 @@ function dueLabel(task) {
     const parsed = parseToolResult(result);
     const failed = sendError(parsed);
     if (failed) { setNotice(failed, 'err'); return; }
-    await reload();
+    const snapshot = completionSnapshot(contact, 'linkedin');
+    const ok = await reload({ silent: true });
+    if (!ok) return;
     const next = (ws.contacts || []).find((c) => c.id === contact.id);
     if (nextFor(next) && next) actionPane = nextFor(next);
-    advanceTask();
+    finishAndAdvance(snapshot);
     setNotice(`LinkedIn sent to ${contact.name}.`, 'ok');
     app.updateModelContext?.({
       content: [{ type: 'text', text: `Sent LinkedIn message to ${contact.name}.` }],
@@ -1966,15 +2036,16 @@ function dueLabel(task) {
     const contact = contactById(task.contactId);
     const signal = signalLine(contact);
     const who = [task.contactName, contact?.title, contact?.company].filter(Boolean).join(' · ');
+    const done = isChecked(task);
     return `
-      <button type="button" class="todo ${task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
-        <span class="box" data-skip="${esc(task.id)}" title="Skip"></span>
+      <button type="button" class="todo ${done ? 'done' : ''} ${!done && task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
+        <span class="box" ${done ? '' : `data-skip="${esc(task.id)}" title="Skip"`}></span>
         <span>
           <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
           <div class="preview">${esc(who || task.contactName)}</div>
           ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
         </span>
-        <span class="todo-due"><span>${esc(taskTitle(task))}</span>${esc(dueDate(task))}</span>
+        <span class="todo-due"><span>${done ? 'Done' : esc(taskTitle(task))}</span>${done ? '' : esc(dueDate(task))}</span>
       </button>
     `;
   }
@@ -2160,12 +2231,72 @@ function dueLabel(task) {
     if (idx >= 0) peopleStep = idx;
   }
 
-  /** After finishing a task, drop the selection so the next due one opens. */
-  function advanceTask() {
-    if (tab === 'todos') {
-      selectedTaskId = null;
-      workFocus = true;
+  function isChecked(task) {
+    return !!task && (checkedIds.has(task.id) || task.state === 'done' || task.state === 'skipped');
+  }
+
+  /** List order the rep is looking at, including rows checked off this session. */
+  function visibleTodos() {
+    const open = channelTasks();
+    if (!pinnedOrder.length) return open;
+    const openIds = new Set(open.map((t) => t.id));
+    const rows = [];
+    const seen = new Set();
+    for (const id of pinnedOrder) {
+      if (seen.has(id)) continue;
+      const task = (ws.tasks || []).find((t) => t.id === id);
+      if (!task) continue;
+      const stillOpen = openIds.has(id);
+      if (!stillOpen && !checkedIds.has(id)) continue;
+      if (taskChannel !== 'all' && task.channel !== taskChannel) continue;
+      seen.add(id);
+      rows.push(task);
     }
+    for (const task of open) {
+      if (!seen.has(task.id)) rows.push(task);
+    }
+    return rows;
+  }
+
+  function completionSnapshot(contact, channel) {
+    const previousChannel = taskChannel;
+    taskChannel = 'all';
+    const knownIds = channelTasks().map((t) => t.id);
+    taskChannel = previousChannel;
+    const tasks = visibleTodos();
+    let match = (ws.tasks || []).find((t) => t.id === selectedTaskId) || null;
+    if (contact && (!match || match.contactId !== contact.id || (channel && match.channel !== channel))) {
+      match = tasks.find((t) => t.contactId === contact.id && t.channel === channel && !isChecked(t))
+        || (ws.tasks || []).find((t) => t.contactId === contact.id && t.channel === channel && t.state !== 'done' && t.state !== 'skipped')
+        || match;
+    }
+    const ids = tasks.map((t) => t.id);
+    if (match && !ids.includes(match.id)) ids.push(match.id);
+    return { finishedId: match?.id || null, ids, knownIds };
+  }
+
+  /** Check off the task that just finished and open the next one in the list. */
+  function finishAndAdvance(snapshot) {
+    if (!snapshot?.finishedId) return;
+    checkedIds.add(snapshot.finishedId);
+    const previousChannel = taskChannel;
+    taskChannel = 'all';
+    const openIds = channelTasks().map((t) => t.id);
+    taskChannel = previousChannel;
+    pinnedOrder = orderAfterFinish(snapshot.ids, snapshot.finishedId, openIds, snapshot.knownIds);
+    const nextId = nextTodoId(pinnedOrder, snapshot.finishedId, openIds);
+    const next = nextId ? (ws.tasks || []).find((t) => t.id === nextId) : null;
+    tab = 'todos';
+    if (next && next.state !== 'done' && next.state !== 'skipped') {
+      if (taskChannel !== 'all' && next.channel !== taskChannel) taskChannel = 'all';
+      selectTask(next);
+      workFocus = true;
+      scrollTaskId = next.id;
+      return;
+    }
+    selectedTaskId = null;
+    workFocus = false;
+    scrollTaskId = snapshot.finishedId;
   }
 
   function stepTask(delta) {
@@ -2417,6 +2548,9 @@ function dueLabel(task) {
     selectedStep = 0;
     selectedMessageId = null;
     selectedTaskId = null;
+    checkedIds = new Set();
+    pinnedOrder = [];
+    scrollTaskId = null;
     taskFilter = 'open';
     syncDrafts();
     notice = '';
@@ -2565,15 +2699,21 @@ function dueLabel(task) {
       call: nextTaskByContact(open.filter((t) => t.channel === 'call')).length,
       linkedin: nextTaskByContact(open.filter((t) => t.channel === 'linkedin')).length,
     };
-    const tasks = channelTasks();
-    if (workFocus) {
-      const current = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
-      if (!current) {
+    const tasks = visibleTodos();
+    if (workFocus && !checkedIds.size) {
+      const openNow = channelTasks();
+      const focused = openNow.find((t) => t.id === selectedTaskId) || openNow[0];
+      if (!focused) {
         workFocus = false;
       } else {
-        if (current.id !== selectedTaskId) selectTask(current);
-        return renderWork(current);
+        if (focused.id !== selectedTaskId) selectTask(focused);
+        return renderWork(focused);
       }
+    }
+    let current = null;
+    if (workFocus) {
+      current = tasks.find((t) => t.id === selectedTaskId && !isChecked(t)) || null;
+      if (!current) workFocus = false;
     }
     const groups = groupedTasks(tasks);
     return `
@@ -2588,7 +2728,10 @@ function dueLabel(task) {
           ${groups.map((group) => `
             <section class="todo-group">
               ${group.label ? `<div class="todo-group-h"><strong>${esc(group.label)}</strong><span>${group.tasks.length}</span></div>` : ''}
-              ${group.tasks.map(todoRow).join('')}
+              ${group.tasks.map((task) => `
+                ${todoRow(task)}
+                ${current && task.id === current.id ? `<div class="todo-work" id="todo-work">${renderWork(current)}</div>` : ''}
+              `).join('')}
             </section>
           `).join('')}
         </div>
@@ -2858,6 +3001,11 @@ function dueLabel(task) {
       <div id="panel">${tab === 'todos' ? renderTodos() : renderFlows()}</div>
     `;
     bindWorkspace();
+    if (scrollTaskId) {
+      const id = scrollTaskId;
+      scrollTaskId = null;
+      root.querySelector(`[data-task="${String(id).replace(/"/g, '')}"]`)?.scrollIntoView({ block: 'center' });
+    }
   }
 
   function bindWorkspace() {
@@ -2897,9 +3045,10 @@ function dueLabel(task) {
     root.querySelectorAll('[data-task]').forEach((el) => el.addEventListener('click', (e) => {
       if (e.target?.closest?.('[data-skip]')) return;
       const task = (ws.tasks || []).find((t) => t.id === el.getAttribute('data-task'));
-      if (!task) return;
+      if (!task || isChecked(task)) return;
       selectTask(task);
       workFocus = true;
+      scrollTaskId = task.id;
       notice = '';
       render();
     }));

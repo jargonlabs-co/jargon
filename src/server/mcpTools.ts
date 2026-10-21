@@ -369,8 +369,11 @@ export function registerJargonTools(
     day: z.number().int().min(0).max(30).optional(),
     channel: z.enum(['email', 'call', 'linkedin']),
     label: z.string().optional(),
-    subject: z.string().optional(),
-    body: z.string().optional(),
+    subject: z.string().optional().describe('Email subject stored on this sequence step. Required when the user is editing copy.'),
+    body: z
+      .string()
+      .optional()
+      .describe('Email body, LinkedIn note, or call talk track stored on this sequence step. When the user edits copy, pass the rewritten text here.'),
     mode: z.enum(['manual', 'auto']).optional()
   })
 
@@ -476,7 +479,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create an outbound workspace (structure only). Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
+        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -878,7 +881,7 @@ export function registerJargonTools(
     {
       ...display('Read the cadence steps', HINTS.read),
       description:
-        'Read cadence steps as JSON (days, channels, labels). Does not open a workspace. Use only to check that the ladder matches the ask; if it does not, call update_sequence. Do not call this to display the template sequence. save_research opens the one workspace after personalized copy is saved.',
+        'Read cadence steps as JSON, including subject and body. Those fields are the sequence copy. Does not open a workspace. When the user edits copy or the ladder does not match, call update_sequence on this same projectId with the rewritten subject and body. Do not call deploy_tool or import_list to edit an existing sequence — that creates a second one. Do not call this to display the template sequence.',
       inputSchema: z.object({ projectId: z.string() })
     },
     async ({ projectId }) => {
@@ -1273,7 +1276,7 @@ export function registerJargonTools(
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Change cadence structure (days, channels, labels) without redeploying. Use when returned steps do not match what the user asked (e.g. wrong step count or timing). summary is the sentence on Claude\'s Allow card. Shared fallback templates may use {{first_name}} and catalog keys. Do not put per-person researched copy here — use save_draft so start_sequence cannot overwrite it. Do not re-narrate the ladder in chat after updating.',
+        'Edit the sequence the user already has. Do not call deploy_tool or import_list for this — those create a second sequence. Use when the ladder does not match, or when they edit copy, subject, body, tone, or a talk track. summary is the sentence on Claude\'s Allow card. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. Per-person variants still go to save_draft or save_research after the sequence steps have the new copy. Do not re-narrate the ladder in chat after updating.',
       inputSchema: UpdateSequenceInput
     },
     async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)

@@ -328,6 +328,59 @@ describe('a build opens one workspace', () => {
     assert.equal(Array.isArray(huge.contacts), true)
     assert.equal(Array.isArray(huge.tasks), true)
     assert.ok(JSON.stringify(huge).length <= 100_000)
+    const hugeIds = new Set((huge.contacts as { id: string }[]).map((contact) => contact.id))
+    for (const task of huge.tasks as { contactId: string }[]) {
+      assert.equal(hugeIds.has(task.contactId), true)
+    }
+  })
+
+  it('keeps a contact on every to-do when the workspace view is trimmed', () => {
+    const contacts = Array.from({ length: 30 }, (_, i) => ({
+      id: `c${i}`,
+      name: `Person ${i}`,
+      email: `p${i}@co.com`,
+      company: 'Acme',
+      title: 'VP',
+      attrs: { bio: 'a'.repeat(5000) },
+      context: ['c'.repeat(2000)],
+      preview: { subject: 'Hi', body: 'p'.repeat(3000) }
+    }))
+    const tasks = contacts.flatMap((contact, i) => [
+      {
+        id: `t${i}-now`,
+        contactId: contact.id,
+        contactName: contact.name,
+        state: 'due',
+        owner: 'user',
+        dueAt: i,
+        stepOrder: 0,
+        channel: 'linkedin',
+        body: 'now '.repeat(400)
+      },
+      {
+        id: `t${i}-later`,
+        contactId: contact.id,
+        contactName: contact.name,
+        state: 'scheduled',
+        owner: 'user',
+        dueAt: 1000 + i,
+        stepOrder: 1,
+        channel: 'email',
+        body: 'later '.repeat(400)
+      }
+    ])
+    const fitted = fitWorkspaceView(
+      { projectId: 'proj_1', contacts, tasks, messages: [], catalog: ['x'.repeat(5000)], calls: ['y'.repeat(5000)] },
+      12_000
+    )
+    const ids = new Set((fitted.contacts as { id: string }[]).map((contact) => contact.id))
+    const kept = fitted.tasks as { contactId: string; state: string }[]
+    assert.ok(JSON.stringify(fitted).length <= 12_000)
+    assert.ok(kept.length > 1)
+    assert.ok(ids.size > 1)
+    for (const task of kept) assert.equal(ids.has(task.contactId), true, task.contactId)
+    assert.equal(ids.has('c0'), true)
+    assert.equal(kept.some((task) => task.contactId === 'c0' && task.state === 'due'), true)
   })
 
   it('opens the sequence when a scheduled enroll starts people who already have copy', async () => {

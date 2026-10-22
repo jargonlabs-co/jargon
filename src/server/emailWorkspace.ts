@@ -387,9 +387,80 @@ function clipPreview(value: unknown, max: number): unknown {
   return row
 }
 
+function viewRow(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+function slimContact(contact: unknown, dropHeavy: boolean): unknown {
+  const row = viewRow(contact)
+  if (!row) return contact
+  const next = { ...row }
+  next.preview = clipPreview(next.preview, 180)
+  next.linkedinPreview = clipPreview(next.linkedinPreview, 180)
+  if (dropHeavy) {
+    delete next.attrs
+    delete next.context
+    delete next.preview
+    delete next.linkedinPreview
+    delete next.notes
+  }
+  return next
+}
+
+function slimTask(task: unknown, bodyMax: number): unknown {
+  const row = viewRow(task)
+  if (!row) return task
+  const next = { ...row }
+  next.body = clipText(next.body, bodyMax)
+  if ('subject' in next) next.subject = clipText(next.subject, 140)
+  return next
+}
+
+/** The to-do the rep would open for each person: soonest open step, not a later one. */
+function nextOpenTaskIds(tasks: unknown[]): Set<string> {
+  const best = new Map<string, Record<string, unknown>>()
+  for (const task of tasks) {
+    const row = viewRow(task)
+    if (!row || typeof row.contactId !== 'string' || typeof row.id !== 'string') continue
+    if (row.owner === 'auto' || row.state === 'done' || row.state === 'skipped') continue
+    const prev = best.get(row.contactId)
+    const due = Number(row.dueAt || 0)
+    const order = Number(row.stepOrder || 0)
+    const prevDue = Number(prev?.dueAt || 0)
+    const prevOrder = Number(prev?.stepOrder || 0)
+    if (!prev || due < prevDue || (due === prevDue && order < prevOrder)) best.set(row.contactId, row)
+  }
+  return new Set([...best.values()].map((row) => String(row.id)))
+}
+
+function dropOneTask(tasks: unknown[], protect: Set<string>): unknown[] {
+  for (let i = tasks.length - 1; i >= 0; i--) {
+    const id = viewRow(tasks[i])?.id
+    if (typeof id === 'string' && protect.has(id)) continue
+    return tasks.slice(0, i).concat(tasks.slice(i + 1))
+  }
+  return tasks.slice(0, -1)
+}
+
+/** Keep the people the remaining to-dos point at. Dropping contacts on their own orphans every row after the first. */
+function contactsForTasks(contacts: unknown[], tasks: unknown[]): unknown[] | null {
+  const needed = new Set<string>()
+  for (const task of tasks) {
+    const id = viewRow(task)?.contactId
+    if (typeof id === 'string') needed.add(id)
+  }
+  if (!needed.size) return null
+  const kept = contacts.filter((contact) => {
+    const id = viewRow(contact)?.id
+    return typeof id === 'string' && needed.has(id)
+  })
+  return kept.length ? kept : null
+}
+
 /**
  * Keep a payload the in-chat app can draw (projectId, contacts, tasks) without a second tool call.
  * Scheduled runs cannot fetch the workspace after the fact.
+ * Every task that stays must still have its contact — the to-do view looks the person up by id.
  */
 export function fitWorkspaceView(view: Record<string, unknown>, cap = WORKSPACE_VIEW_CAP): Record<string, unknown> {
   const next: Record<string, unknown> = { ...view }
@@ -398,45 +469,49 @@ export function fitWorkspaceView(view: Record<string, unknown>, cap = WORKSPACE_
 
   const messages = Array.isArray(next.messages) ? next.messages : []
   next.messages = messages.map((message) => {
-    if (!message || typeof message !== 'object') return message
-    const row = { ...(message as Record<string, unknown>) }
-    row.body = clipText(row.body, 180)
-    row.subject = clipText(row.subject, 80)
-    return row
+    const row = viewRow(message)
+    if (!row) return message
+    return { ...row, body: clipText(row.body, 180), subject: clipText(row.subject, 80) }
   })
   if (size() <= cap) return next
 
   next.messages = []
-  let contacts = (Array.isArray(next.contacts) ? next.contacts : []).map((contact) => {
-    if (!contact || typeof contact !== 'object') return contact
-    const row = { ...(contact as Record<string, unknown>) }
-    row.preview = clipPreview(row.preview, 180)
-    row.linkedinPreview = clipPreview(row.linkedinPreview, 180)
-    return row
-  })
+  let contacts = (Array.isArray(next.contacts) ? next.contacts : []).map((contact) => slimContact(contact, false))
   next.contacts = contacts
   if (size() <= cap) return next
 
   let tasks = Array.isArray(next.tasks) ? [...next.tasks] : []
-  while (size() > cap && (contacts.length > 1 || tasks.length > 1)) {
-    if (tasks.length > 1) tasks = tasks.slice(0, tasks.length - 1)
-    next.tasks = tasks
-    if (size() > cap && contacts.length > 1) contacts = contacts.slice(0, contacts.length - 1)
+  contacts = contacts.map((contact) => slimContact(contact, true))
+  next.contacts = contacts
+  next.catalog = []
+  next.calls = []
+  if (size() <= cap) return next
+
+  const referenced = contactsForTasks(contacts, tasks)
+  if (referenced && referenced.length < contacts.length) {
+    contacts = referenced
     next.contacts = contacts
+    if (size() <= cap) return next
+  }
+
+  tasks = tasks.map((task) => slimTask(task, 2000))
+  next.tasks = tasks
+  if (size() <= cap) return next
+
+  while (size() > cap && tasks.length > 1) {
+    const before = tasks.length
+    tasks = dropOneTask(tasks, nextOpenTaskIds(tasks))
+    if (tasks.length === before) tasks = tasks.slice(0, -1)
+    next.tasks = tasks
+    const kept = contactsForTasks(contacts, tasks)
+    if (kept) {
+      contacts = kept
+      next.contacts = contacts
+    }
   }
   if (size() <= cap) return next
 
-  next.catalog = []
-  next.calls = []
-  next.contacts = contacts.map((contact) => {
-    if (!contact || typeof contact !== 'object') return contact
-    const row = { ...(contact as Record<string, unknown>) }
-    delete row.attrs
-    delete row.context
-    delete row.preview
-    delete row.linkedinPreview
-    return row
-  })
+  next.tasks = tasks.map((task) => slimTask(task, 180))
   return next
 }
 

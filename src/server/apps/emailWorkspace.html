@@ -1852,6 +1852,26 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return (ws.contacts || []).find((c) => c.id === id) || null;
   }
 
+  /** The task already carries the person's name and the address for this step. */
+  function contactForTask(task) {
+    if (!task) return null;
+    const found = contactById(task.contactId);
+    if (found) return found;
+    if (!task.contactId) return null;
+    const parts = String(task.contactMeta || '').split(' · ').filter(Boolean);
+    return {
+      id: task.contactId,
+      name: task.contactName || 'Contact',
+      title: parts.length > 1 ? parts[0] : '',
+      company: parts.length > 1 ? parts.slice(1).join(' · ') : (parts[0] || ''),
+      email: task.channel === 'email' ? (task.target || '') : '',
+      phone: task.channel === 'call' ? (task.target || '') : '',
+      linkedinUrl: task.channel === 'linkedin' ? (task.target || '') : '',
+      attrs: {},
+      context: [],
+    };
+  }
+
   function inboxMessages() {
     let msgs = (ws.messages || []).filter((m) => m.channel === 'email');
     msgs = [...msgs].sort((a, b) => (b.sentAt || b.sendAt || b.createdAt || 0) - (a.sentAt || a.sendAt || a.createdAt || 0));
@@ -1872,11 +1892,14 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const showWrite = Boolean(opts?.showWrite);
     const steps = emailSteps();
     if (peopleStep >= steps.length) peopleStep = Math.max(0, steps.length - 1);
-    const taskStep = activeTask()?.channel === 'email' ? stepOf(activeTask()) : null;
+    const task = activeTask();
+    const taskStep = task?.channel === 'email' ? stepOf(task) : null;
     const step = taskStep || steps[peopleStep] || steps[0];
     const msg = selected ? selectedEmailMessage(selected) : null;
-    const subject = msg?.subject || (selected && step ? interpolate(step.subject || '', selected) : '');
-    const body = msg?.body || (selected && step ? interpolate(step.body || '', selected) : '');
+    const taskCopy = task?.channel === 'email' && selected && task.contactId === selected.id ? task : null;
+    const savedCopy = taskCopy && taskCopy.body && !String(taskCopy.body).includes('{{');
+    const subject = msg?.subject || (savedCopy ? taskCopy.subject : '') || (selected && step ? interpolate(step.subject || '', selected) : '');
+    const body = msg?.body || (savedCopy ? taskCopy.body : '') || (selected && step ? interpolate(step.body || '', selected) : '');
     const showSteps = !hideSteps && steps.length > 1;
     return `
       <div class="composer">
@@ -2180,7 +2203,8 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const msg = (task?.channel === 'linkedin' && task.messageId && (ws.messages || []).find((m) => m.id === task.messageId))
       || messageFor(ws, contact.id, step)
       || latestChannelMessage(contact.id, 'linkedin');
-    const body = msg?.body || contact.linkedinPreview?.body || (step ? interpolate(step.body || '', contact) : '');
+    const taskCopy = task?.channel === 'linkedin' && task.body && !String(task.body).includes('{{') ? task.body : '';
+    const body = msg?.body || taskCopy || contact.linkedinPreview?.body || (step ? interpolate(step.body || '', contact) : '');
     const sent = msg?.status === 'sent' || doneSet(contact).has('linkedin');
     return `
       <div class="composer">
@@ -2310,9 +2334,11 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function taskAction(task) {
-    if (task.channel === 'call') return renderCallPanel(contactById(task.contactId));
-    if (task.channel === 'linkedin') return renderLinkedInPanel(contactById(task.contactId));
-    return renderComposer(contactById(task.contactId), { hideSteps: true, showWrite: true });
+    const contact = contactForTask(task);
+    if (!contact) return '<p class="empty">Contact missing.</p>';
+    if (task.channel === 'call') return renderCallPanel(contact);
+    if (task.channel === 'linkedin') return renderLinkedInPanel(contact);
+    return renderComposer(contact, { hideSteps: true, showWrite: true });
   }
 
   function taskRow(task) {
@@ -2347,7 +2373,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const current = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
     if (current && current.id !== selectedTaskId) selectTask(current);
     const position = current ? tasks.indexOf(current) + 1 : 0;
-    const contact = current ? contactById(current.contactId) : null;
+    const contact = current ? contactForTask(current) : null;
     return `
       <div class="statrow">
         <div><strong>${counts.overdue}</strong><span>overdue</span></div>
@@ -2660,7 +2686,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function renderWork(task) {
-    const contact = contactById(task.contactId);
+    const contact = contactForTask(task);
     if (!contact) return '<p class="empty">Contact missing.</p>';
     const step = stepOf(task);
     if (task.channel === 'call') {

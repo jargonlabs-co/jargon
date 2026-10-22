@@ -36,7 +36,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=sched2'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=contacts1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -79,6 +79,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=admin1',
   'ui://jargon/email-workspace.html?v=sched1',
   'ui://jargon/email-workspace.html?v=territory1',
+  'ui://jargon/email-workspace.html?v=sched2',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -442,6 +443,42 @@ function dropOneTask(tasks: unknown[], protect: Set<string>): unknown[] {
   return tasks.slice(0, -1)
 }
 
+/** Identity the to-do view needs. Copied onto the task so a trimmed contact list cannot blank the row. */
+function personSnapshot(contact: Record<string, unknown>): Record<string, unknown> {
+  const priority = viewRow(contact.priority)
+  const signals = Array.isArray(priority?.signals)
+    ? priority.signals.filter((signal) => typeof signal === 'string').slice(0, 4)
+    : undefined
+  return {
+    id: contact.id,
+    name: contact.name || '',
+    company: contact.company || '',
+    title: contact.title || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    linkedinUrl: contact.linkedinUrl || '',
+    city: contact.city || '',
+    status: contact.status || '',
+    priority: priority
+      ? { rank: priority.rank, motion: priority.motion, band: priority.band, signals }
+      : undefined
+  }
+}
+
+function withPerson(tasks: unknown[], contacts: unknown[]): unknown[] {
+  const people = new Map<string, Record<string, unknown>>()
+  for (const contact of contacts) {
+    const row = viewRow(contact)
+    if (row && typeof row.id === 'string') people.set(row.id, personSnapshot(row))
+  }
+  return tasks.map((task) => {
+    const row = viewRow(task)
+    if (!row || typeof row.contactId !== 'string') return task
+    const person = people.get(row.contactId)
+    return person ? { ...row, person } : task
+  })
+}
+
 /** Keep the people the remaining to-dos point at. Dropping contacts on their own orphans every row after the first. */
 function contactsForTasks(contacts: unknown[], tasks: unknown[]): unknown[] | null {
   const needed = new Set<string>()
@@ -480,7 +517,8 @@ export function fitWorkspaceView(view: Record<string, unknown>, cap = WORKSPACE_
   next.contacts = contacts
   if (size() <= cap) return next
 
-  let tasks = Array.isArray(next.tasks) ? [...next.tasks] : []
+  let tasks = withPerson(Array.isArray(next.tasks) ? [...next.tasks] : [], contacts)
+  next.tasks = tasks
   contacts = contacts.map((contact) => slimContact(contact, true))
   next.contacts = contacts
   next.catalog = []

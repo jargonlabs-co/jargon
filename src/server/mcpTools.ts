@@ -146,20 +146,19 @@ function workspaceOk(
     if (!ws) return fail('Project not found')
     const show = opts?.embed !== false
     const view = withoutDashboard(ws) as Record<string, unknown>
-    const forModel = show ? workspaceBrief(ws) : view
+    const fitted = fitWorkspaceView(view)
+    const forModel = show ? workspaceBrief(ws) : fitted
     const body: {
       content: Array<{ type: 'text'; text: string }>
       structuredContent?: Record<string, unknown>
       _meta?: typeof EMAIL_WORKSPACE_TOOL_META
     } = {
-      content: [{ type: 'text', text: JSON.stringify(forModel, null, 2) }]
+      content: [{ type: 'text', text: JSON.stringify(forModel, null, 2) }],
+      // The model reads the brief. The app paints from structuredContent, including
+      // a reload, so a trimmed list still has each to-do's contact.
+      structuredContent: fitted
     }
-    if (show) {
-      body._meta = EMAIL_WORKSPACE_TOOL_META
-      // The model reads the brief. The app paints from structuredContent, so a
-      // scheduled run can show the sequence without a second tool call.
-      body.structuredContent = fitWorkspaceView(view)
-    }
+    if (show) body._meta = EMAIL_WORKSPACE_TOOL_META
     return body
   } catch (err) {
     return fail(err)

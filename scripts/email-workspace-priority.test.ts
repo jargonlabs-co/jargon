@@ -378,7 +378,10 @@ describe('a build opens one workspace', () => {
     assert.ok(JSON.stringify(fitted).length <= 12_000)
     assert.ok(kept.length > 1)
     assert.ok(ids.size > 1)
-    for (const task of kept) assert.equal(ids.has(task.contactId), true, task.contactId)
+    for (const task of kept) {
+      assert.equal(ids.has(task.contactId), true, task.contactId)
+      assert.equal((task as { person?: { id?: string } }).person?.id, task.contactId)
+    }
     assert.equal(ids.has('c0'), true)
     assert.equal(kept.some((task) => task.contactId === 'c0' && task.state === 'due'), true)
   })

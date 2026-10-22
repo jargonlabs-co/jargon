@@ -1857,6 +1857,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     if (!task) return null;
     const found = contactById(task.contactId);
     if (found) return found;
+    if (task.person && (task.person.id || task.person.name)) return task.person;
     if (!task.contactId) return null;
     const parts = String(task.contactMeta || '').split(' · ').filter(Boolean);
     return {

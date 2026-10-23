@@ -1,7 +1,7 @@
 import type { BillingService } from './billing/types'
 import { chargeIfLive, refundCredits } from './billing'
 import type { ServerConfig } from './config'
-import { deliverPublicMessage } from './publicApi'
+import { deliverPublicMessage, holdQueuedHubSpotEmail } from './publicApi'
 import { findSuppression } from './compliance'
 import { pollGmailBounces } from './bounces'
 import { pollMailboxReplies } from './mailboxes'
@@ -30,6 +30,7 @@ export async function runOutboundSchedulerTick(
   config: ServerConfig,
   billing: BillingService
 ): Promise<number> {
+  holdQueuedHubSpotEmail(store)
   const due = store.db.messages.filter(
     (m) => m.status === 'queued' && (m.sendAt ?? 0) <= Date.now()
   )

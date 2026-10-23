@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
-import { updatePublicSequence } from '../src/server/publicApi.ts'
+import { loadConfig } from '../src/server/config.ts'
+import { enrollPublicSequence, holdQueuedHubSpotEmail, updatePublicSequence } from '../src/server/publicApi.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Message, Project, SequenceStep } from '../src/server/types.ts'
 import { buildWorkspaceTasks, nextOpenTasksByContact } from '../src/server/workspaceTasks.ts'
@@ -360,5 +361,50 @@ describe('a step can belong to specific contacts', () => {
     assert.match(save, /contactIds/)
     assert.match(html, /id="add-person"/)
     assert.match(html, /Only these people get this step/)
+  })
+
+  it('keeps a HubSpot list on drafts when the email step is set to auto-send', async () => {
+    const db = emptyDb()
+    db.projects.push(project())
+    db.sequences.push({
+      id: 'seq_1',
+      orgId: 'org_1',
+      projectId: 'proj_1',
+      name: 'Email',
+      goal: 'Book a meeting',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    db.steps.push({
+      id: 'step_email',
+      orgId: 'org_1',
+      sequenceId: 'seq_1',
+      projectId: 'proj_1',
+      day: 0,
+      channel: 'email',
+      label: 'Intro',
+      subject: 'Hi',
+      body: 'Hello',
+      mode: 'auto',
+      order: 0
+    } as SequenceStep)
+    db.contacts.push(
+      contact({ id: 'ada', name: 'Ada Lopez', email: 'ada@acme.test', source: 'hubspot' }),
+      contact({ id: 'ben', name: 'Ben Okafor', email: 'ben@acme.test', source: 'manual' })
+    )
+    const started = await enrollPublicSequence(memoryStore(db), loadConfig(), 'org_1', 'proj_1')
+    assert.equal(started.ok, true)
+    const ada = db.messages.find((message) => message.contactId === 'ada')
+    const ben = db.messages.find((message) => message.contactId === 'ben')
+    assert.equal(ada?.status, 'draft')
+    assert.equal(ben?.status, 'queued')
+    assert.equal(db.messages.filter((message) => message.status === 'sent').length, 0)
+    const store = memoryStore(db)
+    assert.equal(holdQueuedHubSpotEmail(store), 0)
+    const queued = db.messages.find((message) => message.contactId === 'ada')
+    if (queued) queued.status = 'queued'
+    assert.equal(holdQueuedHubSpotEmail(store), 1)
+    assert.equal(db.messages.find((message) => message.contactId === 'ada')?.status, 'draft')
+    assert.equal(db.messages.find((message) => message.contactId === 'ben')?.status, 'queued')
   })
 })

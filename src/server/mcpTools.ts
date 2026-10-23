@@ -1303,7 +1303,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll people who are already in this workspace into the sequence and open it in the chat. Use this when the user says to enroll these people and they are already contacts here, including at the end of a scheduled run. Never call this before save_research has written their copy — save_research enrolls new people and opens the one workspace. Do not also call show_tasks or show_email_workspace. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. For people who are still only in HubSpot, use enroll_hubspot instead. Do not tell the user to enroll from the app.',
+        'Enroll people who are already in this workspace into the sequence and open it in the chat. Use this when the user says to enroll these people and they are already contacts here, including at the end of a scheduled run. Never call this before save_research has written their copy. Do not also call show_tasks or show_email_workspace. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. HubSpot contacts added from a list are not enrolled by enroll_hubspot — call start_sequence only when the user asks to enroll them. Their emails stay drafts. Do not call send_message to deliver a pulled list. Do not tell the user to enroll from the app.',
       inputSchema: StartSequenceInput,
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -1326,7 +1326,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal and enroll them into this sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Only contacts with an email, phone, or LinkedIn URL are enrolled. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. People already on the sequence are updated (new email/phone/LinkedIn steps are added). Manual steps become their to-dos. If you still need personalized copy, this does not open a workspace — call save_research next and do not call show_email_workspace or show_tasks. If copy is already saved, this opens the sequence in the chat, including on a scheduled run. Do not also call show_tasks.',
+        'Pull people from the connected HubSpot portal into this workspace. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Does not enroll them and does not send email. A HubSpot list stays off the sequence until the user asks to enroll, and those emails stay drafts until someone sends them. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. Do not call send_message for these people. If you still need personalized copy, this does not open a workspace — call save_research next and do not call show_email_workspace or show_tasks. save_research does not enroll HubSpot contacts and does not send. If copy is already saved, this opens the sequence in the chat. Do not also call show_tasks.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -1533,7 +1533,7 @@ export function registerJargonTools(
     'run_enroll_hubspot',
     {
       ...display('Enroll HubSpot contacts', HINTS.send),
-      description: 'Add the selected HubSpot contacts to this sequence and assign their tasks. Not for the model.',
+      description: 'Add the selected HubSpot contacts to this workspace. Does not enroll them and does not send email. Not for the model.',
       _meta: APP_ONLY_META,
       inputSchema: z.object({
         projectId: z.string(),

@@ -155,12 +155,19 @@ export async function upsertEnrichment(
   for (const [projectId, ids] of touched) {
     store.update((db) => setProjectCatalog(db, projectId))
     if (!projectIsSequenced(store, projectId)) continue
-    const before = new Set([...ids].filter((id) => enrolledAtOf(store.db.contacts.find((c) => c.id === id) ?? {}) != null))
+    const enrollIds = [...ids].filter((id) => {
+      const row = store.db.contacts.find((c) => c.id === id)
+      return row?.source !== 'hubspot'
+    })
+    if (!enrollIds.length) continue
+    const before = new Set(
+      enrollIds.filter((id) => enrolledAtOf(store.db.contacts.find((c) => c.id === id) ?? {}) != null)
+    )
     await enrollPublicSequence(store, config, orgId, projectId, {
-      contactIds: [...ids],
+      contactIds: enrollIds,
       sandbox: opts?.sandbox
     })
-    enrolled += [...ids].filter(
+    enrolled += enrollIds.filter(
       (id) => !before.has(id) && enrolledAtOf(store.db.contacts.find((c) => c.id === id) ?? {}) != null
     ).length
   }

@@ -615,7 +615,8 @@ export function registerJargonTools(
     if (input.status === 'queued' && !Number.isFinite(sendAt)) {
       return fail('sendAt is required when status is queued (unix ms or ISO date)')
     }
-    const willSend = (input.status ?? 'sent') === 'sent'
+    const status = input.status ?? 'draft'
+    const willSend = status === 'sent'
     const billableReason = input.channel === 'linkedin' ? 'linkedin' : 'email'
     let charge: Awaited<ReturnType<typeof chargeIfLive>> | null = null
     if (willSend) {
@@ -631,7 +632,7 @@ export function registerJargonTools(
       subject: input.subject,
       body: input.body,
       channel: input.channel,
-      status: input.status,
+      status,
       sandbox,
       sendAt: Number.isFinite(sendAt) ? sendAt : undefined,
       userId: actor.userId
@@ -706,7 +707,7 @@ export function registerJargonTools(
     {
       ...display('Send an email or LinkedIn message', HINTS.send),
       description:
-        'Send or draft email/LinkedIn. summary is the sentence on Claude\'s Allow card. Live login can send real email and spends credits.',
+        'Send or draft one email or LinkedIn message. summary is the sentence on Claude\'s Allow card. Omitting status saves a draft and does not send. Pass status sent only when the user asks to send that one message now. Do not use this to deliver a list that was just added. Auto-send is the user\'s switch on the email step, not this tool. A live send spends credits.',
       inputSchema: SendMessageInput
     },
     async (input) => execSendMessage(input)
@@ -1070,8 +1071,23 @@ export function registerJargonTools(
   })
   const SendDraftInput = z.object({ summary: Summary, messageId: z.string() })
 
-  async function execUpdateSequence(projectId: string, goal: string | undefined, steps: unknown) {
-    const result = updatePublicSequence(store, actor.orgId, projectId, { goal, steps })
+  function stripSendMode(steps: unknown): unknown {
+    if (!Array.isArray(steps)) return steps
+    return steps.map((step) => {
+      if (!step || typeof step !== 'object') return step
+      const { mode: _mode, ...rest } = step as { mode?: unknown }
+      return rest
+    })
+  }
+
+  async function execUpdateSequence(
+    projectId: string,
+    goal: string | undefined,
+    steps: unknown,
+    opts?: { fromApp?: boolean }
+  ) {
+    const saved = opts?.fromApp ? steps : stripSendMode(steps)
+    const result = updatePublicSequence(store, actor.orgId, projectId, { goal, steps: saved })
     if (!result.ok) return fail(result.error)
     return ok(result.sequence)
   }
@@ -1281,7 +1297,7 @@ export function registerJargonTools(
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Edit the sequence the user already has. Do not call deploy_tool or import_list for this — those create a second sequence. Use when the ladder does not match, or when they edit copy, subject, body, tone, or a talk track, or when a step should be only for specific people. summary is the sentence on Claude\'s Allow card. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. To put a step on specific people — a call for one person, a note for a few — pass contactIds on that step (ids or exact names). Omit contactIds on steps that stay on everyone. Pass contactIds as [] to put a limited step back on everyone. Do not put the person\'s name in the label instead. Per-person copy still goes to save_draft or save_research. Do not re-narrate the ladder in chat after updating.',
+        'Edit the sequence the user already has. Do not call deploy_tool or import_list for this — those create a second sequence. Use when the ladder does not match, or when they edit copy, subject, body, tone, or a talk track, or when a step should be only for specific people. summary is the sentence on Claude\'s Allow card. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. Do not pass mode. Auto-send is the user\'s switch on the email step. To put a step on specific people — a call for one person, a note for a few — pass contactIds on that step (ids or exact names). Omit contactIds on steps that stay on everyone. Pass contactIds as [] to put a limited step back on everyone. Do not put the person\'s name in the label instead. Per-person copy still goes to save_draft or save_research. Do not re-narrate the ladder in chat after updating.',
       inputSchema: UpdateSequenceInput
     },
     async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)
@@ -1295,7 +1311,7 @@ export function registerJargonTools(
       _meta: APP_ONLY_META,
       inputSchema: UpdateSequenceInput.omit({ summary: true })
     },
-    async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)
+    async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps, { fromApp: true })
   )
 
   server.registerTool(
@@ -1303,7 +1319,7 @@ export function registerJargonTools(
     {
       ...display('Start sending the cadence', HINTS.send),
       description:
-        'Enroll people who are already in this workspace into the sequence and open it in the chat. Use this when the user says to enroll these people and they are already contacts here, including at the end of a scheduled run. Never call this before save_research has written their copy. Do not also call show_tasks or show_email_workspace. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. HubSpot contacts added from a list are not enrolled by enroll_hubspot — call start_sequence only when the user asks to enroll them. Their emails stay drafts. Do not call send_message to deliver a pulled list. Do not tell the user to enroll from the app.',
+        'Enroll people who are already in this workspace into the sequence and open it in the chat. Use this when the user says to enroll these people and they are already contacts here, including at the end of a scheduled run. Never call this before save_research has written their copy. Do not also call show_tasks or show_email_workspace. summary is the sentence on Claude\'s Allow card. Pass contactIds to enroll a subset. Enrolling does not send email. Mail stays a draft unless the user has turned Auto-send on for that step. Do not call send_message to deliver a list. Do not tell the user to enroll from the app.',
       inputSchema: StartSequenceInput,
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -1326,7 +1342,7 @@ export function registerJargonTools(
     {
       ...display('Enroll people from HubSpot', HINTS.send),
       description:
-        'Pull people from the connected HubSpot portal into this workspace. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". Does not enroll them and does not send email. A HubSpot list stays off the sequence until the user asks to enroll, and those emails stay drafts until someone sends them. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. Do not call send_message for these people. If you still need personalized copy, this does not open a workspace — call save_research next and do not call show_email_workspace or show_tasks. save_research does not enroll HubSpot contacts and does not send. If copy is already saved, this opens the sequence in the chat. Do not also call show_tasks.',
+        'Pull people from the connected HubSpot portal into this workspace and onto the sequence. summary is the sentence on Claude\'s Allow card. people is names, emails, or "all". This does not send email. Each email stays a draft unless the user has already turned Auto-send on for that step. Do not call send_message for these people. Do not turn auto-send on. If nextAction / pendingEnrichment says enrichment is still writing those fields, wait and retry — do not save_research on placeholder copy. If you still need personalized copy, this does not open a workspace — call save_research next and do not call show_email_workspace or show_tasks. If copy is already saved, this opens the sequence in the chat. Do not also call show_tasks.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),

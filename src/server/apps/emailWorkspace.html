@@ -1563,7 +1563,15 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
 
   async function openLinkedIn(contact) {
     if (!contact.linkedinUrl) { setNotice('No LinkedIn URL on this contact.', 'err'); return; }
-    await app.openLink({ url: contact.linkedinUrl });
+    // openLink leaves Claude for the system browser. This asks Claude to open its Browser pane.
+    const result = await app.sendMessage({
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `Open this LinkedIn profile in the Browser pane. Call navigate with this exact URL. Do not open an external browser or a separate window.\n${contact.linkedinUrl}`,
+      }],
+    });
+    if (result?.isError) setNotice('Could not open the profile in Claude.', 'err');
   }
 
   function renderOverflow() {

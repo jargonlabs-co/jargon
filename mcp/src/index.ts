@@ -327,7 +327,7 @@ function createServer(): McpServer {
     {
       ...display('Send an email or LinkedIn message', HINTS.send),
       description:
-        'Send (default) or draft an email/LinkedIn message. Live keys send real email. Always sends Idempotency-Key.',
+        'Send one email or LinkedIn message, or save a draft. Omitting status saves a draft and does not send. Pass status sent only when the user asks to send that one message now. Do not use this to deliver a list. Auto-send is the user\'s switch on the email step.',
       inputSchema: z.object({
         summary: Summary,
         contactId: z.string(),
@@ -341,7 +341,10 @@ function createServer(): McpServer {
     async ({ contactId, summary: _summary, ...body }) => {
       try {
         return toolResult(
-          await jargonFetch('POST', `/contacts/${contactId}/messages`, { body, idempotency: true })
+          await jargonFetch('POST', `/contacts/${contactId}/messages`, {
+            body: { ...body, status: body.status ?? 'draft' },
+            idempotency: true
+          })
         )
       } catch (err) {
         return toolError(err)

@@ -1382,7 +1382,9 @@ export function updatePublicSequence(
           ? ('auto' as const)
           : step.mode === 'manual'
             ? ('manual' as const)
-            : undefined
+            : prev?.channel === 'email'
+              ? prev.mode
+              : undefined
       const row = {
         id,
         orgId,
@@ -2016,8 +2018,8 @@ export async function enrollPublicSequence(
           continue
         }
         // Keep Claude's researched copy. Only attach the step and send day.
-        // A HubSpot list stays a draft even when the step is set to auto-send.
-        const auto = step.channel === 'email' && step.mode === 'auto' && contact.source !== 'hubspot'
+        // Auto-send queues mail only after the user turns that step on.
+        const auto = step.channel === 'email' && step.mode === 'auto'
         const patched = patchPublicMessage(store, orgId, existing.id, {
           stepId: step.id,
           sendAt: existing.sendAt ?? sendAt,
@@ -2033,7 +2035,7 @@ export async function enrollPublicSequence(
         if (patched.ok) created.push(patched.message)
         continue
       }
-      const auto = step.channel === 'email' && step.mode === 'auto' && contact.source !== 'hubspot'
+      const auto = step.channel === 'email' && step.mode === 'auto'
       const personalized = contact.lane === 'agent'
       const result = await sendPublicMessage(store, config, contact, {
         subject: personalized && step.subject ? mergeTemplate(step.subject, contact) : step.subject,
@@ -2399,19 +2401,33 @@ export async function enrollHubSpotContacts(
   if (!fitting.length) return { ok: false, error: `workspace can hold ${MAX_CONTACTS} contacts` }
   const upserted = upsertHubSpotProspects(store, orgId, projectId, fitting, lane)
   if (!upserted.ok) return upserted
+  const enrollIds = store.db.contacts
+    .filter((c) => {
+      if (!upserted.contactIds.includes(c.id)) return false
+      if (!byWarmth) return true
+      return warmth.includes(c.warmth ?? 'unknown')
+    })
+    .map((c) => c.id)
+  saveWorkspaceBrief(store, orgId, projectId, { lastSyncAt: Date.now() })
+  if (!enrollIds.length) return { ok: true, enrolled: 0, listed: upserted.contactIds.length, skipped: upserted.contactIds.length }
+  const started = await enrollPublicSequence(store, config, orgId, projectId, {
+    contactIds: enrollIds,
+    sandbox
+  })
+  if (!started.ok) return started
   saveWorkspaceBrief(store, orgId, projectId, { lastSyncAt: Date.now() })
   return {
     ok: true,
-    enrolled: 0,
+    enrolled: enrollIds.length,
     listed: upserted.contactIds.length,
-    skipped: 0
+    skipped: upserted.contactIds.length - enrollIds.length
   }
 }
 
-/** People a deploy or save may enroll on its own. A HubSpot list is added only. */
+/** People a deploy or save may enroll on its own. Mail stays a draft unless that step's auto-send is on. */
 function contactsForAutomaticEnroll(store: DataStore, orgId: string, projectId: string): string[] {
   return store.db.contacts
-    .filter((c) => c.orgId === orgId && c.projectId === projectId && c.source !== 'hubspot')
+    .filter((c) => c.orgId === orgId && c.projectId === projectId)
     .map((c) => c.id)
 }
 
@@ -2452,23 +2468,6 @@ export function promoteReadyAgentContacts(store: DataStore, orgId: string, proje
   if (!ids.length) return []
   const result = promoteToRep(store, orgId, ids)
   return result.ok ? result.promoted : []
-}
-
-export function holdQueuedHubSpotEmail(store: DataStore): number {
-  const now = Date.now()
-  let held = 0
-  store.update((db) => {
-    const hubspot = new Set(db.contacts.filter((c) => c.source === 'hubspot').map((c) => c.id))
-    if (!hubspot.size) return
-    for (const message of db.messages) {
-      if (message.channel !== 'email' || message.status !== 'queued') continue
-      if (!hubspot.has(message.contactId)) continue
-      message.status = 'draft'
-      message.updatedAt = now
-      held += 1
-    }
-  })
-  return held
 }
 
 export async function dispatchDueMessages(

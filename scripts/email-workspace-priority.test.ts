@@ -199,6 +199,7 @@ describe('a build opens one workspace', () => {
   it('does not render the template sequence before personalized copy is saved', async () => {
     assert.equal(/After a sequence is created, keep the user in Claude \(show_email_workspace/i.test(JARGON_MCP_INSTRUCTIONS), false)
     assert.match(JARGON_MCP_INSTRUCTIONS, /save_research enrolls everyone and opens the one workspace/)
+    assert.match(JARGON_MCP_INSTRUCTIONS, /LinkedIn profiles stay in Claude's Browser pane/)
     assert.match(JARGON_MCP_INSTRUCTIONS, /Do not call show_email_workspace, show_tasks, or get_sequence to preview the template/)
 
     const db = emptyDb()

@@ -4,7 +4,7 @@ import { describe, it } from 'node:test'
 import { updatePublicSequence } from '../src/server/publicApi.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Message, Project, SequenceStep } from '../src/server/types.ts'
-import { buildWorkspaceTasks } from '../src/server/workspaceTasks.ts'
+import { buildWorkspaceTasks, nextOpenTasksByContact } from '../src/server/workspaceTasks.ts'
 import { motionComplete, nextChannel } from '../src/shared/workspaceSpec.ts'
 
 function emptyDb(): Database {
@@ -127,6 +127,8 @@ describe('a step can belong to specific contacts', () => {
     const taraCall = tasks.find((task) => task.contactId === 'tara' && task.channel === 'call')
     assert.deepEqual(andrewTasks.map((task) => task.channel), ['email'])
     assert.equal(taraCall?.state, 'due')
+    const open = nextOpenTasksByContact(tasks).map((task) => `${task.contactId}:${task.channel}`).sort()
+    assert.deepEqual(open, ['andrew:email', 'tara:call', 'tara:email'])
     assert.equal(taraCall?.reason, undefined)
     assert.equal(
       nextChannel(andrew, {

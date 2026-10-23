@@ -386,6 +386,25 @@ describe('a build opens one workspace', () => {
     assert.equal(kept.some((task) => task.contactId === 'c0' && task.state === 'due'), true)
   })
 
+  it('keeps a later call to-do when an earlier email is the other channel', () => {
+    const contacts = [
+      { id: 'tara', name: 'Tara Debek', email: 'tara@acme.test', company: 'Acme', title: 'Founder' },
+      { id: 'andrew', name: 'Andrew Suh', email: 'andrew@acme.test', company: 'Acme', title: 'AE' }
+    ]
+    const tasks = [
+      { id: 'tara-email', contactId: 'tara', channel: 'email', state: 'due', owner: 'user', dueAt: 1, stepOrder: 0, body: 'email '.repeat(800) },
+      { id: 'tara-email-2', contactId: 'tara', channel: 'email', state: 'scheduled', owner: 'user', dueAt: 50, stepOrder: 2, body: 'follow '.repeat(800) },
+      { id: 'tara-call', contactId: 'tara', channel: 'call', state: 'scheduled', owner: 'user', dueAt: 10, stepOrder: 1, body: 'call '.repeat(800) },
+      { id: 'andrew-email', contactId: 'andrew', channel: 'email', state: 'due', owner: 'user', dueAt: 1, stepOrder: 0, body: 'email '.repeat(800) }
+    ]
+    const fitted = fitWorkspaceView({ projectId: 'proj_1', contacts, tasks, messages: [] }, 8_000)
+    const kept = new Set((fitted.tasks as { id: string }[]).map((task) => task.id))
+    assert.equal(kept.has('tara-email'), true)
+    assert.equal(kept.has('tara-call'), true)
+    assert.equal(kept.has('andrew-email'), true)
+    assert.equal(kept.has('tara-email-2'), false)
+  })
+
   it('opens the sequence when a scheduled enroll starts people who already have copy', async () => {
     const db = emptyDb()
     db.projects.push({

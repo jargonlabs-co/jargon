@@ -21,16 +21,17 @@ function task(partial: Partial<WorkspaceTask> & Pick<WorkspaceTask, 'id' | 'cont
 }
 
 describe('nextOpenTasksByContact', () => {
-  it('keeps one soonest open task per contact', () => {
+  it('keeps the soonest open task of each channel for each contact', () => {
     const tasks = [
       task({ id: 'keith-email', contactId: 'keith', dueAt: 20, stepOrder: 0, channel: 'email' }),
+      task({ id: 'keith-email-2', contactId: 'keith', dueAt: 40, stepOrder: 3, channel: 'email' }),
       task({ id: 'keith-call', contactId: 'keith', dueAt: 22, stepOrder: 1, channel: 'call' }),
       task({ id: 'keith-li', contactId: 'keith', dueAt: 25, stepOrder: 2, channel: 'linkedin' }),
       task({ id: 'priya-call', contactId: 'priya', dueAt: 18, stepOrder: 1, channel: 'call' }),
       task({ id: 'priya-email', contactId: 'priya', dueAt: 10, stepOrder: 0, channel: 'email', state: 'done', bucket: 'done' })
     ]
     const next = nextOpenTasksByContact(tasks)
-    assert.deepEqual(next.map((t) => t.id).sort(), ['keith-email', 'priya-call'])
+    assert.deepEqual(next.map((t) => t.id).sort(), ['keith-call', 'keith-email', 'keith-li', 'priya-call'])
   })
 
   it('ignores auto and skipped steps', () => {
@@ -117,5 +118,6 @@ describe('to-do list advances after a task is finished', () => {
     assert.match(html, /class="todo \$\{done \? 'done' : ''\}/)
     assert.match(html, /Just completed/)
     assert.match(html, /justCompletedId = snapshot\.finishedId/)
+    assert.match(html, /\$\{task\.contactId\}:\$\{task\.channel\}/)
   })
 })

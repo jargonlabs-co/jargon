@@ -2692,13 +2692,14 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   function nextTaskByContact(tasks) {
     const best = new Map();
     for (const task of tasks) {
-      const prev = best.get(task.contactId);
+      const key = `${task.contactId}:${task.channel}`;
+      const prev = best.get(key);
       if (
         !prev ||
         task.dueAt < prev.dueAt ||
         (task.dueAt === prev.dueAt && Number(task.stepOrder || 0) < Number(prev.stepOrder || 0))
       ) {
-        best.set(task.contactId, task);
+        best.set(key, task);
       }
     }
     const next = [...best.values()];

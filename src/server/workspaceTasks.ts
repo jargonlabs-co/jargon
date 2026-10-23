@@ -223,7 +223,6 @@ export function buildWorkspaceTasks(input: {
   return tasks.sort((a, b) => a.dueAt - b.dueAt || a.contactName.localeCompare(b.contactName))
 }
 
-/** One open to-do per contact: the soonest step still assigned to the rep. */
 /** Keep an open call step dialable and attach a note (for example do-not-call). */
 export function annotateOpenCallNotes(
   tasks: WorkspaceTask[],
@@ -238,17 +237,19 @@ export function annotateOpenCallNotes(
   })
 }
 
+/** One open to-do per contact per channel: the soonest step of that channel, not a later follow-up. */
 export function nextOpenTasksByContact(tasks: WorkspaceTask[]): WorkspaceTask[] {
   const best = new Map<string, WorkspaceTask>()
   for (const task of tasks) {
     if (task.owner === 'auto' || task.state === 'done' || task.state === 'skipped') continue
-    const prev = best.get(task.contactId)
+    const key = `${task.contactId}:${task.channel}`
+    const prev = best.get(key)
     if (
       !prev ||
       task.dueAt < prev.dueAt ||
       (task.dueAt === prev.dueAt && task.stepOrder < prev.stepOrder)
     ) {
-      best.set(task.contactId, task)
+      best.set(key, task)
     }
   }
   return [...best.values()]

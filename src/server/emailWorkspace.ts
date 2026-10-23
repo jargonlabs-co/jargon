@@ -440,19 +440,21 @@ function slimTask(task: unknown, bodyMax: number): unknown {
   return next
 }
 
-/** The to-do the rep would open for each person: soonest open step, not a later one. */
+/** The to-do the rep would open for each person on each channel. A later call stays even when an email is due first. */
 function nextOpenTaskIds(tasks: unknown[]): Set<string> {
   const best = new Map<string, Record<string, unknown>>()
   for (const task of tasks) {
     const row = viewRow(task)
     if (!row || typeof row.contactId !== 'string' || typeof row.id !== 'string') continue
     if (row.owner === 'auto' || row.state === 'done' || row.state === 'skipped') continue
-    const prev = best.get(row.contactId)
+    const channel = typeof row.channel === 'string' ? row.channel : ''
+    const key = `${row.contactId}:${channel}`
+    const prev = best.get(key)
     const due = Number(row.dueAt || 0)
     const order = Number(row.stepOrder || 0)
     const prevDue = Number(prev?.dueAt || 0)
     const prevOrder = Number(prev?.stepOrder || 0)
-    if (!prev || due < prevDue || (due === prevDue && order < prevOrder)) best.set(row.contactId, row)
+    if (!prev || due < prevDue || (due === prevDue && order < prevOrder)) best.set(key, row)
   }
   return new Set([...best.values()].map((row) => String(row.id)))
 }

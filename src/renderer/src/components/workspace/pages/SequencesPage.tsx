@@ -94,6 +94,13 @@ export function SequencesPage({ bundle, onWorkTasks, onStartSequence }: Props) {
                   </td>
                   <td>
                     <strong>{s.label}</strong>
+                    {s.contactIds?.length ? (
+                      <div className="muted">
+                        {s.contactIds
+                          .map((id) => bundle.contacts.find((c) => c.id === id)?.name || id)
+                          .join(', ')}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="muted">{s.subject ?? '—'}</td>
                 </tr>

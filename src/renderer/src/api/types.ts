@@ -32,6 +32,8 @@ export interface WorkspaceSpecStep {
   subject?: string
   body?: string
   mode?: 'manual' | 'auto'
+  /** When set, only these contacts get the step. */
+  contactIds?: string[]
 }
 
 export interface WorkspaceSpec {
@@ -125,6 +127,8 @@ export interface SequenceStep {
   label: string
   subject?: string
   body?: string
+  /** When set, only these contacts get the step. */
+  contactIds?: string[]
   order: number
 }
 

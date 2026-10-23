@@ -26,7 +26,15 @@ import {
   rankLeads,
   type LeadPriority
 } from '../shared/priorityOverlay'
-import { inferMcpDefaultTab, inferMcpSurface, motionComplete, nextChannel, type McpSurface, type McpTab } from '../shared/workspaceSpec'
+import {
+  inferMcpDefaultTab,
+  inferMcpSurface,
+  motionComplete,
+  nextChannel,
+  stepIncludesContact,
+  type McpSurface,
+  type McpTab
+} from '../shared/workspaceSpec'
 import {
   annotateOpenCallNotes,
   buildWorkspaceTasks,
@@ -229,13 +237,28 @@ export function getEmailWorkspace(
       channel: s.channel,
       label: s.label,
       subject: s.subject,
-      body: s.body
+      body: s.body,
+      ...(s.contactIds?.length ? { contactIds: s.contactIds } : {})
     })),
     kind: project.kind
   }
-  const emailStep = steps.find((step) => step.channel === 'email')
-  const linkedinStep = steps.find((step) => step.channel === 'linkedin')
+  const motionSpec = {
+    ...spec,
+    steps: steps.length
+      ? steps.map((step) => ({
+          day: step.day,
+          channel: step.channel,
+          label: step.label,
+          subject: step.subject,
+          body: step.body,
+          ...(step.mode ? { mode: step.mode } : {}),
+          ...(step.contactIds?.length ? { contactIds: step.contactIds } : {})
+        }))
+      : spec.steps
+  }
   const contacts: WorkspaceContact[] = listed.contacts.map((contact) => {
+    const emailStep = steps.find((step) => step.channel === 'email' && stepIncludesContact(step, contact))
+    const linkedinStep = steps.find((step) => step.channel === 'linkedin' && stepIncludesContact(step, contact))
     const preview = emailStep
       ? {
           subject: interpolateTemplate(emailStep.subject ?? '', contact),
@@ -249,7 +272,7 @@ export function getEmailWorkspace(
       ...contact,
       preview,
       linkedinPreview,
-      nextChannel: nextChannel(contact, spec),
+      nextChannel: nextChannel(contact, motionSpec),
       priority: priorityById.get(contact.id)
     }
   })
@@ -295,7 +318,7 @@ export function getEmailWorkspace(
     focus: opts?.focus,
     enrolled: taskStats.enrolled > 0
   })
-  const remaining = contacts.filter((c) => !motionComplete(c, spec)).length
+  const remaining = contacts.filter((c) => !motionComplete(c, motionSpec)).length
   const priorityPipeline = isPriorityPipelinePrompt(project.prompt || '')
   const researchPending = !priorityPipeline && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const schedulePending =
@@ -982,6 +1005,7 @@ Ownership — do not compete with Jargon on structure:
 - NEVER write a multi-day sequence outline, day ladder, or step-by-step cadence plan in chat. Do not invent or narrate "Day 0… Day 10" copy for the user to read as the sequence.
 - Jargon owns cadence structure via import_list / deploy_tool / update_sequence. After a sequence exists, researched per-person copy is save_research. Edits to that sequence are update_sequence on the same projectId.
 - If the user edits the sequence they already have — copy, subject, body, talk track, tone, wording, or the ladder — call update_sequence on that projectId. Pass every step with day, channel, label, subject, and body. The subject and body you pass are what the sequence stores. Do not call deploy_tool or import_list for an edit. Those create a second sequence and leave the rewrite off the one they asked about. Do not leave the rewrite only in chat. save_research does not change the sequence steps.
+- A step is on everyone enrolled unless that step has contactIds. When the user wants a step for specific people, pass contactIds on that step only (contact ids or exact names). Omit contactIds on the other steps. Do not put the person's name in the label instead of contactIds. Pass contactIds as an empty array to put that step back on everyone.
 - If the user asks for N steps or touchpoints over D days (or an explicit day ladder) on a new sequence, put that ask in the import/deploy workspace text and let Jargon build the steps. Read the returned steps. If they do not match, call update_sequence on that same project with the full ladder, including subject and body when they gave wording — do not re-paste the plan into chat.
 
 - User provides a list (another Claude connector, CSV, pasted table) and asks for a dialer, sequencer, cadence, or LinkedIn motion.

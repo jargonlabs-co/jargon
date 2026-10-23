@@ -347,6 +347,17 @@
     .step-card textarea { min-height: 160px; flex: 1; }
     .mode-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
     .mode-toggle button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .audience { margin: 0 0 12px; }
+    .audience .sub { margin: 0 0 8px; }
+    .person-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .person-row select {
+      border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+      padding: 5px 8px; min-width: 160px;
+    }
+    .person-chip button {
+      border: 0; background: transparent; cursor: pointer; color: inherit;
+      font: inherit; padding: 0 0 0 4px;
+    }
     .token-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
     .token {
       border: 0; background: var(--tint); color: var(--accent); border-radius: 999px;
@@ -384,10 +395,25 @@
       position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
     }
-    .todo.done .title, .todo.done .preview, .todo.done .signal { color: var(--muted); }
+    .todo.done .title, .todo.done .preview, .todo.done .signal {
+      color: var(--muted);
+      text-decoration: line-through;
+      text-decoration-thickness: 1px;
+    }
     .todo-work { margin: 4px 0 8px; }
     .todo-due { text-align: right; color: #17663a; font-size: 12.5px; font-weight: 650; }
     .todo-due span { display: block; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+    .todo-due .just-done {
+      display: inline-block;
+      color: #17663a;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+      border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+      background: color-mix(in srgb, var(--ok) 12%, var(--bg));
+      border-radius: 999px;
+      padding: 3px 8px;
+      text-decoration: none;
+    }
     .work-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .who { font-size: 13px; font-weight: 650; }
     .hs {
@@ -758,6 +784,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   let adminSelectedId = null;
   let selectedTaskId = null;
   let checkedIds = new Set();
+  let justCompletedId = null;
   let pinnedOrder = [];
   let scrollTaskId = null;
   let dialState = 'idle';
@@ -957,7 +984,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
           );
         }
       }
-      return {
+      const next = {
         day: Number(step.day || 0),
         channel: step.channel,
         label: step.label,
@@ -965,6 +992,8 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         body: nextBody,
         mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
       };
+      if (Array.isArray(step.contactIds)) next.contactIds = step.contactIds.filter(Boolean);
+      return next;
     });
     busy = true; render();
     if (draftWrites.length) await Promise.all(draftWrites);
@@ -1587,9 +1616,54 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     `;
   }
 
+  function audienceLabel(step) {
+    const ids = Array.isArray(step?.contactIds) ? step.contactIds.filter(Boolean) : [];
+    if (!ids.length) return '';
+    const names = ids.map((id) => {
+      const person = (ws?.contacts || []).find((c) => c.id === id)
+        || (ws?.contacts || []).find((c) => String(c.name || '').toLowerCase() === String(id).toLowerCase());
+      return person?.name || id;
+    });
+    if (names.length <= 3) return names.join(', ');
+    return `${names.length} people`;
+  }
+
+  function audienceFields(step) {
+    if (!step) return '';
+    const people = ws?.contacts || [];
+    if (!people.length) return '';
+    const ids = Array.isArray(step.contactIds) ? step.contactIds.filter(Boolean) : [];
+    const limited = ids.length > 0;
+    const chips = ids.map((id) => {
+      const person = people.find((c) => c.id === id)
+        || people.find((c) => String(c.name || '').toLowerCase() === String(id).toLowerCase());
+      const label = person?.name || id;
+      const value = person?.id || id;
+      return `<span class="chip person-chip">${esc(label)}<button type="button" data-remove-person="${esc(value)}" data-step-id="${esc(step.id || '')}" aria-label="Remove ${esc(label)}">×</button></span>`;
+    }).join('');
+    const options = people
+      .filter((c) => !ids.includes(c.id) && !ids.some((id) => String(id).toLowerCase() === String(c.name || '').toLowerCase()))
+      .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
+      .join('');
+    return `
+      <div class="audience">
+        <label>People</label>
+        <p class="sub">${limited ? 'Only these people get this step.' : 'Everyone enrolled gets this step. Add someone to limit it to them.'}</p>
+        <div class="person-row">
+          ${chips}
+          ${options ? `<select id="add-person" data-step-id="${esc(step.id || '')}"><option value="">Add a person</option>${options}</select>` : ''}
+          ${limited ? `<button type="button" class="btn" id="audience-everyone" data-step-id="${esc(step.id || '')}">Everyone</button>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
   function stepCard(step, i) {
     const title = step.label || `${channelLabel(step.channel)} ${i + 1}`;
-    const preview = oneLine(step.subject || step.body) || (step.channel === 'call' ? 'Talk track from the queue' : 'No copy yet');
+    const who = audienceLabel(step);
+    const preview = who
+      ? `Only ${who}`
+      : oneLine(step.subject || step.body) || (step.channel === 'call' ? 'Talk track from the queue' : 'No copy yet');
     const ico = step.channel === 'call' ? ICO.phone : step.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
     const st = (ws.stepStats || []).find((row) => row.stepId === step.id);
     const counts = st && (st.sent || st.drafted || st.due)
@@ -1697,9 +1771,16 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function renderDialer(step, preferContact) {
-    const people = ws.contacts || [];
+    const limit = Array.isArray(step?.contactIds) ? step.contactIds.filter(Boolean) : [];
+    const allPeople = ws.contacts || [];
+    const people = !limit.length
+      ? allPeople
+      : allPeople.filter((c) =>
+          limit.includes(c.id) || limit.some((id) => String(id).toLowerCase() === String(c.name || '').toLowerCase())
+        );
     const liveSession = dialState === 'dialing' || dialState === 'connected';
-    const contact = (liveSession && dialerContact()) || preferContact || dialerContact();
+    let contact = (liveSession && dialerContact()) || preferContact || dialerContact();
+    if (limit.length && contact && !people.some((c) => c.id === contact.id)) contact = people[0] || null;
     seedDialDigits(contact);
     const number = dialerNumber();
     const ended = dialEndedFor(contact?.id);
@@ -1801,6 +1882,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
           <strong>Email ${selectedStep + 1}${steps.length > 1 ? ` of ${steps.length}` : ''}</strong>
         </div>
         <p class="sub">Shared fallback. Personalized drafts per contact win when you start the sequence.</p>
+        ${audienceFields(step)}
         <label>Send on day</label>
         ${filledInput('edit-day', step.day)}
         <label>Label</label>
@@ -2061,15 +2143,16 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const signal = signalLine(contact);
     const who = [task.contactName, contact?.title, contact?.company].filter(Boolean).join(' · ');
     const done = isChecked(task);
+    const just = task.id === justCompletedId;
     return `
-      <button type="button" class="todo ${done ? 'done' : ''} ${!done && task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
+      <button type="button" class="todo ${done ? 'done' : ''} ${just ? 'just' : ''} ${!done && task.id === selectedTaskId ? 'on' : ''}" data-task="${esc(task.id)}">
         <span class="box" ${done ? '' : `data-skip="${esc(task.id)}" title="Skip"`}></span>
         <span>
           <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
           <div class="preview">${esc(who || task.contactName)}</div>
           ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
         </span>
-        <span class="todo-due"><span>${done ? 'Done' : esc(taskTitle(task))}</span>${done ? '' : esc(dueDate(task))}</span>
+        <span class="todo-due">${just ? '<span class="just-done">Just completed</span>' : `<span>${done ? 'Done' : esc(taskTitle(task))}</span>${done ? '' : esc(dueDate(task))}`}</span>
       </button>
     `;
   }
@@ -2304,6 +2387,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   function finishAndAdvance(snapshot) {
     if (!snapshot?.finishedId) return;
     checkedIds.add(snapshot.finishedId);
+    justCompletedId = snapshot.finishedId;
     const previousChannel = taskChannel;
     taskChannel = 'all';
     const openIds = channelTasks().map((t) => t.id);
@@ -2316,7 +2400,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       if (taskChannel !== 'all' && next.channel !== taskChannel) taskChannel = 'all';
       selectTask(next);
       workFocus = true;
-      scrollTaskId = next.id;
+      scrollTaskId = snapshot.finishedId;
       return;
     }
     selectedTaskId = null;
@@ -2576,6 +2660,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     selectedMessageId = null;
     selectedTaskId = null;
     checkedIds = new Set();
+    justCompletedId = null;
     pinnedOrder = [];
     scrollTaskId = null;
     taskFilter = 'open';
@@ -2652,7 +2737,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         ${i ? `<div class="rail-line"></div>${wait > 0 ? `<div class="rail-wait">Wait ${wait} day${wait === 1 ? '' : 's'}</div><div class="rail-line"></div>` : ''}` : ''}
         <button type="button" class="rail-step ${i === selectedStep ? 'on' : ''}" data-step="${i}">
           <span class="rail-ico">${ico}</span>
-          <span class="rail-name">${esc(stepKind(s))}</span>
+          <span class="rail-name">${esc(audienceLabel(s) ? `${stepKind(s)} · ${audienceLabel(s)}` : stepKind(s))}</span>
         </button>
       `;
     }).join('');
@@ -2669,6 +2754,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
           </div>
           <p class="sub">${step.mode === 'auto' ? 'Sends on day ' + Number(step.day || 0) + ' without a to-do.' : 'Becomes a to-do assigned to you.'}</p>
         ` : `<p class="sub">Becomes a to-do assigned to you. You place the ${step.channel === 'call' ? 'call' : 'LinkedIn note'} from To-dos.</p>`}
+        ${audienceFields((draftSteps.length ? draftSteps : (ws.steps || []))[selectedStep] || step)}
         <label>Day</label>
         ${filledInput('edit-day', step.day)}
         <label>Label</label>
@@ -3031,7 +3117,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     if (scrollTaskId) {
       const id = scrollTaskId;
       scrollTaskId = null;
-      root.querySelector(`[data-task="${String(id).replace(/"/g, '')}"]`)?.scrollIntoView({ block: 'center' });
+      root.querySelector(`[data-task="${String(id).replace(/"/g, '')}"]`)?.scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -3159,6 +3245,40 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     root.querySelector('#dial-who')?.addEventListener('change', (e) => {
       resetDialer(e.target.value);
       selectedId = dialContactId;
+      render();
+    });
+    root.querySelector('#add-person')?.addEventListener('change', (e) => {
+      const id = e.target.value;
+      if (!id) return;
+      flushEditor();
+      const step = draftSteps.find((s) => s.id === e.target.getAttribute('data-step-id')) || draftSteps[selectedStep];
+      if (!step) return;
+      const ids = Array.isArray(step.contactIds) ? step.contactIds.filter((value) => value && value !== id) : [];
+      ids.push(id);
+      step.contactIds = ids;
+      render();
+    });
+    root.querySelectorAll('[data-remove-person]').forEach((el) => el.addEventListener('click', () => {
+      flushEditor();
+      const step = draftSteps.find((s) => s.id === el.getAttribute('data-step-id')) || draftSteps[selectedStep];
+      if (!step) return;
+      const removeId = el.getAttribute('data-remove-person');
+      const person = (ws.contacts || []).find((c) => c.id === removeId);
+      step.contactIds = (step.contactIds || []).filter((entry) => {
+        if (entry === removeId) return false;
+        if (!person) return true;
+        const raw = String(entry).trim().toLowerCase();
+        return raw !== String(person.name || '').trim().toLowerCase()
+          && raw !== String(person.email || '').trim().toLowerCase()
+          && entry !== person.id;
+      });
+      render();
+    }));
+    root.querySelector('#audience-everyone')?.addEventListener('click', (e) => {
+      flushEditor();
+      const step = draftSteps.find((s) => s.id === e.currentTarget.getAttribute('data-step-id')) || draftSteps[selectedStep];
+      if (!step) return;
+      step.contactIds = [];
       render();
     });
     root.querySelector('#save-seq')?.addEventListener('click', saveSequence);

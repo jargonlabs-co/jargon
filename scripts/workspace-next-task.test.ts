@@ -113,6 +113,9 @@ describe('to-do list advances after a task is finished', () => {
       assert.match(body, /reload\(\{ silent: true \}\)/)
     }
     assert.match(html, /\.todo\.done \.box/)
+    assert.match(html, /\.todo\.done \.title[\s\S]*text-decoration: line-through/)
     assert.match(html, /class="todo \$\{done \? 'done' : ''\}/)
+    assert.match(html, /Just completed/)
+    assert.match(html, /justCompletedId = snapshot\.finishedId/)
   })
 })

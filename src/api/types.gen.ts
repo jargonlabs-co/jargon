@@ -467,6 +467,8 @@ export interface components {
             label: string;
             subject?: string;
             body?: string;
+            /** Only these contacts get this step. Ids or exact names. Omit for everyone. Empty puts the step back on everyone. */
+            contactIds?: string[];
         };
         WorkspaceSpec: {
             goal: string;
@@ -695,6 +697,8 @@ export interface components {
             subject?: string;
             body?: string;
             order: number;
+            /** Only these contacts get this step. Absent means everyone enrolled. */
+            contactIds?: string[];
         };
         QueueNext: {
             contact: components["schemas"]["Contact"] | null;

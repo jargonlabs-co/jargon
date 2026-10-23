@@ -16,6 +16,7 @@ Return a JSON object with any of:
 
 Rules:
 - Honor explicit day ladders and channel order from the prompt ("day 0 email, day 3 call…").
+- A step may include contactIds (exact names) when only those people should get it. Omit contactIds when the step is for the whole list.
 - Honor step counts and spans ("7 steps over 10 days", "5 touchpoints over 14 days", "4 emails and 1 call across 3 weeks") — emit that many steps spaced across day 0…span (cap at 8). Rotate the requested channels; when the prompt counts each channel, follow those counts instead of an even split.
 - Dialer / power dial / phone-first → channels include call; primarySurface "dial"; kind "dialer".
 - Email sequencer / drip → email; primarySurface "sequence"; kind "sequencer".

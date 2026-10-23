@@ -5,6 +5,7 @@ import type {
   Database,
   SequenceStep
 } from './types'
+import { stepIncludesContact } from '../shared/workspaceSpec'
 
 /** Statuses that still belong in the outbound queue. */
 export const QUEUE_STATUSES: ContactStatus[] = ['queued', 'active', 'no_answer']
@@ -66,7 +67,7 @@ export function currentStepForContact(
   db: Database,
   contact: Contact
 ): SequenceStep | null {
-  const steps = stepsForProject(db, contact.projectId)
+  const steps = stepsForProject(db, contact.projectId).filter((step) => stepIncludesContact(step, contact))
   if (!steps.length) return null
   const idx = Math.min(Math.max(contact.stepIndex, 0), steps.length - 1)
   return steps[idx] ?? null

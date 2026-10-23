@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Channel, Contact, ProjectBundle } from '../../../api/client'
 import {
   channelLabel,
+  channelsForContact,
   hasChannel,
   motionComplete,
   nextChannel,
@@ -208,7 +209,7 @@ export function TodayQueuePage({
                   <span className={`pill status-${c.status}`}>{progressLabel(c, spec)}</span>
                 </td>
                 <td className="today-actions">
-                  {hasChannel(spec, 'email') ? (
+                  {channelsForContact(c, spec).includes('email') ? (
                     <button
                       type="button"
                       disabled={(c.channelsDone ?? []).includes('email')}
@@ -217,7 +218,7 @@ export function TodayQueuePage({
                       {(c.channelsDone ?? []).includes('email') ? 'Emailed' : 'Email'}
                     </button>
                   ) : null}
-                  {hasChannel(spec, 'call') ? (
+                  {channelsForContact(c, spec).includes('call') ? (
                     <button
                       type="button"
                       disabled={(c.channelsDone ?? []).includes('call')}
@@ -226,7 +227,7 @@ export function TodayQueuePage({
                       {(c.channelsDone ?? []).includes('call') ? 'Called' : 'Call'}
                     </button>
                   ) : null}
-                  {hasChannel(spec, 'linkedin') ? (
+                  {channelsForContact(c, spec).includes('linkedin') ? (
                     <button
                       type="button"
                       disabled={(c.channelsDone ?? []).includes('linkedin')}

@@ -1,5 +1,6 @@
 import type { Channel, ContactStatus, MessageStatus } from './types'
 import type { PublicCall, PublicContact, PublicMessage, PublicStep } from './publicApi'
+import { stepIncludesContact } from '../shared/workspaceSpec'
 
 const DAY_MS = 86_400_000
 
@@ -90,6 +91,7 @@ export function buildWorkspaceTasks(input: {
     let callIndex = 0
 
     for (const step of steps) {
+      if (!stepIncludesContact(step, contact)) continue
       const firstOfChannel = !seenChannels.has(step.channel)
       seenChannels.add(step.channel)
       const dueAt = anchor + Math.max(0, step.day) * DAY_MS

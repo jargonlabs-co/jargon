@@ -83,6 +83,8 @@ export interface WorkspaceSpecStep {
   body?: string
   /** Email steps only. Auto queues the send; manual becomes a task. */
   mode?: StepSendMode
+  /** When set, only these contacts get the step. Absent or empty means everyone enrolled. Ids or exact names. */
+  contactIds?: string[]
 }
 
 export interface WorkspaceSpec {
@@ -286,6 +288,8 @@ export interface SequenceStep {
   body?: string
   /** Email steps only. Missing means manual. */
   mode?: 'manual' | 'auto'
+  /** When set, only these contacts get the step. Absent or empty means everyone enrolled. */
+  contactIds?: string[]
   order: number
 }
 

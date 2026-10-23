@@ -373,7 +373,13 @@ export function registerJargonTools(
       .string()
       .optional()
       .describe('Email body, LinkedIn note, or call talk track stored on this sequence step. When the user edits copy, pass the rewritten text here.'),
-    mode: z.enum(['manual', 'auto']).optional()
+    mode: z.enum(['manual', 'auto']).optional(),
+    contactIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Only these people get this step. Contact ids or exact names. Omit to leave the current audience. Pass [] to put the step back on everyone.'
+      )
   })
 
   const ImportListInput = z.object({
@@ -1275,7 +1281,7 @@ export function registerJargonTools(
     {
       ...display('Rewrite the cadence steps', HINTS.overwrite),
       description:
-        'Edit the sequence the user already has. Do not call deploy_tool or import_list for this — those create a second sequence. Use when the ladder does not match, or when they edit copy, subject, body, tone, or a talk track. summary is the sentence on Claude\'s Allow card. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. Per-person variants still go to save_draft or save_research after the sequence steps have the new copy. Do not re-narrate the ladder in chat after updating.',
+        'Edit the sequence the user already has. Do not call deploy_tool or import_list for this — those create a second sequence. Use when the ladder does not match, or when they edit copy, subject, body, tone, or a talk track, or when a step should be only for specific people. summary is the sentence on Claude\'s Allow card. Pass every step. subject and body are the sequence copy and are what gets stored. A rewrite that stays in chat is not saved. To put a step on specific people — a call for one person, a note for a few — pass contactIds on that step (ids or exact names). Omit contactIds on steps that stay on everyone. Pass contactIds as [] to put a limited step back on everyone. Do not put the person\'s name in the label instead. Per-person copy still goes to save_draft or save_research. Do not re-narrate the ladder in chat after updating.',
       inputSchema: UpdateSequenceInput
     },
     async ({ projectId, goal, steps }) => execUpdateSequence(projectId, goal, steps)

@@ -170,23 +170,107 @@ export function hasChannel(spec: WorkspaceSpec, channel: Channel): boolean {
   return spec.channels.includes(channel)
 }
 
+/** A step with no audience is on every enrolled contact. Exact names match until they are stored as ids. */
+export function stepIncludesContact(
+  step: { contactIds?: string[] },
+  contact: { id?: string; name?: string; email?: string }
+): boolean {
+  const audience = (step.contactIds ?? []).map((entry) => entry.trim()).filter(Boolean)
+  if (!audience.length) return true
+  if (contact.id && audience.includes(contact.id)) return true
+  const name = contact.name?.trim().toLowerCase() ?? ''
+  const email = contact.email?.trim().toLowerCase() ?? ''
+  return audience.some((raw) => {
+    const entry = raw.toLowerCase()
+    return (email.length > 0 && entry === email) || (name.length > 0 && entry === name)
+  })
+}
+
+/** Channels this person has steps for. A step limited to someone else does not add its channel here. */
+export function channelsForContact(
+  contact: { id?: string; name?: string; email?: string },
+  spec: { channels: Channel[]; steps: Array<{ channel: Channel; contactIds?: string[] }> }
+): Channel[] {
+  if (!spec.steps.some((step) => step.contactIds?.some((id) => id.trim()))) return spec.channels
+  const out: Channel[] = []
+  for (const step of spec.steps) {
+    if (!stepIncludesContact(step, contact)) continue
+    if (!out.includes(step.channel)) out.push(step.channel)
+  }
+  return out
+}
+
+/** Turn contact ids, emails, or names on a step into contact ids. An empty list means everyone. */
+export function resolveStepAudience(
+  contacts: Array<{ id: string; name: string; email?: string }>,
+  raw: string[]
+): { ok: true; contactIds: string[] } | { ok: false; error: string } {
+  const ids: string[] = []
+  for (const entry of raw) {
+    const needle = entry.trim()
+    if (!needle) continue
+    const exactId = contacts.find((c) => c.id === needle)
+    if (exactId) {
+      ids.push(exactId.id)
+      continue
+    }
+    const lower = needle.toLowerCase()
+    const byEmail = contacts.filter((c) => (c.email ?? '').trim().toLowerCase() === lower)
+    if (byEmail.length > 1) return { ok: false, error: `${needle} matches more than one contact` }
+    if (byEmail.length === 1) {
+      ids.push(byEmail[0]!.id)
+      continue
+    }
+    const byName = contacts.filter((c) => c.name.trim().toLowerCase() === lower)
+    if (byName.length > 1) return { ok: false, error: `${needle} matches more than one contact` }
+    if (byName.length === 1) {
+      ids.push(byName[0]!.id)
+      continue
+    }
+    const byToken =
+      lower.length >= 2
+        ? contacts.filter((c) =>
+            c.name
+              .trim()
+              .toLowerCase()
+              .split(/\s+/)
+              .includes(lower)
+          )
+        : []
+    if (byToken.length > 1) {
+      return { ok: false, error: `${needle} matches more than one contact. Pass the contact id.` }
+    }
+    if (byToken.length === 1) {
+      ids.push(byToken[0]!.id)
+      continue
+    }
+    return { ok: false, error: `No contact named ${needle} in this workspace` }
+  }
+  return { ok: true, contactIds: [...new Set(ids)] }
+}
+
 export function motionComplete(
-  contact: { channelsDone?: Channel[] },
+  contact: { id?: string; name?: string; email?: string; channelsDone?: Channel[] },
   spec: WorkspaceSpec
 ): boolean {
+  const channels = channelsForContact(contact, spec)
+  if (!channels.length) return true
   const done = new Set(contact.channelsDone ?? [])
-  return spec.channels.every((ch) => done.has(ch))
+  return channels.every((ch) => done.has(ch))
 }
 
 export function nextChannel(
-  contact: { channelsDone?: Channel[]; stepIndex?: number },
+  contact: { id?: string; name?: string; email?: string; channelsDone?: Channel[]; stepIndex?: number },
   spec: WorkspaceSpec
 ): Channel | null {
-  if (motionComplete(contact, spec)) return null
+  const channels = channelsForContact(contact, spec)
+  if (!channels.length) return null
   const done = new Set(contact.channelsDone ?? [])
-  const step = spec.steps[contact.stepIndex ?? 0]
-  if (step && !done.has(step.channel) && spec.channels.includes(step.channel)) return step.channel
-  return spec.channels.find((ch) => !done.has(ch)) ?? null
+  if (channels.every((ch) => done.has(ch))) return null
+  const steps = spec.steps.filter((step) => stepIncludesContact(step, contact))
+  const step = steps[contact.stepIndex ?? 0]
+  if (step && !done.has(step.channel) && channels.includes(step.channel)) return step.channel
+  return channels.find((ch) => !done.has(ch)) ?? null
 }
 
 export function parseDeploySpec(
@@ -246,13 +330,21 @@ export function parseDeploySpec(
         return { ok: false, error: `spec.steps[${i}].day must be an integer 0–30` }
       }
       const mode = row.mode === 'auto' && channel === 'email' ? 'auto' : row.mode === 'manual' ? 'manual' : undefined
+      let contactIds: string[] | undefined
+      if ('contactIds' in row && row.contactIds !== undefined) {
+        if (!Array.isArray(row.contactIds) || row.contactIds.some((id) => typeof id !== 'string')) {
+          return { ok: false, error: `spec.steps[${i}].contactIds must be an array of contact ids or names` }
+        }
+        contactIds = [...new Set(row.contactIds.map((id) => id.trim()).filter(Boolean))]
+      }
       steps.push({
         day: day ?? i,
         channel,
         label: typeof row.label === 'string' && row.label.trim() ? row.label.trim() : defaultLabel(channel, i === 0 ? 'intro' : 'followup'),
         subject: typeof row.subject === 'string' ? row.subject : undefined,
         body: typeof row.body === 'string' ? row.body : undefined,
-        ...(mode ? { mode } : {})
+        ...(mode ? { mode } : {}),
+        ...(contactIds !== undefined ? { contactIds } : {})
       })
     }
     spec.steps = steps
@@ -641,7 +733,8 @@ function normalizeSteps(steps: WorkspaceSpecStep[], goal: string): WorkspaceSpec
     channel: step.channel,
     label: step.label || defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
     subject: step.subject,
-    body: step.body ?? (step.channel === 'call' ? undefined : copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, 'Direct & concise').body)
+    body: step.body ?? (step.channel === 'call' ? undefined : copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, 'Direct & concise').body),
+    ...(step.contactIds?.length ? { contactIds: [...step.contactIds] } : {})
   }))
 }
 
@@ -722,7 +815,12 @@ function carrySuppliedCopy(built: WorkspaceSpecStep[], supplied: WorkspaceSpecSt
       ...step,
       label: hit.label || step.label,
       subject: hit.subject ?? step.subject,
-      body: hit.body ?? step.body
+      body: hit.body ?? step.body,
+      ...(hit.contactIds?.length
+        ? { contactIds: [...hit.contactIds] }
+        : step.contactIds?.length
+          ? { contactIds: [...step.contactIds] }
+          : {})
     }
   })
 }

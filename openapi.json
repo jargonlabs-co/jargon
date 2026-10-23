@@ -994,7 +994,12 @@
           "channel": { "$ref": "#/components/schemas/Channel" },
           "label": { "type": "string" },
           "subject": { "type": "string" },
-          "body": { "type": "string" }
+          "body": { "type": "string" },
+          "contactIds": {
+            "type": "array",
+            "description": "Only these contacts get this step. Ids or exact names. Omit for everyone. Empty puts the step back on everyone.",
+            "items": { "type": "string" }
+          }
         }
       },
       "WorkspaceSpec": {
@@ -1399,7 +1404,12 @@
           "label": { "type": "string" },
           "subject": { "type": "string" },
           "body": { "type": "string" },
-          "order": { "type": "integer" }
+          "order": { "type": "integer" },
+          "contactIds": {
+            "type": "array",
+            "description": "Only these contacts get this step. Absent means everyone enrolled.",
+            "items": { "type": "string" }
+          }
         }
       },
       "QueueNext": {

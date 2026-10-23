@@ -46,7 +46,14 @@ import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { orgAllowsDncCalls, orgWaitsForHubSpotEnrichment } from './planLimits'
-import { channelsFromSteps, formatChannels, parseDeploySpec, shouldAutoStartSequence } from '../shared/workspaceSpec'
+import {
+  channelsFromSteps,
+  formatChannels,
+  parseDeploySpec,
+  resolveStepAudience,
+  shouldAutoStartSequence,
+  stepIncludesContact
+} from '../shared/workspaceSpec'
 import { catalogFromContacts, interpolateTemplate } from '../shared/fieldCatalog'
 import { normalizeLinkedInUrl } from '../shared/linkedinUrl'
 import {
@@ -131,6 +138,8 @@ export type PublicStep = {
   subject?: string
   body?: string
   mode?: 'manual' | 'auto'
+  /** Set when the step is only for these contacts. */
+  contactIds?: string[]
   order: number
 }
 
@@ -238,6 +247,7 @@ export function toPublicStep(step: SequenceStep | null): PublicStep | null {
     subject: step.subject,
     body: step.body,
     mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
+    ...(step.contactIds?.length ? { contactIds: step.contactIds } : {}),
     order: step.order
   }
 }
@@ -1252,6 +1262,34 @@ export function getPublicSequence(store: DataStore, orgId: string, projectId: st
   }
 }
 
+/** Drop open sends for people taken off a step, and restore ones cancelled only for that reason. */
+function syncStepAudience(
+  db: Database,
+  projectId: string,
+  stepId: string,
+  contactIds: string[] | undefined,
+  auto: boolean,
+  now: number
+) {
+  const limited = Boolean(contactIds?.length)
+  const allowed = new Set(contactIds ?? [])
+  for (const message of db.messages) {
+    if (message.projectId !== projectId || message.stepId !== stepId) continue
+    const onStep = !limited || allowed.has(message.contactId)
+    if (!onStep && (message.status === 'draft' || message.status === 'queued')) {
+      message.status = 'cancelled'
+      message.error = 'Not on this step'
+      message.updatedAt = now
+      continue
+    }
+    if (onStep && message.status === 'cancelled' && message.error === 'Not on this step') {
+      message.status = auto ? 'queued' : 'draft'
+      delete message.error
+      message.updatedAt = now
+    }
+  }
+}
+
 export function updatePublicSequence(
   store: DataStore,
   orgId: string,
@@ -1283,6 +1321,43 @@ export function updatePublicSequence(
     ...(parsed.spec ?? {}),
     steps
   }
+  const previous = store.db.steps
+    .filter((s) => s.projectId === projectId)
+    .sort((a, b) => a.order - b.order)
+  const people = store.db.contacts.filter((c) => c.projectId === projectId && c.orgId === orgId)
+  const usedIds = new Set<string>()
+  const planned: Array<{
+    id: string
+    order: number
+    prev?: SequenceStep
+    step: (typeof steps)[number]
+    subject?: string
+    body?: string
+    contactIds?: string[]
+  }> = []
+  for (const [order, step] of steps.entries()) {
+    const id = reuseStepId(previous, step, order, usedIds)
+    const prev = previous.find((row) => row.id === id)
+    let contactIds = prev?.contactIds?.length ? [...prev.contactIds] : undefined
+    if (step.contactIds !== undefined) {
+      if (!step.contactIds.length) {
+        contactIds = undefined
+      } else {
+        const resolved = resolveStepAudience(people, step.contactIds)
+        if (!resolved.ok) return { ok: false, error: resolved.error }
+        contactIds = resolved.contactIds.length ? resolved.contactIds : undefined
+      }
+    }
+    planned.push({
+      id,
+      order,
+      prev,
+      step,
+      subject: step.subject !== undefined ? step.subject : prev?.subject,
+      body: step.body !== undefined ? step.body : prev?.body,
+      contactIds
+    })
+  }
   const now = Date.now()
   store.update((db) => {
     const next = db.projects.find((p) => p.id === projectId)
@@ -1299,14 +1374,14 @@ export function updatePublicSequence(
       sequence.name = `${formatChannels(next.spec.channels)} · ${next.spec.goal}`
       sequence.updatedAt = now
     }
-    const previous = db.steps.filter((s) => s.projectId === projectId).sort((a, b) => a.order - b.order)
-    const usedIds = new Set<string>()
     db.steps = db.steps.filter((s) => s.projectId !== projectId)
-    const written = next.spec.steps.map((step, order) => {
-      const id = reuseStepId(previous, step, order, usedIds)
-      const prev = previous.find((row) => row.id === id)
-      const subject = step.subject !== undefined ? step.subject : prev?.subject
-      const body = step.body !== undefined ? step.body : prev?.body
+    const written = planned.map(({ id, order, prev, step, subject, body, contactIds }) => {
+      const mode =
+        step.channel === 'email' && step.mode === 'auto'
+          ? ('auto' as const)
+          : step.mode === 'manual'
+            ? ('manual' as const)
+            : undefined
       const row = {
         id,
         orgId,
@@ -1317,10 +1392,12 @@ export function updatePublicSequence(
         label: step.label,
         subject,
         body,
-        mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' as const : step.mode === 'manual' ? 'manual' as const : undefined,
+        mode,
+        ...(contactIds?.length ? { contactIds } : {}),
         order
       }
       if (prev) syncTemplateDrafts(db, orgId, projectId, prev, row, now)
+      syncStepAudience(db, projectId, id, contactIds, mode === 'auto', now)
       return row
     })
     next.spec.steps = written.map((step) => ({
@@ -1329,7 +1406,8 @@ export function updatePublicSequence(
       label: step.label,
       subject: step.subject,
       body: step.body,
-      ...(step.mode ? { mode: step.mode } : {})
+      ...(step.mode ? { mode: step.mode } : {}),
+      ...(step.contactIds?.length ? { contactIds: step.contactIds } : {})
     }))
     db.steps.push(...written)
   })
@@ -1905,6 +1983,7 @@ export async function enrollPublicSequence(
     }
     const claimed = new Set<string>()
     for (const step of steps) {
+      if (!stepIncludesContact(step, contact)) continue
       if (step.channel === 'call') {
         if (!contact.phone?.trim()) {
           skipped.push({ contactId: contact.id, stepId: step.id, reason: 'Missing phone' })

@@ -4,6 +4,7 @@ import {
   channelLabel,
   formatChannels,
   hasChannel,
+  channelsForContact,
   motionComplete,
   nextChannel,
   specFromProject,
@@ -14,6 +15,7 @@ import { interpolateTemplate } from '../../../shared/fieldCatalog'
 
 export {
   channelLabel,
+  channelsForContact,
   formatChannels,
   hasChannel,
   interpolateTemplate,

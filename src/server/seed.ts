@@ -156,6 +156,7 @@ function buildSequenceFromSpec(
     body: step.body,
     mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : step.mode === 'manual' ? 'manual' : undefined,
     ...(step.contactIds?.length ? { contactIds: step.contactIds } : {}),
+    createdAt: now,
     order
   }))
   return { sequence, steps }

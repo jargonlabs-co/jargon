@@ -290,6 +290,8 @@ export interface SequenceStep {
   mode?: 'manual' | 'auto'
   /** When set, only these contacts get the step. Absent or empty means everyone enrolled. */
   contactIds?: string[]
+  /** When the step was added. Older activity must not complete a step created after it. */
+  createdAt?: number
   order: number
 }
 
@@ -347,6 +349,8 @@ export interface CallSession {
   startedAt: number
   connectedAt?: number
   endedAt?: number
+  /** Sequence step this call was placed for. Missing on older calls. */
+  stepId?: string
   /** Member who placed the call. Missing on older calls. */
   userId?: string
 }

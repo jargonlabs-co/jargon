@@ -401,3 +401,115 @@ describe('a step can belong to specific contacts', () => {
     assert.equal(db.messages.filter((message) => message.status === 'sent').length, 0)
   })
 })
+
+describe('a new sequence does not inherit finished steps', () => {
+  const now = 10_000
+
+  it('leaves a new call and email open after the contact already finished those channels', () => {
+    const tasks = buildWorkspaceTasks({
+      contacts: [
+        contact({
+          status: 'replied',
+          phone: '+15551230000',
+          channelsDone: ['email', 'call'],
+          attrs: { _enrolledAt: 500 }
+        })
+      ],
+      steps: [
+        { id: 'new_email', day: 0, channel: 'email', label: 'Intro', order: 0, mode: 'manual', createdAt: 5_000 },
+        { id: 'new_call', day: 0, channel: 'call', label: 'Call', order: 1, mode: 'manual', createdAt: 5_000 }
+      ],
+      messages: [
+        {
+          id: 'old_mail',
+          contactId: 'andrew',
+          projectId: 'proj_1',
+          channel: 'email',
+          status: 'sent',
+          subject: 'Old',
+          body: 'Already sent',
+          mode: 'demo',
+          createdAt: 1_000,
+          sentAt: 1_000,
+          stepId: 'old_email'
+        }
+      ],
+      calls: [
+        {
+          id: 'old_call',
+          contactId: 'andrew',
+          projectId: 'proj_1',
+          phase: 'completed',
+          mode: 'demo',
+          startedAt: 2_000
+        }
+      ],
+      now
+    })
+    const email = tasks.find((task) => task.stepId === 'new_email')
+    const call = tasks.find((task) => task.stepId === 'new_call')
+    assert.equal(email?.state, 'due')
+    assert.equal(call?.state, 'due')
+    const open = nextOpenTasksByContact(tasks).map((task) => task.stepId).sort()
+    assert.deepEqual(open, ['new_call', 'new_email'])
+  })
+
+  it('still checks off the step that was actually finished', () => {
+    const tasks = buildWorkspaceTasks({
+      contacts: [contact()],
+      steps: [
+        { id: 'step_email', day: 0, channel: 'email', label: 'Intro', order: 0, mode: 'manual' },
+        { id: 'step_call', day: 2, channel: 'call', label: 'Call', order: 1, mode: 'manual' }
+      ],
+      messages: [
+        {
+          id: 'mail',
+          contactId: 'andrew',
+          projectId: 'proj_1',
+          channel: 'email',
+          status: 'sent',
+          subject: 'Hi',
+          body: 'Hello',
+          mode: 'demo',
+          createdAt: 1_000,
+          sentAt: 1_000,
+          stepId: 'step_email'
+        }
+      ],
+      calls: [
+        {
+          id: 'call',
+          contactId: 'andrew',
+          projectId: 'proj_1',
+          phase: 'completed',
+          mode: 'demo',
+          startedAt: 2_000,
+          stepId: 'step_call'
+        }
+      ],
+      now
+    })
+    assert.equal(tasks.find((task) => task.stepId === 'step_email')?.state, 'done')
+    assert.equal(tasks.find((task) => task.stepId === 'step_call')?.state, 'done')
+  })
+
+  it('keeps a call from this sequence done when the step has no created time', () => {
+    const tasks = buildWorkspaceTasks({
+      contacts: [contact({ phone: '+15551230000' })],
+      steps: [{ id: 'step_call', day: 0, channel: 'call', label: 'Call', order: 0, mode: 'manual' }],
+      messages: [],
+      calls: [
+        {
+          id: 'call',
+          contactId: 'andrew',
+          projectId: 'proj_1',
+          phase: 'completed',
+          mode: 'demo',
+          startedAt: 2_000
+        }
+      ],
+      now
+    })
+    assert.equal(tasks[0]?.state, 'done')
+  })
+})

@@ -83,7 +83,8 @@ import {
   ATTR_ENROLLED_AT,
   ATTR_TALK_TRACK,
   ATTR_TALK_TRACKS,
-  enrolledAtOf
+  enrolledAtOf,
+  syncStoppedAt
 } from './workspaceTasks'
 
 export type PublicProject = {
@@ -140,6 +141,8 @@ export type PublicStep = {
   mode?: 'manual' | 'auto'
   /** Set when the step is only for these contacts. */
   contactIds?: string[]
+  /** When the step was added. Activity from before then belongs to an earlier sequence. */
+  createdAt?: number
   order: number
 }
 
@@ -153,6 +156,7 @@ export type PublicCall = {
   startedAt: number
   connectedAt?: number
   endedAt?: number
+  stepId?: string
 }
 
 export type PublicMessage = {
@@ -248,6 +252,7 @@ export function toPublicStep(step: SequenceStep | null): PublicStep | null {
     body: step.body,
     mode: step.channel === 'email' && step.mode === 'auto' ? 'auto' : 'manual',
     ...(step.contactIds?.length ? { contactIds: step.contactIds } : {}),
+    ...(step.createdAt != null ? { createdAt: step.createdAt } : {}),
     order: step.order
   }
 }
@@ -262,7 +267,8 @@ export function toPublicCall(call: CallSession): PublicCall {
     mode: call.mode,
     startedAt: call.startedAt,
     connectedAt: call.connectedAt,
-    endedAt: call.endedAt
+    endedAt: call.endedAt,
+    stepId: call.stepId
   }
 }
 
@@ -761,6 +767,7 @@ export function applyDisposition(
     const c = db.contacts.find((x) => x.id === contactId)
     if (!c) return
     c.status = input.status
+    syncStoppedAt(c, now)
     c.updatedAt = now
     if (input.channel) {
       const done = new Set(c.channelsDone ?? [])
@@ -862,7 +869,8 @@ export function startPublicCall(
   contact: Contact,
   sandbox = false,
   to?: string,
-  userId?: string
+  userId?: string,
+  stepId?: string
 ): PublicCall {
   const now = Date.now()
   const callId = uid('call')
@@ -905,6 +913,7 @@ export function startPublicCall(
       fromNumber,
       to: dialTo,
       startedAt: now,
+      ...(stepId ? { stepId } : {}),
       ...(userId ? { userId } : {})
     })
     db.activities.unshift({
@@ -986,6 +995,7 @@ export function completePublicCall(
     const contact = db.contacts.find((x) => x.id === c.contactId)
     if (contact) {
       contact.status = disposition
+      syncStoppedAt(contact, now)
       contact.updatedAt = now
       const done = new Set(contact.channelsDone ?? [])
       done.add('call')
@@ -1397,6 +1407,7 @@ export function updatePublicSequence(
         body,
         mode,
         ...(contactIds?.length ? { contactIds } : {}),
+        ...(prev?.createdAt != null ? { createdAt: prev.createdAt } : prev ? {} : { createdAt: now }),
         order
       }
       if (prev) syncTemplateDrafts(db, orgId, projectId, prev, row, now)

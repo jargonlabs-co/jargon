@@ -670,6 +670,13 @@ function doneSet(contact) {
   return new Set(contact?.channelsDone || []);
 }
 
+/** A channel is finished only when every current to-do on it is. An earlier sequence does not close a new step. */
+function channelFinished(contact, ch) {
+  const mine = (ws?.tasks || []).filter((t) => t.contactId === contact.id && t.channel === ch && t.owner !== 'auto');
+  if (mine.length) return mine.every((t) => t.state === 'done' || t.state === 'skipped');
+  return doneSet(contact).has(ch);
+}
+
 function nextFor(contact) {
   if (!contact) return null;
   if (contact.nextChannel) return contact.nextChannel;
@@ -678,6 +685,9 @@ function nextFor(contact) {
 }
 
 function progressLabel(contact) {
+  const open = (ws?.tasks || []).find((t) => t.contactId === contact.id && t.owner !== 'auto' && t.state !== 'done' && t.state !== 'skipped');
+  if (open) return `Next · ${channelLabel(open.channel)}`;
+  if ((ws?.tasks || []).some((t) => t.contactId === contact.id)) return 'Done';
   const next = nextFor(contact);
   if (!next && (contact.channelsDone || []).length) return 'Done';
   if (next) return `Next · ${channelLabel(next)}`;
@@ -1034,7 +1044,11 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     }
     if (!contact) return null;
     const step = emailSteps()[peopleStep] || emailSteps()[0];
-    return messageFor(ws, contact.id, step) || latestMessage(ws, contact.id);
+    const hit = messageFor(ws, contact.id, step);
+    if (hit) return hit;
+    const latest = latestMessage(ws, contact.id);
+    if (latest?.stepId && step?.id && latest.stepId !== step.id) return null;
+    return latest;
   }
 
   function currentDraftFields(contact) {
@@ -1407,9 +1421,10 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         setNotice(token?.error || 'Calling is not available for this account.', 'err');
         return;
       }
+      const callTask = (ws.tasks || []).find((t) => t.contactId === contact.id && t.channel === 'call' && t.state !== 'done' && t.state !== 'skipped');
       const started = parseToolResult(await callTool({
         name: 'run_start_call',
-        arguments: { contactId: contact.id, to: number },
+        arguments: { contactId: contact.id, to: number, ...(callTask?.stepId ? { stepId: callTask.stepId } : {}) },
       }));
       if (started?.error) { setNotice(started.error, 'err'); return; }
       const call = started.call;
@@ -1989,6 +2004,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const msg = selected ? selectedEmailMessage(selected) : null;
     const taskCopy = task?.channel === 'email' && selected && task.contactId === selected.id ? task : null;
     const savedCopy = taskCopy && taskCopy.body && !String(taskCopy.body).includes('{{');
+    const sentThisStep = msg?.status === 'sent' && (!msg.stepId || !step?.id || msg.stepId === step.id);
     const subject = msg?.subject || (savedCopy ? taskCopy.subject : '') || (selected && step ? interpolate(step.subject || '', selected) : '');
     const body = msg?.body || (savedCopy ? taskCopy.body : '') || (selected && step ? interpolate(step.body || '', selected) : '');
     const showSteps = !hideSteps && steps.length > 1;
@@ -2010,9 +2026,9 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         ${filledTextarea('draft-body', body)}
         <div class="row">
           <button class="btn" id="save-draft" ${busy ? 'disabled' : ''}>Save draft</button>
-          <button class="btn accent" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Send</button>
+          <button class="btn accent" id="send" data-contact-id="${esc(selected.id)}" ${busy || !selected.email || sentThisStep ? 'disabled' : ''}>Send</button>
           <input id="send-at" type="datetime-local" value="${esc(toLocalInput(msg?.sendAt))}" />
-          <button class="btn" id="schedule" ${busy || !selected.email || msg?.status === 'sent' ? 'disabled' : ''}>Schedule</button>
+          <button class="btn" id="schedule" ${busy || !selected.email || sentThisStep ? 'disabled' : ''}>Schedule</button>
           ${showWrite ? `<button class="btn" id="write">Ask Claude to write</button>` : ''}
         </div>
       </div>
@@ -2230,14 +2246,13 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function renderChannelButtons(contact) {
-    const done = doneSet(contact);
     const next = nextFor(contact);
     const selected = contact.id === selectedId;
     return `
       <div class="chan-btns">
         ${workspaceChannels().map((ch) => {
           const on = selected && actionPane === ch;
-          const isDone = done.has(ch);
+          const isDone = channelFinished(contact, ch);
           const isNext = next === ch;
           return `<button type="button" class="chan ${on ? 'on' : ''} ${isDone ? 'done' : ''} ${isNext && !on ? 'next' : ''}" data-act="${esc(ch)}" data-id="${esc(contact.id)}">${isDone ? '✓ ' : ''}${esc(channelLabel(ch))}</button>`;
         }).join('')}
@@ -2260,7 +2275,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
 
   function renderCallPanel(contact) {
     const call = ws.openCall && ws.openCall.contactId === contact.id ? ws.openCall : null;
-    const done = doneSet(contact).has('call');
+    const done = channelFinished(contact, 'call');
     const phase = call?.phase;
     const task = (ws.tasks || []).find((t) => t.contactId === contact.id && t.channel === 'call' && t.state !== 'done' && t.state !== 'skipped');
     const track = task?.body || talkTrackFor(contact, task?.stepId);
@@ -2296,8 +2311,9 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       || messageFor(ws, contact.id, step)
       || latestChannelMessage(contact.id, 'linkedin');
     const taskCopy = task?.channel === 'linkedin' && task.body && !String(task.body).includes('{{') ? task.body : '';
-    const body = msg?.body || taskCopy || contact.linkedinPreview?.body || (step ? interpolate(step.body || '', contact) : '');
-    const sent = msg?.status === 'sent' || doneSet(contact).has('linkedin');
+    const onThisStep = !msg?.stepId || !step?.id || msg.stepId === step.id;
+    const body = (onThisStep ? msg?.body : '') || taskCopy || contact.linkedinPreview?.body || (step ? interpolate(step.body || '', contact) : '');
+    const sent = (msg?.stepId && step?.id && msg.stepId === step.id && msg.status === 'sent') || channelFinished(contact, 'linkedin');
     return `
       <div class="composer">
         <div class="to">${esc(contact.name)} · ${esc(contact.linkedinUrl || 'No LinkedIn URL')}</div>

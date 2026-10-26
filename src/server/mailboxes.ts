@@ -6,6 +6,7 @@ import { buildGmailRawMime, escapeEmailHtml } from './providers/gmail'
 import { addSuppressions } from './compliance'
 import { parseHardBounces } from './bounces'
 import { consumeDailyBudget } from './outboundPools'
+import { syncStoppedAt } from './workspaceTasks'
 import type { Connection, MailboxProvider } from './types'
 
 type Fetcher = typeof fetch
@@ -316,6 +317,7 @@ export function applyInboundMail(
       if (!auto) {
         c.status = 'replied'
         c.attrs.lastReplyAt = now
+        syncStoppedAt(c, now)
         c.updatedAt = now
         for (const m of db.messages) {
           if (m.contactId !== c.id || (m.status !== 'queued' && m.status !== 'draft')) continue

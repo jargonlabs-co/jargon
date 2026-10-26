@@ -6,6 +6,22 @@ const DAY_MS = 86_400_000
 
 const STOP_STATUSES: ContactStatus[] = ['replied', 'interested', 'not_interested', 'meeting_booked']
 
+export const ATTR_STOPPED_AT = '_stoppedAt'
+
+/** Remember when a contact left the sequence, and clear it if they are put back. */
+export function syncStoppedAt(
+  contact: { status: ContactStatus; attrs?: Record<string, unknown> },
+  now: number
+): void {
+  const attrs = { ...(contact.attrs ?? {}) }
+  if (STOP_STATUSES.includes(contact.status)) {
+    if (typeof attrs[ATTR_STOPPED_AT] !== 'number') attrs[ATTR_STOPPED_AT] = now
+  } else if (ATTR_STOPPED_AT in attrs) {
+    delete attrs[ATTR_STOPPED_AT]
+  }
+  contact.attrs = attrs
+}
+
 /** due: act now · scheduled: waiting on its send day · blocked: missing an address or number */
 export type TaskState = 'due' | 'scheduled' | 'done' | 'skipped' | 'blocked'
 
@@ -81,17 +97,17 @@ export function buildWorkspaceTasks(input: {
       (contact.status === 'queued' ? null : workspaceAnchor)
     if (anchor == null) continue
 
-    const stopped = STOP_STATUSES.includes(contact.status)
     const skippedIds = skippedStepIds(contact)
     const completedCalls = input.calls
       .filter((call) => call.contactId === contact.id && call.phase === 'completed')
       .sort((a, b) => a.startedAt - b.startedAt)
     const claimed = new Set<string>()
+    const claimedCalls = new Set<string>()
     const seenChannels = new Set<Channel>()
-    let callIndex = 0
 
     for (const step of steps) {
       if (!stepIncludesContact(step, contact)) continue
+      const stopped = stopApplies(contact, step)
       const firstOfChannel = !seenChannels.has(step.channel)
       seenChannels.add(step.channel)
       const dueAt = anchor + Math.max(0, step.day) * DAY_MS
@@ -120,9 +136,16 @@ export function buildWorkspaceTasks(input: {
       }
 
       if (step.channel === 'call') {
-        const call = completedCalls[callIndex]
+        const call =
+          completedCalls.find((item) => !claimedCalls.has(item.id) && item.stepId === step.id) ??
+          completedCalls.find(
+            (item) =>
+              !claimedCalls.has(item.id) &&
+              !item.stepId &&
+              (step.createdAt == null || item.startedAt >= step.createdAt)
+          )
         if (call) {
-          callIndex += 1
+          claimedCalls.add(call.id)
           tasks.push({
             ...base,
             dueAt: call.startedAt,
@@ -155,7 +178,14 @@ export function buildWorkspaceTasks(input: {
       const message =
         pick(messages, (m) => m.stepId === step.id && !claimed.has(m.id)) ??
         (firstOfChannel
-          ? pick(messages, (m) => !m.stepId && m.channel === step.channel && !claimed.has(m.id))
+          ? pick(
+              messages,
+              (m) =>
+                !m.stepId &&
+                m.channel === step.channel &&
+                !claimed.has(m.id) &&
+                unboundMessageCounts(m, step)
+            )
           : undefined)
       if (message) claimed.add(message.id)
       const target = step.channel === 'linkedin' ? contact.linkedinUrl : contact.email
@@ -270,6 +300,26 @@ export function summarizeTasks(tasks: WorkspaceTask[]): TaskStats {
     open: overdue + today,
     enrolled: new Set(tasks.map((t) => t.contactId)).size
   }
+}
+
+/** A reply stops the sequence they were on. A step added after that is a new to-do. */
+function stopApplies(
+  contact: { status: ContactStatus; attrs?: Record<string, unknown> },
+  step: { createdAt?: number }
+): boolean {
+  if (!STOP_STATUSES.includes(contact.status)) return false
+  if (step.createdAt == null) return true
+  const stoppedAt = contact.attrs?.[ATTR_STOPPED_AT]
+  if (typeof stoppedAt !== 'number') return false
+  return step.createdAt <= stoppedAt
+}
+
+/** A send that was never tied to a step does not complete a step created after it. */
+function unboundMessageCounts(message: PublicMessage, step: { createdAt?: number }): boolean {
+  if (message.status !== 'sent') return true
+  if (step.createdAt == null) return true
+  const at = message.sentAt ?? message.createdAt
+  return at >= step.createdAt
 }
 
 function pick(messages: PublicMessage[], match: (m: PublicMessage) => boolean): PublicMessage | undefined {

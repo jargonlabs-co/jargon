@@ -44,7 +44,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=contacts1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=seqfresh1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -88,6 +88,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=sched1',
   'ui://jargon/email-workspace.html?v=territory1',
   'ui://jargon/email-workspace.html?v=sched2',
+  'ui://jargon/email-workspace.html?v=contacts1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -318,7 +319,21 @@ export function getEmailWorkspace(
     focus: opts?.focus,
     enrolled: taskStats.enrolled > 0
   })
-  const remaining = contacts.filter((c) => !motionComplete(c, motionSpec)).length
+  let remaining = 0
+  for (const contact of contacts) {
+    const mine = tasks.filter((task) => task.contactId === contact.id && task.owner !== 'auto')
+    if (!mine.length) {
+      if (!motionComplete(contact, motionSpec)) remaining += 1
+      continue
+    }
+    const open = mine.find((task) => task.state !== 'done' && task.state !== 'skipped')
+    if (open) {
+      contact.nextChannel = open.channel
+      remaining += 1
+    } else {
+      contact.nextChannel = null
+    }
+  }
   const priorityPipeline = isPriorityPipelinePrompt(project.prompt || '')
   const researchPending = !priorityPipeline && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const schedulePending =

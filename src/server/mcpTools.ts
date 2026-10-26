@@ -575,7 +575,8 @@ export function registerJargonTools(
   const StartCallInput = z.object({
     summary: Summary,
     contactId: z.string(),
-    to: z.string().optional().describe('Number to dial. Overrides the contact phone, including when the contact has none.')
+    to: z.string().optional().describe('Number to dial. Overrides the contact phone, including when the contact has none.'),
+    stepId: z.string().optional().describe('Sequence step this call completes. Omit for an ad-hoc dial.')
   })
   const CompleteCallInput = z.object({
     summary: Summary,
@@ -650,7 +651,7 @@ export function registerJargonTools(
     )
   }
 
-  async function execStartCall(contactId: string, to?: string) {
+  async function execStartCall(contactId: string, to?: string, stepId?: string) {
     const contact = findOrgContact(store, actor.orgId, contactId)
     if (!contact) return fail('Contact not found')
     if (!toE164(to || contact.phone || '')) return fail('Enter a valid phone number.')
@@ -667,7 +668,7 @@ export function registerJargonTools(
     if (!charge.ok) return failCharge(charge)
     try {
       return ok({
-        call: startPublicCall(store, config, contact, sandbox, to, actor.userId),
+        call: startPublicCall(store, config, contact, sandbox, to, actor.userId, stepId),
         creditsUsed: charge.creditsUsed,
         creditsRemaining: charge.remaining
       })
@@ -732,7 +733,7 @@ export function registerJargonTools(
         'Start a call in the in-chat dialer. summary is the sentence on Claude\'s Allow card. Live login places a real call and spends credits. Do not send the user to the web dashboard to dial.',
       inputSchema: StartCallInput
     },
-    async ({ contactId, to }) => execStartCall(contactId, to)
+    async ({ contactId, to, stepId }) => execStartCall(contactId, to, stepId)
   )
 
   server.registerTool(
@@ -743,7 +744,7 @@ export function registerJargonTools(
       _meta: APP_ONLY_META,
       inputSchema: StartCallInput.omit({ summary: true })
     },
-    async ({ contactId, to }) => execStartCall(contactId, to)
+    async ({ contactId, to, stepId }) => execStartCall(contactId, to, stepId)
   )
 
   server.registerTool(

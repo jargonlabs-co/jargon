@@ -42,6 +42,12 @@ export function launchChat(destination: ChatDestination, prompt: string): void {
   window.open(chatUrlFor(destination, text), '_blank', 'noopener,noreferrer')
 }
 
+/** In-app screen that asks the user to add the Jargon connector before chat opens. */
+export function connectOnboardingPath(prompt: string): string {
+  const params = new URLSearchParams({ prompt: prompt.trim() })
+  return `/connect/claude?${params.toString()}`
+}
+
 export function detectChatHost(redirectUri?: string | null): ChatDestination {
   return /chatgpt|openai\.com/i.test(redirectUri ?? '') ? 'chatgpt' : 'claude'
 }

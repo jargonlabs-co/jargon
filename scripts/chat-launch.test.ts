@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   chatgptChatUrl,
   claudeChatUrl,
+  connectOnboardingPath,
   detectChatHost,
   firstNameOf,
   hostLabel,
@@ -23,6 +24,11 @@ assert.equal(
 assert.equal(
   chatgptChatUrl('Build an outbound dialer'),
   'https://chatgpt.com/?q=Build%20an%20outbound%20dialer'
+)
+
+assert.equal(
+  connectOnboardingPath('Build an outbound dialer'),
+  '/connect/claude?prompt=Build+an+outbound+dialer'
 )
 
 assert.equal(detectChatHost('https://claude.ai/api/mcp/auth/callback'), 'claude')

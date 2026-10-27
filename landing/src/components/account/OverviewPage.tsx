@@ -4,6 +4,7 @@ import { ChatGptMark } from '../ChatGptMark'
 import { ClaudeMark } from '../ClaudeMark'
 import {
   HOME_PLACEHOLDER,
+  connectOnboardingPath,
   firstNameOf,
   launchChat,
   timeGreeting,
@@ -32,11 +33,16 @@ export function OverviewPage({
 
   function submit(event?: FormEvent) {
     event?.preventDefault()
+    const text = prompt.trim()
+    if (destination === 'claude' && !claudeConnected) {
+      if (!text) return
+      onNavigate(connectOnboardingPath(text))
+      return
+    }
     if (destination === 'claude') {
       window.open(snapshot.claude?.connectorUrl || getClaudeConnectorInstallUrl(), '_blank', 'noopener,noreferrer')
       return
     }
-    const text = prompt.trim()
     if (!text) return
     launchChat(destination, text)
   }
@@ -87,8 +93,14 @@ export function OverviewPage({
             <button
               type="submit"
               className="home-send"
-              disabled={destination === 'chatgpt' && !prompt.trim()}
-              aria-label={`Open in ${destination === 'chatgpt' ? 'ChatGPT' : 'Claude'}`}
+              disabled={!prompt.trim() && (destination === 'chatgpt' || !claudeConnected)}
+              aria-label={
+                destination === 'chatgpt'
+                  ? 'Open in ChatGPT'
+                  : claudeConnected
+                    ? 'Open in Claude'
+                    : 'Connect Claude'
+              }
             >
               <SendIcon />
             </button>
@@ -99,7 +111,9 @@ export function OverviewPage({
           <ol>
             <li>
               <span>1</span>
-              Click the arrow. Claude opens with the Jargon connector.
+              {claudeConnected
+                ? 'Click the arrow. Claude opens with the Jargon connector.'
+                : 'Type a prompt and click the arrow to connect Claude.'}
             </li>
             <li>
               <span>2</span>

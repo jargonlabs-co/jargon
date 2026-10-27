@@ -4161,13 +4161,19 @@ button {
   margin-right: auto;
 }
 
-.connect-claude-head-desc {
-  max-width: 44rem;
-  margin: 0 auto 8px;
+.connect-claude-offer {
+  text-align: center;
+}
+
+.connect-claude-offer p {
+  margin: 0;
   color: var(--text-muted);
   font-size: 0.9375rem;
   line-height: 1.55;
-  text-align: center;
+}
+
+.connect-claude-offer .btn {
+  margin-top: 18px;
 }
 
 .connect-claude-gallery {

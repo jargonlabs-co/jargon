@@ -30,7 +30,7 @@ function Root() {
 
   function navigate(next: string) {
     window.history.pushState({}, '', next)
-    setPath(next)
+    setPath(window.location.pathname)
   }
 
   if (path === '/icon' || path === '/icon/') {

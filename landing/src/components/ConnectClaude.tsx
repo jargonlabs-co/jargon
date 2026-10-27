@@ -1,20 +1,13 @@
 import { useState } from 'react'
-import { api, getClaudeConnectorInstallUrl, getMcpUrl } from '../api'
+import { api, getClaudeConnectorInstallUrl } from '../api'
 import { useAuth } from '../auth'
 import { ChatGptMark } from './ChatGptMark'
 import { ClaudeMark } from './ClaudeMark'
 import { LoginPanel } from './LoginPanel'
 import { LogoMark } from './LogoMark'
 import { StarterPrompt } from './StarterPrompt'
-import { CONNECTOR_DESCRIPTION, CONNECTOR_TAGLINE, ConnectorGallery } from './ConnectorGallery'
-import {
-  detectChatHost,
-  getChatGptConnectorUrl,
-  hostLabel,
-  launchChat,
-  STARTER_PROMPT,
-  type ChatDestination
-} from '../lib/chatLaunch'
+import { CONNECTOR_TAGLINE } from './ConnectorGallery'
+import { detectChatHost, hostLabel, type ChatDestination } from '../lib/chatLaunch'
 
 function ConnectShell({
   title,
@@ -63,10 +56,8 @@ export function ConnectClaude() {
   const destination = detectChatHost(redirectUri || (previewConsent ? 'https://claude.ai/callback' : ''))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
 
-  const command = `claude mcp add --transport http --scope user jargon ${getMcpUrl()}`
   const host = hostLabel(destination)
   const partner = destination === 'chatgpt' ? 'ChatGPT' : 'Claude'
 
@@ -88,16 +79,6 @@ export function ConnectClaude() {
     }
   }
 
-  async function copyCommand() {
-    try {
-      await navigator.clipboard.writeText(command)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      setCopied(false)
-    }
-  }
-
   const previewUser = previewConsent
     ? { email: user?.email ?? 'tara@jargonlabs.co', name: user?.name ?? 'Tara' }
     : user
@@ -109,94 +90,16 @@ export function ConnectClaude() {
 
   if (!hasOAuth) {
     return (
-      <ConnectShell title="Add Jargon to Claude" subtitle={CONNECTOR_TAGLINE} wide>
-        <p className="connect-claude-head-desc">{CONNECTOR_DESCRIPTION}</p>
-        <ConnectorGallery className="connect-claude-gallery" />
-        {user ? (
-          <div className="connect-claude-card">
-            <div className="connect-claude-identity">
-              <span className="connect-claude-avatar" aria-hidden="true">
-                {user.email.slice(0, 1).toUpperCase()}
-              </span>
-              <div>
-                <strong>{user.email}</strong>
-                {org ? <span>{org.name}</span> : null}
-              </div>
-              <button type="button" className="connect-claude-switch" onClick={() => void signOut()}>
-                Switch
-              </button>
-            </div>
-            <StarterPrompt />
-            <div className="connect-open-row">
-              <a
-                className="btn primary btn-sm"
-                href={getClaudeConnectorInstallUrl()}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open in Claude
-              </a>
-              <button
-                type="button"
-                className="btn ghost btn-sm"
-                onClick={() => launchChat('chatgpt', STARTER_PROMPT)}
-              >
-                Open in ChatGPT
-              </button>
-            </div>
-            <ol className="connect-claude-steps">
-              <li>
-                <span className="connect-claude-step-label">Claude desktop or web</span>
-                <a
-                  className="btn primary btn-full"
-                  href={getClaudeConnectorInstallUrl()}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Add connector in Claude
-                </a>
-              </li>
-              <li>
-                <span className="connect-claude-step-label">ChatGPT</span>
-                <a
-                  className="btn ghost btn-full"
-                  href={getChatGptConnectorUrl()}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Add connector in ChatGPT
-                </a>
-              </li>
-              <li>
-                <span className="connect-claude-step-label">Claude Code</span>
-                <div className="connect-claude-cmd">
-                  <code>{command}</code>
-                  <button type="button" className="connect-claude-copy" onClick={() => void copyCommand()}>
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              </li>
-            </ol>
-          </div>
-        ) : (
-          <>
-            <LoginPanel embedded showBrand={false} onModeChange={setAuthMode} />
-            <p className="connect-claude-foot">
-              {authMode === 'login' ? (
-                <>
-                  New to Jargon? Choose <strong>Create account</strong> above.
-                </>
-              ) : (
-                <>You&apos;ll come straight back here to connect Claude.</>
-              )}
-            </p>
-          </>
-        )}
-        {user ? (
-          <p className="connect-claude-foot">
-            <a href="/">Back to dashboard</a>
+      <ConnectShell title="Add Jargon to Claude" subtitle={CONNECTOR_TAGLINE}>
+        <div className="connect-claude-card connect-claude-offer">
+          <p>
+            Run outbound with Jargon inside Claude: turn a list into a dialer, a cadence, or today’s
+            tasks, and work them from the chat.
           </p>
-        ) : null}
+          <a className="btn primary" href={getClaudeConnectorInstallUrl()} target="_blank" rel="noreferrer">
+            Add connector in Claude
+          </a>
+        </div>
       </ConnectShell>
     )
   }

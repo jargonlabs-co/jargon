@@ -80,8 +80,7 @@ export function buildGmailRawMime(input: {
   to: string
   subject: string
   body: string
-  /** RFC 8058 one-click URL; also expected in `footer`. */
-  unsubscribeUrl?: string
+  /** Optional postal-address footer. Never an unsubscribe link. */
   footer?: string
 }): string {
   const text = input.footer ? `${input.body}\n${input.footer}` : input.body
@@ -91,13 +90,9 @@ export function buildGmailRawMime(input: {
     .replace(/\n/g, '\r\n')
   const html = plainTextToEmailHtml(text)
   const boundary = 'jargon_alt_001'
-  const unsubscribe = input.unsubscribeUrl?.replace(/[\r\n<>]/g, '')
   return [
     `To: ${input.to.trim()}`,
     `Subject: ${encodeSubject(input.subject)}`,
-    ...(unsubscribe
-      ? [`List-Unsubscribe: <${unsubscribe}>`, 'List-Unsubscribe-Post: List-Unsubscribe=One-Click']
-      : []),
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     '',
@@ -122,7 +117,6 @@ export async function sendGmailMessage(input: {
   subject: string
   body: string
   fromLabel?: string
-  unsubscribeUrl?: string
   footer?: string
   demo: boolean
 }): Promise<{ id: string; threadId?: string; mode: 'demo' | 'gmail' }> {
@@ -165,7 +159,6 @@ export async function sendPlatformGmail(
     subject: string
     body: string
     refreshToken?: string
-    unsubscribeUrl?: string
     footer?: string
   }
 ): Promise<{ id: string; threadId?: string; mode: 'gmail' }> {
@@ -190,7 +183,6 @@ export async function sendPlatformGmail(
       to,
       subject: input.subject,
       body: input.body,
-      unsubscribeUrl: input.unsubscribeUrl,
       footer: input.footer,
       demo: false
     })

@@ -172,7 +172,8 @@ describe('in-chat calls and email (MCP end to end)', () => {
     assert.ok(gmail, 'Gmail send API was called')
     const mime = Buffer.from(JSON.parse(gmail.body).raw, 'base64url').toString('utf8')
     assert.match(mime, /To: .*ada@acmecorp\.com/i)
-    assert.match(mime, /List-Unsubscribe/i, 'compliance headers are added')
+    assert.doesNotMatch(mime, /List-Unsubscribe/i)
+    assert.doesNotMatch(mime, /unsubscribe/i)
   })
 
   it('issues softphone credentials and starts a call to an override number', async () => {

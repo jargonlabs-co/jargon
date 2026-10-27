@@ -121,7 +121,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 describe('sending from an org mailbox', () => {
-  it('refreshes an expired Gmail token, sends MIME with List-Unsubscribe, and returns the thread', async () => {
+  it('refreshes an expired Gmail token, sends MIME without an unsubscribe link, and returns the thread', async () => {
     const conn = mailbox('gmail', {
       secretsCipher: encryptJson({ accessToken: 'old', refreshToken: 'refresh-1', expiresAt: Date.now() - 1000 })
     })
@@ -134,15 +134,15 @@ describe('sending from an org mailbox', () => {
       store,
       testConfig(),
       conn,
-      { to: 'alex@northwind.io', subject: 'Hi', body: 'Hello', unsubscribeUrl: 'https://api.test/u/abc' },
+      { to: 'alex@northwind.io', subject: 'Hi', body: 'Hello' },
       fetcher
     )
     assert.deepEqual(result, { id: 'g1', threadId: 't1', mode: 'gmail' })
     const send = calls.find((c) => c.url.endsWith('/messages/send'))!
     assert.equal(send.headers.authorization, 'Bearer new-token')
     const mime = Buffer.from(JSON.parse(send.body).raw, 'base64url').toString('utf8')
-    assert.match(mime, /List-Unsubscribe: <https:\/\/api\.test\/u\/abc>/)
-    assert.match(mime, /List-Unsubscribe-Post: List-Unsubscribe=One-Click/)
+    assert.doesNotMatch(mime, /List-Unsubscribe/i)
+    assert.doesNotMatch(mime, /unsubscribe/i)
     const saved = readSecrets(store.db.connections[0])
     assert.equal(saved.accessToken, 'new-token')
     assert.equal(saved.refreshToken, 'refresh-1', 'keeps the refresh token when Google omits it')

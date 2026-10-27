@@ -228,11 +228,11 @@ button{font:inherit;padding:10px 18px;border-radius:8px;border:1px solid #222;ba
 </head><body>${inner}</body></html>`
 }
 
-export function emailFooter(input: { unsubscribeUrl: string; postalAddress?: string }): string {
-  const lines = ['', '--']
-  if (input.postalAddress?.trim()) lines.push(input.postalAddress.trim())
-  lines.push(`Unsubscribe: ${input.unsubscribeUrl}`)
-  return lines.join('\n')
+/** Postal address only. Outbound email never includes an unsubscribe link. */
+export function emailFooter(input: { postalAddress?: string }): string {
+  const address = input.postalAddress?.trim()
+  if (!address) return ''
+  return `\n--\n${address}`
 }
 
 /** The do-not-call note for this number, when one exists. */

@@ -5,6 +5,7 @@ import {
   addSuppressions,
   callBlockReason,
   doNotCallNote,
+  emailFooter,
   findSuppression,
   readUnsubscribeToken,
   unsubscribeUrl
@@ -187,18 +188,25 @@ describe('unsubscribe links', () => {
     assert.equal(readUnsubscribeToken(`${body}.AAAA`), null)
   })
 
-  it('adds RFC 8058 headers and a footer to the MIME message', () => {
+  it('builds a postal footer without an unsubscribe link', () => {
+    assert.equal(emailFooter({}), '')
+    assert.equal(emailFooter({ postalAddress: '  1 Market St  ' }), '\n--\n1 Market St')
+    assert.doesNotMatch(emailFooter({ postalAddress: '1 Market St' }), /unsubscribe/i)
+  })
+
+  it('never adds an unsubscribe link or List-Unsubscribe headers', () => {
     const mime = buildGmailRawMime({
       to: 'alex@northwind.io',
       subject: 'Hi',
       body: 'Hello',
-      unsubscribeUrl: 'https://api.jargonlabs.co/u/abc',
-      footer: '\n--\nUnsubscribe: https://api.jargonlabs.co/u/abc'
+      footer: '\n--\n1 Market St'
     })
-    assert.match(mime, /^List-Unsubscribe: <https:\/\/api\.jargonlabs\.co\/u\/abc>$/m)
-    assert.match(mime, /^List-Unsubscribe-Post: List-Unsubscribe=One-Click$/m)
+    assert.doesNotMatch(mime, /List-Unsubscribe/i)
+    assert.doesNotMatch(mime, /unsubscribe/i)
     const plainPart = mime.split('Content-Transfer-Encoding: base64')[1].split('--jargon_alt_001')[0].replace(/\s/g, '')
-    assert.match(Buffer.from(plainPart, 'base64').toString('utf8'), /Unsubscribe: https:\/\/api\.jargonlabs\.co\/u\/abc/)
+    const plain = Buffer.from(plainPart, 'base64').toString('utf8')
+    assert.match(plain, /1 Market St/)
+    assert.doesNotMatch(plain, /unsubscribe/i)
   })
 })
 

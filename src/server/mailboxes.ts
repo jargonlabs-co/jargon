@@ -214,7 +214,7 @@ export async function sendFromMailbox(
   store: DataStore,
   config: ServerConfig,
   conn: Connection,
-  input: { to: string; subject: string; body: string; unsubscribeUrl?: string; footer?: string },
+  input: { to: string; subject: string; body: string; footer?: string },
   fetcher: Fetcher = fetch
 ): Promise<{ id: string; threadId?: string; mode: MailboxProvider }> {
   consumeDailyBudget(store, conn.orgId, 'mailbox_email', config.mailboxes.dailyLimit, 'email')
@@ -231,7 +231,7 @@ export async function sendFromMailbox(
     const json = (await res.json()) as { id: string; threadId?: string }
     return { id: json.id, threadId: json.threadId, mode: 'gmail' }
   }
-  // Graph only takes List-Unsubscribe as part of a MIME message: create the draft from MIME, then send it.
+  // Graph's JSON message API drops custom headers, so create the draft from MIME, then send it.
   const created = await fetcher(`${GRAPH}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain' },

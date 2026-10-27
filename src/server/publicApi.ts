@@ -5,8 +5,7 @@ import {
   emailFooter,
   findSuppression,
   OutboundBlockedError,
-  suppressionMessage,
-  unsubscribeUrl
+  suppressionMessage
 } from './compliance'
 import type {
   CallPhase,
@@ -823,14 +822,10 @@ export function applyDisposition(
   }
 }
 
-function complianceFooter(
-  store: DataStore,
-  config: ServerConfig,
-  contact: Contact
-): { unsubscribeUrl: string; footer: string } {
-  const url = unsubscribeUrl(config, contact.orgId, contact.email)
+function senderFooter(store: DataStore, contact: Contact): { footer?: string } {
   const org = store.db.orgs.find((o) => o.id === contact.orgId)
-  return { unsubscribeUrl: url, footer: emailFooter({ unsubscribeUrl: url, postalAddress: org?.postalAddress }) }
+  const footer = emailFooter({ postalAddress: org?.postalAddress })
+  return footer ? { footer } : {}
 }
 
 /** The org's own mailbox when connected; otherwise the shared pool unless that's disabled. */
@@ -843,7 +838,7 @@ async function sendEmailForOrg(
   if (store.isWriter && !(await store.isWriter())) {
     throw new Error('Jargon is restarting. Retry in a few seconds.')
   }
-  const message = { to: contact.email, ...input, ...complianceFooter(store, config, contact) }
+  const message = { to: contact.email, ...input, ...senderFooter(store, contact) }
   const mailbox = getOrgMailbox(store, contact.orgId)
   if (mailbox) {
     const result = await sendFromMailbox(store, config, mailbox, message)

@@ -548,8 +548,8 @@ function GuardrailsSection({
 
         <div className="admin-rule">
           <div>
-            <strong>Unsubscribe link and suppression list</strong>
-            <p>Always on for every email. Required for compliance.</p>
+            <strong>Suppression list</strong>
+            <p>Blocks further outreach to addresses on the list. Emails do not include an unsubscribe link.</p>
           </div>
           <span className="admin-locked">Always on</span>
         </div>

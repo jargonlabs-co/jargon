@@ -66,6 +66,7 @@ import {
 import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 import { isPriorityContact, isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
+import { takeCallWindow, wantsCallWindows } from '../shared/callWindow'
 import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
@@ -210,7 +211,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
+        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. When they ask for the best or least-busy time of day to call, follow nextAction and put callWindow on each call item. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
       })
     }
   )
@@ -484,7 +485,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
+        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. When the user asks for the best or least-busy time of day to call, the dialer is unchanged and nextAction asks for a callWindow on each call item. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -1000,7 +1001,9 @@ export function registerJargonTools(
           state: task.state,
           bucket: task.bucket,
           subject: task.subject,
-          reason: task.reason
+          reason: task.reason,
+          callAt: task.callWindowLabel,
+          callWindowReason: task.callWindowReason
         })),
         total: tasks.length
       })
@@ -1059,7 +1062,7 @@ export function registerJargonTools(
       .string()
       .min(1)
       .describe(
-        'JSON array of researched copy. Each item: {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[]}. Call channel body is the talk track. One Allow card for the whole list.'
+        'JSON array of researched copy. Each item: {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[], callWindow?}. Call channel body is the talk track. callWindow is {startLocal, endLocal, timezone?, businessType?, reason?, inferred?} when the user asked for the best time of day to call. One Allow card for the whole list.'
       )
   })
   const UpdateDraftInput = z.object({
@@ -1218,6 +1221,8 @@ export function registerJargonTools(
       const context = Array.isArray(rec.context)
         ? rec.context.filter((line): line is string => typeof line === 'string' && Boolean(line.trim()))
         : undefined
+      const callWindow = takeCallWindow(rec.callWindow)
+      if (!callWindow.ok) return { ok: false, error: `research[${i}].${callWindow.error}` }
       drafts.push({
         contactId,
         body,
@@ -1225,7 +1230,8 @@ export function registerJargonTools(
         channel,
         stepId: typeof rec.stepId === 'string' ? rec.stepId : undefined,
         day: typeof rec.day === 'number' ? rec.day : undefined,
-        context
+        context,
+        callWindow: callWindow.callWindow
       })
     }
     return { ok: true, drafts }
@@ -1247,7 +1253,12 @@ export function registerJargonTools(
       enroll
     })
     if (!result.ok) return fail(result.error)
-    return workspaceOk(store, config, actor.orgId, projectId, sandbox, enroll ? 'sequence' : 'contacts', actor.userId)
+    const focus: McpTab = enroll
+      ? wantsCallWindows(project.prompt || '')
+        ? 'tasks'
+        : 'sequence'
+      : 'contacts'
+    return workspaceOk(store, config, actor.orgId, projectId, sandbox, focus, actor.userId)
   }
 
   async function execUpdateDraft(
@@ -1632,7 +1643,7 @@ export function registerJargonTools(
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Required after import_list / deploy_tool. Write personalized talk tracks, email copy, and LinkedIn notes from each contact\'s fields (context and attrs from its source) — this enrolls the cadence and opens the one workspace for the build. Do not also call show_email_workspace or show_tasks. Do not invent funding, hiring, or tenure. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
+        'Required after import_list / deploy_tool. Write personalized talk tracks, email copy, and LinkedIn notes from each contact\'s fields (context and attrs from its source) — this enrolls the cadence and opens the one workspace for the build. Do not also call show_email_workspace or show_tasks. Do not invent funding, hiring, or tenure. When the user asked for the best time of day to call, add callWindow on each call item (startLocal, endLocal, timezone, businessType, reason, inferred) — one window per business type and timezone, copied onto every person in that group. summary is the sentence on Claude\'s Allow card. research is a JSON array string — pass it only as the tool argument, never paste it into chat. Do not leave {{first_name}} placeholders as the send copy.',
       _meta: EMAIL_WORKSPACE_TOOL_META,
       inputSchema: SaveResearchInput
     },

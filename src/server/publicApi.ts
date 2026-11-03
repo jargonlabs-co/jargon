@@ -63,6 +63,17 @@ import {
   type LeadPriority
 } from '../shared/priorityOverlay'
 import { warmthRank, type Warmth } from '../shared/warmth'
+import {
+  ATTR_CALL_WINDOW,
+  attachCallWindow,
+  callWindowClause,
+  callWindowGroupKey,
+  callWindowPersonFields,
+  contactCallWindowKey,
+  readCallWindow,
+  wantsCallWindows,
+  type CallWindowDraft
+} from '../shared/callWindow'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
   extractContactsFromPrompt,
@@ -558,11 +569,13 @@ export async function deployPublicTool(
         linkedinUrl: c.linkedinUrl || undefined,
         companyIndustry: c.companyIndustry || undefined,
         companySize: c.companySize || undefined,
-        context: c.context?.length ? c.context : undefined
+        context: c.context?.length ? c.context : undefined,
+        ...(wantsCallWindows(prompt) ? callWindowPersonFields(c) : {})
       }))
-      body.nextAction = willEnrollLater
+      const researchAction = willEnrollLater
         ? `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from the source) on these ${listed.total} people. Call save_research for project ${projectId} (pass stepId). Do not invent funding, hiring, or tenure. Do not paste the JSON into chat — save_research enrolls everyone and opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence. Do not leave {{first_name}} placeholders as the send copy.`
         : `Write personalized email copy from each contact's fields for project ${projectId}. Do not invent company facts. Do not start a sequence.`
+      body.nextAction = wantsCallWindows(prompt) ? `${researchAction} ${callWindowClause()}` : researchAction
     }
     if (requestedFields.length) {
       const missing = store.db.contacts
@@ -1793,6 +1806,40 @@ function markContactEnriched(store: DataStore, contactId: string): void {
   })
 }
 
+function writeCallWindow(store: DataStore, contactId: string, draft: CallWindowDraft): void {
+  store.update((db) => {
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const callWindow = attachCallWindow(draft, row)
+    if (!callWindow) return
+    row.attrs = { ...(row.attrs ?? {}), [ATTR_CALL_WINDOW]: callWindow }
+    row.updatedAt = Date.now()
+  })
+}
+
+/** One researched window covers every contact in that industry and timezone. */
+function spreadCallWindows(store: DataStore, orgId: string, projectId: string): void {
+  store.update((db) => {
+    const rows = db.contacts.filter((c) => c.orgId === orgId && c.projectId === projectId)
+    const windows = new Map<string, ReturnType<typeof readCallWindow>>()
+    for (const row of rows) {
+      const window = readCallWindow(row.attrs)
+      const key = window ? callWindowGroupKey(window) : null
+      if (window && key && !windows.has(key)) windows.set(key, window)
+    }
+    if (!windows.size) return
+    const now = Date.now()
+    for (const row of rows) {
+      if (readCallWindow(row.attrs)) continue
+      const key = contactCallWindowKey(row)
+      const window = key ? windows.get(key) : undefined
+      if (!window) continue
+      row.attrs = { ...(row.attrs ?? {}), [ATTR_CALL_WINDOW]: window }
+      row.updatedAt = now
+    }
+  })
+}
+
 function mergeContactContext(store: DataStore, contactId: string, context: string[]): void {
   store.update((db) => {
     const row = db.contacts.find((c) => c.id === contactId)
@@ -1811,7 +1858,7 @@ export function savePublicTalkTrack(
   store: DataStore,
   orgId: string,
   contactId: string,
-  input: { body: string; context?: string[]; stepId?: string }
+  input: { body: string; context?: string[]; stepId?: string; callWindow?: CallWindowDraft }
 ): { ok: true; contact: PublicContact } | { ok: false; error: string } {
   const contact = findOrgContact(store, orgId, contactId)
   if (!contact) return { ok: false, error: 'Contact not found' }
@@ -1828,10 +1875,12 @@ export function savePublicTalkTrack(
         ? { ...(row.attrs[ATTR_TALK_TRACKS] as Record<string, string>) }
         : {}
     if (input.stepId) prev[input.stepId] = body
+    const callWindow = input.callWindow ? attachCallWindow(input.callWindow, row) : undefined
     row.attrs = {
       ...(row.attrs ?? {}),
       [ATTR_TALK_TRACK]: body,
-      ...(Object.keys(prev).length ? { [ATTR_TALK_TRACKS]: prev } : {})
+      ...(Object.keys(prev).length ? { [ATTR_TALK_TRACKS]: prev } : {}),
+      ...(callWindow ? { [ATTR_CALL_WINDOW]: callWindow } : {})
     }
     if (input.context?.length) {
       const merged = [...(row.context ?? [])]
@@ -1864,6 +1913,7 @@ export type ResearchCopyInput = {
   stepId?: string
   day?: number
   context?: string[]
+  callWindow?: CallWindowDraft
 }
 
 export async function savePublicResearch(
@@ -1892,7 +1942,8 @@ export async function savePublicResearch(
       const result = savePublicTalkTrack(store, orgId, draft.contactId, {
         body: draft.body,
         context: draft.context,
-        stepId: draft.stepId
+        stepId: draft.stepId,
+        callWindow: draft.callWindow
       })
       if (result.ok) saved += 1
       else failed += 1
@@ -1908,9 +1959,11 @@ export async function savePublicResearch(
     })
     if (result.ok) {
       if (draft.context?.length) mergeContactContext(store, draft.contactId, draft.context)
+      if (draft.callWindow) writeCallWindow(store, draft.contactId, draft.callWindow)
       saved += 1
     } else failed += 1
   }
+  spreadCallWindows(store, orgId, projectId)
   let enrolled: number | undefined
   if (opts?.enroll !== false) {
     const contactIds = contactsForAutomaticEnroll(store, orgId, projectId)

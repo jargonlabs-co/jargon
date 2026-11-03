@@ -536,7 +536,7 @@ function createServer(): McpServer {
     {
       ...display('Save researched copy for the list', HINTS.write),
       description:
-        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens Tasks. research is a JSON array of {contactId, channel, body, subject?, stepId?, context?} — pass it only as the tool argument, never paste into chat.',
+        'Required after import_list / deploy_tool. Save researched talk tracks, email copy, and LinkedIn notes for every contact in one Allow — this enrolls the cadence and opens Tasks. research is a JSON array of {contactId, channel, body, subject?, stepId?, context?, callWindow?} — pass it only as the tool argument, never paste into chat. When the user asked for the best time of day to call, callWindow is {startLocal, endLocal, timezone?, businessType?, reason?, inferred?} on each call item, one window per business type and timezone.',
       inputSchema: z.object({
         summary: Summary,
         projectId: z.string(),
@@ -544,7 +544,7 @@ function createServer(): McpServer {
           .string()
           .min(1)
           .describe(
-            'JSON array of {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[]}'
+            'JSON array of {contactId, channel: email|linkedin|call, body, subject?, stepId?, context?: string[], callWindow?: {startLocal, endLocal, timezone?, businessType?, reason?, inferred?}}'
           )
       })
     },

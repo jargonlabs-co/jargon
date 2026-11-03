@@ -1,5 +1,6 @@
 import type { Channel, ContactStatus, MessageStatus } from './types'
 import type { PublicCall, PublicContact, PublicMessage, PublicStep } from './publicApi'
+import { callWindowTaskFields } from '../shared/callWindow'
 import { stepIncludesContact } from '../shared/workspaceSpec'
 
 const DAY_MS = 86_400_000
@@ -49,6 +50,12 @@ export type WorkspaceTask = {
   target?: string
   /** Why a task is blocked or skipped. */
   reason?: string
+  /** Recommended local time to place a call, e.g. "7:30–9:00am CST". */
+  callWindowLabel?: string
+  /** Why that window, e.g. "Auto repair — before the bays fill". */
+  callWindowReason?: string
+  /** Minutes from midnight for the window start, used to order today's calls. */
+  callWindowSort?: number
   /** Auto emails send on their day and stay out of the rep's to-do list. */
   owner: 'user' | 'auto'
 }
@@ -136,6 +143,7 @@ export function buildWorkspaceTasks(input: {
       }
 
       if (step.channel === 'call') {
+        const windowFields = callWindowTaskFields(contact.attrs)
         const call =
           completedCalls.find((item) => !claimedCalls.has(item.id) && item.stepId === step.id) ??
           completedCalls.find(
@@ -148,6 +156,7 @@ export function buildWorkspaceTasks(input: {
           claimedCalls.add(call.id)
           tasks.push({
             ...base,
+            ...windowFields,
             dueAt: call.startedAt,
             state: 'done',
             bucket: 'done',
@@ -165,6 +174,7 @@ export function buildWorkspaceTasks(input: {
               : 'due'
         tasks.push({
           ...base,
+          ...windowFields,
           dueAt,
           state,
           bucket: bucketFor(state, dueAt, now),
@@ -250,7 +260,22 @@ export function buildWorkspaceTasks(input: {
     }
   }
 
-  return tasks.sort((a, b) => a.dueAt - b.dueAt || a.contactName.localeCompare(b.contactName))
+  return tasks.sort(compareWorkspaceTasks)
+}
+
+/** Same calendar day: call windows order the list. Otherwise due time, then name. */
+export function compareWorkspaceTasks(a: WorkspaceTask, b: WorkspaceTask): number {
+  const dayA = new Date(a.dueAt).setHours(0, 0, 0, 0)
+  const dayB = new Date(b.dueAt).setHours(0, 0, 0, 0)
+  if (dayA !== dayB) return a.dueAt - b.dueAt
+  if (a.channel === 'call' && b.channel === 'call') {
+    const aMin = a.callWindowSort
+    const bMin = b.callWindowSort
+    if (aMin != null && bMin != null && aMin !== bMin) return aMin - bMin
+    if (aMin != null && bMin == null) return -1
+    if (aMin == null && bMin != null) return 1
+  }
+  return a.dueAt - b.dueAt || a.contactName.localeCompare(b.contactName)
 }
 
 /** Keep an open call step dialable and attach a note (for example do-not-call). */

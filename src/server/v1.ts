@@ -43,6 +43,7 @@ import {
   type ResearchCopyInput
 } from './publicApi'
 import { shouldAutoStartSequence } from '../shared/workspaceSpec'
+import { takeCallWindow } from '../shared/callWindow'
 import type { BillingService } from './billing/types'
 import { chargeIfLive, meBillingFields, projectNamesFor, refundCredits } from './billing'
 import { parseUsageRange } from './billing/view'
@@ -106,6 +107,8 @@ function parseResearchBody(
     const context = Array.isArray(item.context)
       ? item.context.filter((line): line is string => typeof line === 'string' && Boolean(line.trim()))
       : undefined
+    const callWindow = takeCallWindow(item.callWindow)
+    if (!callWindow.ok) return { ok: false, error: `research[${i}].${callWindow.error}` }
     drafts.push({
       contactId,
       body: copy,
@@ -113,7 +116,8 @@ function parseResearchBody(
       channel,
       stepId: typeof item.stepId === 'string' ? item.stepId : undefined,
       day: typeof item.day === 'number' ? item.day : undefined,
-      context
+      context,
+      callWindow: callWindow.callWindow
     })
   }
   return { ok: true, drafts }

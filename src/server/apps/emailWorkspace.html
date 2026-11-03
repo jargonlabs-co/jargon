@@ -729,12 +729,13 @@ function taskCounts() {
 function dueLabel(task) {
   const bucket = taskBucket(task);
   const d = new Date(task.dueAt);
-  if (Number.isNaN(d.getTime())) return '';
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  if (bucket === 'overdue') return `Overdue · ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  if (Number.isNaN(d.getTime())) return task.callWindowLabel || '';
+  const time = task.callWindowLabel || d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (bucket === 'overdue') return `Overdue · ${task.callWindowLabel || d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
   if (bucket === 'today') return `Today · ${time}`;
   if (bucket === 'done') return `Done · ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
   if (bucket === 'skipped') return 'Skipped';
+  if (task.callWindowLabel) return task.callWindowLabel;
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
@@ -2174,7 +2175,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         <span>
           <span class="title">${motionPill(contact) || esc(taskTitle(task))}</span>
           <div class="preview">${esc(who || task.contactName)}</div>
-          ${signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
+          ${task.callWindowReason ? `<div class="signal">${esc(task.callWindowReason)}</div>` : signal ? `<div class="signal">${esc(signal)}</div>` : `<div class="preview">Step ${Number(task.stepOrder || 0) + 1}${task.contactMeta ? ` · ${esc(task.contactMeta)}` : ''}</div>`}
         </span>
         <span class="todo-due">${just ? '<span class="just-done">Just completed</span>' : `<span>${done ? 'Done' : esc(taskTitle(task))}</span>${done ? '' : esc(dueDate(task))}`}</span>
       </button>
@@ -2285,6 +2286,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       <div class="composer call-panel">
         <div class="to">${esc(contact.name)} · ${esc(contact.phone || 'No number on file')}</div>
         ${task?.reason ? `<div class="banner">${esc(task.reason)}</div>` : ''}
+        ${task?.callWindowLabel ? `<p class="kicker">${esc(task.callWindowLabel)}${task.callWindowReason ? ` — ${esc(task.callWindowReason)}` : ''}</p>` : ''}
         ${phase === 'dialing' ? '<p class="empty">Connecting…</p>' : ''}
         ${phase === 'connected' ? '<p class="kicker">On the line</p>' : ''}
         ${done && !call ? '<p class="sub">Call logged.</p>' : ''}
@@ -2335,6 +2337,21 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return renderComposer(selected, { hideSteps: true, showWrite: true });
   }
 
+  function sortByCallWindow(tasks) {
+    if (!tasks.some((t) => Number.isFinite(t.callWindowSort))) return tasks;
+    return [...tasks].sort((a, b) => {
+      const dayA = new Date(a.dueAt).setHours(0, 0, 0, 0);
+      const dayB = new Date(b.dueAt).setHours(0, 0, 0, 0);
+      if (dayA !== dayB) return a.dueAt - b.dueAt;
+      const aCall = a.channel === 'call' && Number.isFinite(a.callWindowSort);
+      const bCall = b.channel === 'call' && Number.isFinite(b.callWindowSort);
+      if (aCall && bCall && a.callWindowSort !== b.callWindowSort) return a.callWindowSort - b.callWindowSort;
+      if (aCall && !bCall) return -1;
+      if (!aCall && bCall) return 1;
+      return String(a.contactName || '').localeCompare(String(b.contactName || ''));
+    });
+  }
+
   function visibleTasks() {
     const tasks = ws.tasks || [];
     const filtered = taskFilter === 'all'
@@ -2344,6 +2361,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         : taskFilter === 'done'
           ? tasks.filter((t) => taskBucket(t) === 'done' || taskBucket(t) === 'skipped')
           : tasks.filter((t) => taskBucket(t) === 'overdue' || taskBucket(t) === 'today');
+    if (filtered.some((t) => Number.isFinite(t.callWindowSort))) return sortByCallWindow(filtered);
     if (!filtered.some((t) => priorityOf(contactById(t.contactId)))) return filtered;
     return [...filtered].sort(
       (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
@@ -2454,7 +2472,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     const bucket = taskBucket(task);
     const ico = task.channel === 'call' ? ICO.phone : task.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
     const contact = contactById(task.contactId);
-    const line = signalLine(contact) || task.reason || oneLine(task.subject || task.body) || channelLabel(task.channel);
+    const line = task.callWindowReason || signalLine(contact) || task.reason || oneLine(task.subject || task.body) || channelLabel(task.channel);
     const mark = motionPill(contact);
     return `
       <button class="task ${task.id === selectedTaskId ? 'on' : ''} ${bucket}" data-task="${esc(task.id)}">
@@ -2704,6 +2722,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function dueDate(task) {
+    if (task.callWindowLabel && task.state !== 'done' && task.state !== 'skipped') return task.callWindowLabel;
     const d = new Date(task.dueAt);
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
@@ -2727,6 +2746,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       }
     }
     const next = [...best.values()];
+    if (next.some((t) => Number.isFinite(t.callWindowSort))) return sortByCallWindow(next);
     if (!next.some((t) => priorityOf(contactById(t.contactId)))) return next;
     return next.sort(
       (a, b) => (priorityOf(contactById(a.contactId))?.rank || 9999) - (priorityOf(contactById(b.contactId))?.rank || 9999)
@@ -2813,6 +2833,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       return `
         <div class="work-top"><button class="btn" id="work-back">Back</button><div class="who">${esc(contact.name)}</div></div>
         ${task.reason ? `<div class="banner">${esc(task.reason)}</div>` : ''}
+        ${task.callWindowLabel ? `<p class="kicker">${esc(task.callWindowLabel)}${task.callWindowReason ? ` — ${esc(task.callWindowReason)}` : ''}</p>` : ''}
         ${renderDialer({ ...(step || {}), body: task.body || step?.body || '', label: task.stepLabel || 'Call', channel: 'call' }, contact)}
         ${dispositions}
       `;

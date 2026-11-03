@@ -26,6 +26,7 @@ import {
   rankLeads,
   type LeadPriority
 } from '../shared/priorityOverlay'
+import { callWindowClause, wantsCallWindows } from '../shared/callWindow'
 import {
   inferMcpDefaultTab,
   inferMcpSurface,
@@ -44,7 +45,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=seqfresh1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=callwindow1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -89,6 +90,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=territory1',
   'ui://jargon/email-workspace.html?v=sched2',
   'ui://jargon/email-workspace.html?v=contacts1',
+  'ui://jargon/email-workspace.html?v=seqfresh1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -305,7 +307,27 @@ export function getEmailWorkspace(
     buildWorkspaceTasks({ contacts, steps, messages, calls: projectCalls }),
     dncNotesFor(store, orgId, contacts)
   )
-  if (priorityById.size) {
+  const windowed = tasks.some((task) => task.callWindowSort != null)
+  if (windowed) {
+    tasks.sort((a, b) => {
+      const dayA = new Date(a.dueAt).setHours(0, 0, 0, 0)
+      const dayB = new Date(b.dueAt).setHours(0, 0, 0, 0)
+      if (dayA !== dayB) return dayA - dayB
+      if (a.channel === 'call' && b.channel === 'call') {
+        const aMin = a.callWindowSort
+        const bMin = b.callWindowSort
+        if (aMin != null && bMin != null && aMin !== bMin) return aMin - bMin
+        if (aMin != null && bMin == null) return -1
+        if (aMin == null && bMin != null) return 1
+      }
+      if (priorityById.size) {
+        const rank =
+          (priorityById.get(a.contactId)?.rank ?? 9999) - (priorityById.get(b.contactId)?.rank ?? 9999)
+        if (rank !== 0) return rank
+      }
+      return a.dueAt - b.dueAt || a.contactName.localeCompare(b.contactName)
+    })
+  } else if (priorityById.size) {
     tasks.sort(
       (a, b) =>
         (priorityById.get(a.contactId)?.rank ?? 9999) - (priorityById.get(b.contactId)?.rank ?? 9999) ||
@@ -314,11 +336,13 @@ export function getEmailWorkspace(
     )
   }
   const taskStats = summarizeTasks(tasks)
-  const defaultTab = inferMcpDefaultTab({
-    surface,
-    focus: opts?.focus,
-    enrolled: taskStats.enrolled > 0
-  })
+  const defaultTab = wantsCallWindows(project.prompt || '')
+    ? 'tasks'
+    : inferMcpDefaultTab({
+        surface,
+        focus: opts?.focus,
+        enrolled: taskStats.enrolled > 0
+      })
   let remaining = 0
   for (const contact of contacts) {
     const mine = tasks.filter((task) => task.contactId === contact.id && task.owner !== 'auto')
@@ -338,10 +362,15 @@ export function getEmailWorkspace(
   const researchPending = !priorityPipeline && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const schedulePending =
     !priorityPipeline && !researchPending && taskStats.enrolled > 0 && !project.brief?.scheduleChoice
-  const nextAction = researchPending
+  const researchAction = researchPending
     ? surface === 'one_off'
       ? `Write personalized email copy from each contact's fields (context and attrs) for project ${project.id}. Do not invent company facts. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
       : `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from their source). Then call save_research for project ${project.id}. Do not invent funding, hiring, or tenure. That enrolls everyone and opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
+    : undefined
+  const nextAction = researchAction
+    ? wantsCallWindows(project.prompt || '')
+      ? `${researchAction} ${callWindowClause()}`
+      : researchAction
     : schedulePending
       ? scheduleAsk(project.id)
       : undefined
@@ -1029,6 +1058,7 @@ Ownership — do not compete with Jargon on structure:
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not open a workspace yet. Do not call show_email_workspace, show_tasks, or get_sequence to preview the template sequence.
 - If nextAction / pendingEnrichment is set, HubSpot contacts were just added and enrichment is still writing email, phone, LinkedIn, or company fields. Call list_crm_contacts again until those fields exist. Do not enroll and do not save_research until HubSpot has the enrichment.
 - Once people are reachable, write personalized talk tracks, email copy, and LinkedIn notes from each contact's fields (context and attrs). Do not invent funding, hiring, tenure, or other company facts the source did not provide. Then save_research. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
+- When the user asks for the best time of day to call, or the least-busy time to call a kind of business, build the dialer the usual way. On save_research, group people by companyIndustry and timezone and add callWindow to each call item: startLocal, endLocal, timezone, businessType, reason, inferred. One window per kind of business and timezone, copied onto every person in that group. Infer a blank industry from the company name and set inferred true. Omit timezone when the account's zone is unknown. The window is a recommendation with a reason. The to-do list shows that time. Do not invent funding, hiring, or tenure.
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
 - After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. ${SCHEDULED_BUILD} An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment puts people on the sequence and does not send anything. Email stays a draft, and a to-do, unless the user has turned Auto-send on for that email step. Do not pass mode auto and do not call send_message for people who were just added. The user turns Auto-send on in the sequence, or sends a to-do themselves. enroll_hubspot adds a HubSpot list onto the sequence and does not send. When personalized copy is already saved, that call opens the sequence — do not also call show_tasks or show_email_workspace. If you still need save_research, this enroll does not open a workspace; save_research does. Use show_tasks when they want to work what is due and nothing else has opened the sequence.

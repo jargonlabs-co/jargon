@@ -45,7 +45,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=callwindow1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=session1'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -91,6 +91,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=sched2',
   'ui://jargon/email-workspace.html?v=contacts1',
   'ui://jargon/email-workspace.html?v=seqfresh1',
+  'ui://jargon/email-workspace.html?v=callwindow1',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -647,7 +648,7 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   dashboardUrl: 'https://jargonlabs.co/tools/proj_preview',
   dashboardPath: '/tools/proj_preview',
   contactCount: 3,
-  channels: ['email'],
+  channels: ['email', 'linkedin', 'call'],
   emailLive: true,
   voiceLive: false,
   linkedinLive: false,
@@ -670,12 +671,19 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
     },
     {
       id: 'step_2',
-      day: 3,
-      channel: 'email',
-      label: 'Bump',
-      subject: 'Re: {{company}} GTM hiring',
-      body: 'Hi {{first_name}}, bumping this in case it got buried.\n\nTara',
+      day: 2,
+      channel: 'linkedin',
+      label: 'Note',
+      body: 'Hi {{first_name}}, saw the note on inbound-to-outbound handoffs. That is the gap we work on with GTM teams.',
       order: 1
+    },
+    {
+      id: 'step_3',
+      day: 2,
+      channel: 'call',
+      label: 'Call',
+      body: 'Open with the role, then the email about hiring. Ask who owns the handoff from inbound into outbound.',
+      order: 2
     }
   ],
   contacts: [
@@ -686,12 +694,24 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
       company: 'Northwind',
       title: 'Head of GTM Eng',
       email: 'alex@northwind.com',
-      phone: '',
+      phone: '+1 (512) 555-0148',
       city: 'Austin',
-      status: 'queued',
+      status: 'active',
       stepIndex: 0,
       notes: '',
-      attrs: { funding_round: 'Series B' },
+      linkedinUrl: 'https://www.linkedin.com/in/alexchen',
+      attrs: { funding_round: 'Series B', hiring: '2 AE roles', timezone: 'America/Chicago' },
+      priority: {
+        rank: 1,
+        score: 48,
+        motion: 'outbound',
+        band: 'high',
+        signals: [
+          'Hiring: 2 AE roles',
+          'Promoted to Head of GTM Eng 3 months ago',
+          'Commented on a post about inbound-to-outbound handoffs'
+        ]
+      },
       createdAt: 0,
       updatedAt: 0,
       preview: {
@@ -744,11 +764,18 @@ export const SAMPLE_EMAIL_WORKSPACE: EmailWorkspace = {
   messages: [],
   openCall: null,
   sources: [{ provider: 'hubspot', status: 'connected', accountLabel: 'Northwind CRM' }],
-  tasks: [],
+  tasks: [
+    { id: 'ct_1:step_1', contactId: 'ct_1', contactName: 'Alex Chen', contactMeta: 'Head of GTM Eng · Northwind', stepId: 'step_1', stepLabel: 'Intro', stepOrder: 0, day: 0, channel: 'email', dueAt: 1, state: 'due', bucket: 'today', subject: 'Alex — GTM hiring at Northwind', body: 'Hi Alex,\n\nSaw Northwind is in a Series B and hiring GTM engineers. Worth a 20-minute intro?\n\nTara', target: 'alex@northwind.com', owner: 'user' },
+    { id: 'ct_1:step_2', contactId: 'ct_1', contactName: 'Alex Chen', contactMeta: 'Head of GTM Eng · Northwind', stepId: 'step_2', stepLabel: 'Note', stepOrder: 1, day: 2, channel: 'linkedin', dueAt: 1, state: 'due', bucket: 'today', body: 'Hi Alex, saw your comment on the inbound-to-outbound handoff thread. That is the gap we work on with GTM teams.', target: 'https://www.linkedin.com/in/alexchen', owner: 'user' },
+    { id: 'ct_1:step_3', contactId: 'ct_1', contactName: 'Alex Chen', contactMeta: 'Head of GTM Eng · Northwind', stepId: 'step_3', stepLabel: 'Call', stepOrder: 2, day: 2, channel: 'call', dueAt: 1, state: 'due', bucket: 'today', body: 'Alex, congrats on the role. I emailed about the AE openings. Who owns the handoff from inbound into outbound today?', target: '+1 (512) 555-0148', owner: 'user' },
+    { id: 'ct_2:step_1', contactId: 'ct_2', contactName: 'Priya Shah', contactMeta: 'VP RevOps · Harbor', stepId: 'step_1', stepLabel: 'Intro', stepOrder: 0, day: 0, channel: 'email', dueAt: 1, state: 'due', bucket: 'today', subject: 'Priya — GTM hiring at Harbor', body: 'Hi Priya,\n\nSaw Harbor is in a Series A and hiring GTM engineers. Worth a 20-minute intro?\n\nTara', target: 'priya@harbor.io', owner: 'user' },
+    { id: 'ct_3:step_1', contactId: 'ct_3', contactName: 'Sam Ortiz', contactMeta: 'GTM Engineer · Lumen', stepId: 'step_1', stepLabel: 'Intro', stepOrder: 0, day: 0, channel: 'email', dueAt: 1, state: 'due', bucket: 'today', subject: 'Sam — GTM hiring at Lumen', body: 'Hi Sam,\n\nSaw Lumen is hiring GTM engineers. Worth a 20-minute intro?\n\nTara', owner: 'user' }
+  ],
   taskStats: summarizeTasks([]),
   stepStats: [
-    { stepId: 'step_1', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 },
-    { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 0 }
+    { stepId: 'step_1', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 3 },
+    { stepId: 'step_2', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 1 },
+    { stepId: 'step_3', drafted: 0, queued: 0, sent: 0, skipped: 0, due: 1 }
   ],
   researchPending: false,
   stats: {
@@ -1062,10 +1089,10 @@ Ownership — do not compete with Jargon on structure:
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
 - After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. ${SCHEDULED_BUILD} An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment puts people on the sequence and does not send anything. Email stays a draft, and a to-do, unless the user has turned Auto-send on for that email step. Do not pass mode auto and do not call send_message for people who were just added. The user turns Auto-send on in the sequence, or sends a to-do themselves. enroll_hubspot adds a HubSpot list onto the sequence and does not send. When personalized copy is already saved, that call opens the sequence — do not also call show_tasks or show_email_workspace. If you still need save_research, this enroll does not open a workspace; save_research does. Use show_tasks when they want to work what is due and nothing else has opened the sequence.
-- Tasks is today's work: they click through — send the email, run the call with the talk track, send the LinkedIn note, skip, or reschedule. Open it with show_tasks; read it with list_tasks.
+- Tasks is the rep session: one contact at a time, email, then the LinkedIn note, then the call. Sending or skipping a step moves to that contact's next step. A call outcome logs the call and opens the next contact. Open it with show_tasks; read it with list_tasks. Do not send the rep back to a to-do list.
 - When the user asks how the team or org performed — a rep productivity drilldown, meetings booked, calls, emails, or replies over a period such as last quarter — call show_admin once. That opens the org view. Pass range quarter for last quarter, or 7d, 30d, or 90d. Pass focus reps, sequences, meetings, or territories. Use territories when they ask for sales territory, productivity by territory, or which message converts in a territory. Summarize the summary field in one sentence. Do not paste the table, and do not call show_tasks or get_usage for that.
 - Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.
-- LinkedIn profiles stay in Claude's Browser pane. When the workspace asks to open a profile, call navigate with that exact URL. Do not open an external browser or a separate window, and do not paste the URL into chat.
+- The rep session sends the LinkedIn note itself. Do not type a chat message, call navigate, or open a Browser pane for a profile.
 - Never share dashboardUrl, dashboardPath, or a jargonlabs.co/tools/… link. A build displays one in-chat workspace: the one save_research opens after personalized copy is saved. A priority pipeline displays one workspace: the show_tasks call after deploy. Do not tell them to open the web workspace.
 - Send the user to the web dashboard only to update billing or plans (call create_billing_link, or https://jargonlabs.co/billing) or to contact support (https://jargonlabs.co).
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.

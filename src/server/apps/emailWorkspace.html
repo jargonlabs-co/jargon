@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jargon email</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" />
   <style>
     :root, :root.dark {
       color-scheme: light;
@@ -427,6 +428,138 @@
     .step-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
     .btn.accent { background: var(--navy); border-color: var(--navy); color: var(--cream); }
     .btn.accent:hover { opacity: 0.92; }
+
+    .session-page {
+      --navy-900: #0F2B3F;
+      --navy-700: #26506E;
+      --red-500: #FF5B42;
+      --gray-400: #A5ABB5;
+      --gray-600: #5C6470;
+      --cream-50: #FBF6EE;
+      --cream-100: #F7EFDC;
+      --cream-200: #FBEFD5;
+      --cream-border: #EEEAE4;
+      --yellow-600: #EEA915;
+      background: var(--cream-50);
+      color: var(--navy-900);
+      font-family: Inter, -apple-system, 'Segoe UI', sans-serif;
+      min-height: 100%;
+      padding: 16px;
+    }
+    .session-card {
+      background: #fff;
+      border: 1px solid var(--cream-border);
+      border-radius: 14px;
+      box-shadow: 0 2px 10px rgba(15, 43, 63, 0.06);
+      overflow: hidden;
+    }
+    .session-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 20px; background: var(--navy-900); color: #fff;
+    }
+    .session-bar-title {
+      flex: 1; min-width: 0;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .session-progress { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .session-progress span { font-size: 13px; color: #C9D6E0; white-space: nowrap; }
+    .session-track { width: 80px; height: 6px; border-radius: 999px; background: var(--navy-700); overflow: hidden; }
+    .session-track i { display: block; height: 6px; background: var(--red-500); }
+    .session-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+    .session-who { display: flex; align-items: center; gap: 12px; }
+    .session-avatar {
+      width: 44px; height: 44px; border-radius: 50%; background: var(--navy-900); color: #fff;
+      font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .session-name {
+      font-family: Poppins, Inter, sans-serif; font-size: 20px; font-weight: 700; line-height: 1.2; margin: 0;
+    }
+    .session-meta { font-size: 14px; color: var(--gray-600); margin-top: 2px; }
+    .why {
+      padding: 14px; border-radius: 10px; background: var(--cream-100);
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .why-h {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-600);
+    }
+    .why-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 6px; }
+    .why-row.on { background: #fff; border: 1px solid var(--navy-900); }
+    .why-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--gray-400); flex-shrink: 0; }
+    .why-row.on .why-dot { background: var(--red-500); }
+    .why-copy { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+    .why-label { font-size: 14px; font-weight: 500; }
+    .why-row.on .why-label { font-weight: 600; }
+    .why-meta { font-size: 12px; color: var(--gray-600); }
+    .why-pill {
+      padding: 3px 8px; border-radius: 999px; background: var(--navy-900); color: #fff;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+    }
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .steps.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .steps.n1 { grid-template-columns: 1fr; }
+    .step-cell {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 40px; padding: 6px; border-radius: 10px; border: 1px solid var(--cream-border);
+      font-size: 14px; color: var(--gray-600); text-align: center;
+    }
+    .step-cell.now { border: 2px solid var(--navy-900); color: var(--navy-900); font-weight: 600; }
+    .step-cell.done { background: var(--navy-900); color: #fff; border-color: var(--navy-900); font-weight: 600; }
+    .session-field { display: flex; flex-direction: column; gap: 6px; }
+    .session-field label { font-size: 13px; font-weight: 500; color: var(--gray-600); margin: 0; }
+    .session-card input[type="text"], .session-card textarea {
+      width: 100%; box-sizing: border-box; border: 1px solid var(--cream-border); border-radius: 10px;
+      background: #fff; color: var(--navy-900); font: 400 15px/1.5 Inter, sans-serif;
+    }
+    .session-card input[type="text"] { height: 44px; padding: 0 12px; }
+    .session-card textarea { min-height: 120px; padding: 12px; resize: vertical; }
+    .session-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .session-actions .push { margin-left: auto; }
+    .session-btn {
+      min-height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--cream-border);
+      background: #fff; color: var(--navy-900); font: 500 15px/1 Inter, sans-serif; cursor: pointer;
+    }
+    .session-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .session-btn.primary {
+      border: none; background: var(--navy-900); color: #fff; font-weight: 600; padding: 0 22px;
+    }
+    .session-btn.ghost { border: none; background: transparent; color: var(--gray-600); }
+    .session-btn.call {
+      width: 100%; height: 48px; border: none; border-radius: 14px; background: var(--navy-900); color: #fff;
+      font: 600 16px/1 Inter, sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .session-note {
+      display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px;
+      background: var(--cream-200); font-size: 13px;
+    }
+    .session-note i { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow-600); flex-shrink: 0; }
+    .talk {
+      display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
+      border: 1px solid var(--cream-border); border-radius: 10px;
+    }
+    .talk strong { font-size: 13px; font-weight: 600; color: var(--gray-600); }
+    .talk p { margin: 0; font-size: 15px; line-height: 1.5; }
+    .outcomes { display: flex; flex-direction: column; gap: 8px; }
+    .outcome-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .outcome-grid button {
+      min-height: 44px; padding: 6px; border: 1px solid var(--cream-border); border-radius: 10px;
+      background: #fff; color: var(--navy-900); font: 500 14px/1.2 Inter, sans-serif; cursor: pointer;
+    }
+    .outcome-grid button.book { border-color: var(--navy-900); font-weight: 600; }
+    .session-foot {
+      border-top: 1px solid var(--cream-border); background: var(--cream-50);
+      padding: 12px 20px; font-size: 13px; color: var(--gray-600);
+    }
+    .session-done { display: flex; flex-direction: column; gap: 8px; }
+    .session-done h2 {
+      font-family: Poppins, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 0;
+    }
+    .session-done ul { margin: 0; padding-left: 18px; }
+    .session-done li { margin: 4px 0; font-size: 14px; }
+    .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .field-head span { font-size: 12px; color: var(--gray-600); }
+    @media (max-width: 560px) {
+      .outcome-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body>
@@ -1579,15 +1712,11 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
 
   async function openLinkedIn(contact) {
     if (!contact.linkedinUrl) { setNotice('No LinkedIn URL on this contact.', 'err'); return; }
-    // openLink leaves Claude for the system browser. This asks Claude to open its Browser pane.
-    const result = await app.sendMessage({
-      role: 'user',
-      content: [{
-        type: 'text',
-        text: `Open this LinkedIn profile in the Browser pane. Call navigate with this exact URL. Do not open an external browser or a separate window.\n${contact.linkedinUrl}`,
-      }],
-    });
-    if (result?.isError) setNotice('Could not open the profile in Claude.', 'err');
+    try {
+      await app.openLink({ url: contact.linkedinUrl });
+    } catch (err) {
+      setNotice(err?.message || 'Could not open the profile.', 'err');
+    }
   }
 
   function renderOverflow() {
@@ -3120,6 +3249,484 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     render();
   }
 
+  const SESSION_CHANNELS = ['email', 'linkedin', 'call'];
+
+  function sessionFirstName(contact) {
+    return String(contact?.name || 'them').trim().split(/\s+/)[0] || 'them';
+  }
+
+  function sessionInitials(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    const letters = (parts[0]?.[0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '');
+    return letters.toUpperCase() || '•';
+  }
+
+  function sessionIdentity(contact) {
+    return [contact?.title, contact?.company].filter(Boolean).join(' at ');
+  }
+
+  function whyNowSignals(contact) {
+    const priority = priorityOf(contact);
+    const fromPriority = Array.isArray(priority?.signals) ? priority.signals : [];
+    const fromContext = Array.isArray(contact?.context) ? contact.context : [];
+    const identity = sessionIdentity(contact);
+    const clean = (lines) => lines
+      .map((line) => String(line || '').trim())
+      .filter((line) => line && line !== identity && line !== (contact?.title || '') && line !== (contact?.company || ''));
+    const chosen = clean(fromPriority);
+    return (chosen.length ? chosen : clean(fromContext)).slice(0, 4);
+  }
+
+  function parseSignal(line) {
+    const text = String(line || '').trim();
+    const typed = text.match(/^([^:]{2,40}):\s+(.+)$/);
+    if (typed) return { label: typed[2], type: typed[1], raw: text };
+    return { label: text, type: '', raw: text };
+  }
+
+  function signalPref(channel) {
+    if (channel === 'email') return /hiring|intent|funding|uses /i;
+    if (channel === 'linkedin') return /linkedin|post|comment|activity/i;
+    return /role|promot|senior|tenure|title/i;
+  }
+
+  function assignSignals(signals, channels) {
+    const used = new Set();
+    const map = {};
+    for (const channel of channels) {
+      const pref = signalPref(channel);
+      let idx = signals.findIndex((signal, i) => !used.has(i) && pref.test(`${signal.type} ${signal.label} ${signal.raw}`));
+      if (idx < 0) idx = signals.findIndex((_, i) => !used.has(i));
+      if (idx >= 0) {
+        used.add(idx);
+        map[channel] = idx;
+      }
+    }
+    return map;
+  }
+
+  function userChannelTasks(contactId, channel) {
+    return (ws?.tasks || [])
+      .filter((task) => task.contactId === contactId && task.channel === channel && task.owner !== 'auto')
+      .sort((a, b) => Number(a.stepOrder || 0) - Number(b.stepOrder || 0) || Number(a.dueAt || 0) - Number(b.dueAt || 0));
+  }
+
+  function openChannelTask(tasks) {
+    return tasks.find((task) => task.state !== 'done' && task.state !== 'skipped') || null;
+  }
+
+  function contactChannels(contactId) {
+    return SESSION_CHANNELS.filter((channel) => userChannelTasks(contactId, channel).length);
+  }
+
+  function channelState(contactId, channel) {
+    const tasks = userChannelTasks(contactId, channel);
+    if (!tasks.length) return null;
+    const open = openChannelTask(tasks);
+    if (open) return { status: 'open', task: open };
+    const done = [...tasks].reverse().find((task) => task.state === 'done');
+    const skipped = [...tasks].reverse().find((task) => task.state === 'skipped');
+    const task = done || skipped;
+    return { status: done ? 'done' : 'skipped', task };
+  }
+
+  function sessionPeople() {
+    const ids = [];
+    const seen = new Set();
+    for (const task of ws?.tasks || []) {
+      if (task.owner === 'auto' || seen.has(task.contactId)) continue;
+      seen.add(task.contactId);
+      ids.push(task.contactId);
+    }
+    const people = ids.map((id) => {
+      const found = contactById(id);
+      if (found) return found;
+      const task = (ws.tasks || []).find((row) => row.contactId === id);
+      return contactForTask(task);
+    }).filter(Boolean);
+    return priorityPeople(people);
+  }
+
+  function sessionCurrent(people) {
+    for (const person of people) {
+      for (const channel of contactChannels(person.id)) {
+        const state = channelState(person.id, channel);
+        if (state?.status === 'open') return { person, channel, task: state.task };
+      }
+    }
+    return null;
+  }
+
+  function sessionProgress(people) {
+    let total = 0;
+    let done = 0;
+    for (const person of people) {
+      for (const channel of contactChannels(person.id)) {
+        total += 1;
+        if (channelState(person.id, channel)?.status !== 'open') done += 1;
+      }
+    }
+    return { total, done };
+  }
+
+  function sessionLocalTime(contact) {
+    const attrs = contact?.attrs || {};
+    const windowZone = attrs._callWindow && typeof attrs._callWindow === 'object' ? attrs._callWindow.timezone : '';
+    const zone = [attrs.timezone, attrs.hs_timezone, attrs.company_timezone, windowZone].find((value) => typeof value === 'string' && value.trim());
+    if (!zone) return '';
+    try {
+      return `${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date())} local`;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function sessionMeta(contact, channel) {
+    const parts = [contact.title, contact.company, contact.city].filter(Boolean);
+    if (channel === 'call') {
+      if (contact.phone) parts.push(contact.phone);
+      const time = sessionLocalTime(contact);
+      if (time) parts.push(time);
+    }
+    return parts.join(' · ');
+  }
+
+  function plainCopy(value, contact, fallback) {
+    const text = String(value || '');
+    if (text.trim() && !text.includes('{{')) return text;
+    return interpolate(fallback || text, contact);
+  }
+
+  function emailFields(contact, task) {
+    const step = stepOf(task);
+    const message = (task?.messageId && (ws.messages || []).find((row) => row.id === task.messageId))
+      || messageFor(ws, contact.id, step);
+    return {
+      subject: plainCopy(message?.subject || task?.subject, contact, step?.subject || ''),
+      body: plainCopy(message?.body || task?.body, contact, step?.body || contact.preview?.body || ''),
+    };
+  }
+
+  function linkedinBody(contact, task) {
+    const step = stepOf(task);
+    const message = (task?.messageId && (ws.messages || []).find((row) => row.id === task.messageId))
+      || messageFor(ws, contact.id, step);
+    return plainCopy(message?.body || task?.body, contact, step?.body || contact.linkedinPreview?.body || '');
+  }
+
+  function nextChannelName(channels, channel) {
+    const next = channels[channels.indexOf(channel) + 1];
+    if (next === 'linkedin') return 'next: LinkedIn';
+    if (next === 'call') return 'next: Call';
+    if (next === 'email') return 'next: Email';
+    return 'next contact';
+  }
+
+  function stepWord(channel) {
+    if (channel === 'linkedin') return 'LinkedIn';
+    if (channel === 'call') return 'Call';
+    return 'Email';
+  }
+
+  function closedStepLabel(channel, status) {
+    if (status === 'skipped') {
+      if (channel === 'linkedin') return 'Request skipped';
+      if (channel === 'call') return 'Call skipped';
+      return 'Email skipped';
+    }
+    if (channel === 'linkedin') return 'Request sent';
+    if (channel === 'call') return 'Call logged';
+    return 'Email sent';
+  }
+
+  function usedPhrase(channel) {
+    if (channel === 'email') return 'used in email';
+    if (channel === 'linkedin') return 'used in note';
+    return '';
+  }
+
+  function pillFor(channel) {
+    if (channel === 'email') return 'IN THIS EMAIL';
+    if (channel === 'linkedin') return 'IN THIS NOTE';
+    return 'OPEN WITH THIS';
+  }
+
+  const SESSION_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>';
+  const SESSION_PHONE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>';
+
+  function renderWhy(contact, channels, channel) {
+    const signals = whyNowSignals(contact).map(parseSignal);
+    const first = sessionFirstName(contact);
+    if (!signals.length) {
+      return `<div class="why"><div class="why-h">Why now · ${esc(first)}</div><div class="why-meta">No signals found</div></div>`;
+    }
+    const assigned = assignSignals(signals, channels);
+    const currentIndex = channels.indexOf(channel);
+    return `
+      <div class="why">
+        <div class="why-h">Why now · ${esc(first)}</div>
+        ${signals.map((signal, index) => {
+          const owner = channels.find((item) => assigned[item] === index) || '';
+          const ownerAt = channels.indexOf(owner);
+          const current = owner === channel;
+          const earlier = owner && ownerAt > -1 && ownerAt < currentIndex;
+          const meta = [signal.type, earlier ? usedPhrase(owner) : ''].filter(Boolean).join(' · ');
+          return `
+            <div class="why-row${current ? ' on' : ''}">
+              <span class="why-dot" aria-hidden="true"></span>
+              <span class="why-copy">
+                <span class="why-label">${esc(signal.label)}</span>
+                ${meta ? `<span class="why-meta">${esc(meta)}</span>` : ''}
+              </span>
+              ${current ? `<span class="why-pill">${pillFor(channel)}</span>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderStepTracker(contact, channels, channel) {
+    const count = channels.length;
+    const klass = count === 2 ? 'n2' : count === 1 ? 'n1' : '';
+    return `
+      <div class="steps ${klass}" role="list" aria-label="Steps for ${esc(contact.name)}">
+        ${channels.map((item, index) => {
+          const state = channelState(contact.id, item);
+          const on = item === channel;
+          const closed = state && state.status !== 'open';
+          const label = closed ? closedStepLabel(item, state.status) : `${index + 1} · ${stepWord(item)}`;
+          return `<div role="listitem" class="step-cell${on ? ' now' : ''}${closed ? ' done' : ''}">${closed ? SESSION_CHECK : ''}${esc(label)}</div>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderTaskPanel(contact, channels, channel, task) {
+    const first = sessionFirstName(contact);
+    const blocked = task?.state === 'blocked';
+    const reason = blocked && task?.reason ? `<div class="banner">${esc(task.reason)}</div>` : '';
+    if (channel === 'call') {
+      const track = plainCopy(task?.body, contact, talkTrackFor(contact, task?.stepId) || stepOf(task)?.body || '');
+      const calling = dialState === 'dialing' || dialState === 'connected';
+      return `
+        ${reason}
+        <div class="talk"><strong>Talk track</strong><p>${esc(track || 'No talk track on this contact.')}</p></div>
+        <button type="button" class="session-btn call" id="session-call" ${busy || !contact.phone ? 'disabled' : ''}>${SESSION_PHONE}${calling ? `Calling ${esc(first)}` : `Call ${esc(first)}`}</button>
+        <div class="outcomes">
+          <div class="why-meta">Log the outcome to finish ${esc(first)} and move on</div>
+          <div class="outcome-grid">
+            <button type="button" data-outcome="connected" ${busy ? 'disabled' : ''}>Connected</button>
+            <button type="button" data-outcome="voicemail" ${busy ? 'disabled' : ''}>Voicemail</button>
+            <button type="button" data-outcome="no_answer" ${busy ? 'disabled' : ''}>No answer</button>
+            <button type="button" class="book" data-outcome="meeting_booked" ${busy ? 'disabled' : ''}>Book meeting</button>
+          </div>
+        </div>
+      `;
+    }
+    if (channel === 'linkedin') {
+      const body = linkedinBody(contact, task);
+      const next = nextChannelName(channels, channel);
+      return `
+        ${reason}
+        <div class="session-field">
+          <div class="field-head">
+            <label for="li-body">Connection request note</label>
+            <span id="li-count">${body.length} / 300</span>
+          </div>
+          ${filledTextarea('li-body', body)}
+        </div>
+        <div class="session-note"><i aria-hidden="true"></i><span>Jargon sends this from your LinkedIn. You can still edit it first.</span></div>
+        <div class="session-actions">
+          <button type="button" class="session-btn primary" id="session-send" ${busy || blocked || !contact.linkedinUrl ? 'disabled' : ''}>Send request · ${esc(next)}</button>
+          <button type="button" class="session-btn" id="session-skip-step" ${busy ? 'disabled' : ''}>Skip step</button>
+          <button type="button" class="session-btn ghost push" id="session-skip-person" ${busy ? 'disabled' : ''}>Skip ${esc(first)}</button>
+        </div>
+      `;
+    }
+    const draft = emailFields(contact, task);
+    const next = nextChannelName(channels, channel);
+    const verb = next.startsWith('next:') ? `Send · ${next}` : 'Send · next contact';
+    return `
+      ${reason}
+      <div class="session-field">
+        <label for="draft-subject">Subject</label>
+        ${filledInput('draft-subject', draft.subject)}
+      </div>
+      <div class="session-field">
+        <label for="draft-body">Body</label>
+        ${filledTextarea('draft-body', draft.body)}
+      </div>
+      <div class="session-actions">
+        <button type="button" class="session-btn primary" id="session-send" ${busy || blocked || !contact.email ? 'disabled' : ''}>${esc(verb)}</button>
+        <button type="button" class="session-btn" id="session-skip-step" ${busy ? 'disabled' : ''}>Skip step</button>
+        <button type="button" class="session-btn ghost push" id="session-skip-person" ${busy ? 'disabled' : ''}>Skip ${esc(first)}</button>
+      </div>
+    `;
+  }
+
+  function renderSessionDone(people) {
+    const lines = [];
+    for (const person of people) {
+      for (const channel of contactChannels(person.id)) {
+        const state = channelState(person.id, channel);
+        if (!state || state.status === 'open') continue;
+        lines.push(`${closedStepLabel(channel, state.status)} · ${person.name}`);
+      }
+    }
+    const upcoming = (ws.tasks || [])
+      .filter((task) => task.state === 'scheduled')
+      .sort((a, b) => Number(a.dueAt || 0) - Number(b.dueAt || 0))[0];
+    const when = upcoming?.dueAt ? new Date(upcoming.dueAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : '';
+    return `
+      <div class="session-done">
+        <h2>Session complete</h2>
+        ${lines.length ? `<ul>${lines.slice(0, 8).map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : '<p class="session-meta">Nothing was sent.</p>'}
+        <p class="session-meta">${when ? `Next batch is due ${esc(when)}.` : 'Nothing else is scheduled.'}</p>
+      </div>
+    `;
+  }
+
+  function renderSession() {
+    const people = sessionPeople();
+    const current = sessionCurrent(people);
+    const progress = sessionProgress(people);
+    const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+    const width = pct === 0 ? 2 : pct;
+    if (current) {
+      selectedId = current.person.id;
+      selectedTaskId = current.task.id;
+      actionPane = current.channel;
+    }
+    const index = current ? people.findIndex((person) => person.id === current.person.id) : -1;
+    const next = current ? people.slice(index + 1).find((person) => contactChannels(person.id).some((channel) => channelState(person.id, channel)?.status === 'open')) : null;
+    const channels = current ? contactChannels(current.person.id) : [];
+    const title = current
+      ? `Contact ${index + 1} of ${people.length} · ${ws.name}`
+      : `Session complete · ${ws.name}`;
+    root.innerHTML = `
+      <div class="session-page">
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        <div class="session-card">
+          <div class="session-bar">
+            <div class="session-bar-title">${esc(title)}</div>
+            <div class="session-progress">
+              <span>${progress.done} of ${progress.total} tasks</span>
+              <div class="session-track" aria-hidden="true"><i style="width:${width}%"></i></div>
+            </div>
+          </div>
+          ${!people.length ? '<div class="session-body"><p class="session-meta">No one is enrolled in this sequence yet.</p></div>' : `
+            <div class="session-body">
+              ${current ? `
+                <div class="session-who">
+                  <div class="session-avatar" aria-hidden="true">${esc(sessionInitials(current.person.name))}</div>
+                  <div>
+                    <h2 class="session-name">${esc(current.person.name)}</h2>
+                    <div class="session-meta">${esc(sessionMeta(current.person, current.channel))}</div>
+                  </div>
+                </div>
+                ${renderWhy(current.person, channels, current.channel)}
+                ${renderStepTracker(current.person, channels, current.channel)}
+                ${renderTaskPanel(current.person, channels, current.channel, current.task)}
+              ` : renderSessionDone(people)}
+            </div>
+            ${next ? `<div class="session-foot">Next contact · ${esc(next.name)}${next.title ? `, ${esc(next.title)}` : ''}${next.company ? ` · ${esc(next.company)}` : ''}</div>` : ''}
+          `}
+        </div>
+      </div>
+    `;
+    bindSession();
+  }
+
+  function bindSession() {
+    applyFills(root);
+    const note = root.querySelector('#li-body');
+    const count = root.querySelector('#li-count');
+    if (note && count) {
+      const sync = () => { count.textContent = `${note.value.length} / 300`; };
+      note.setAttribute('maxlength', '300');
+      sync();
+      note.addEventListener('input', sync);
+    }
+    root.querySelector('#session-send')?.addEventListener('click', () => {
+      const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
+      if (!contact) return;
+      if (actionPane === 'linkedin') void sendLinkedIn(contact);
+      else void sendNow(contact);
+    });
+    root.querySelector('#session-skip-step')?.addEventListener('click', () => void skipCurrentTask());
+    root.querySelector('#session-skip-person')?.addEventListener('click', () => {
+      const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
+      if (contact) void skipSessionPerson(contact);
+    });
+    root.querySelector('#session-call')?.addEventListener('click', () => {
+      const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
+      if (!contact) return;
+      dialDigits = String(contact.phone || '').replace(/[^\d*#]/g, '').slice(0, 20);
+      void startCall(contact);
+    });
+    root.querySelectorAll('[data-outcome]').forEach((el) => el.addEventListener('click', () => {
+      const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
+      if (contact) void sessionLogCall(contact, el.getAttribute('data-outcome'));
+    }));
+  }
+
+  async function skipSessionPerson(contact) {
+    const open = (ws.tasks || []).filter((task) => task.contactId === contact.id && task.owner !== 'auto' && task.state !== 'done' && task.state !== 'skipped');
+    if (!open.length) return;
+    busy = true;
+    render();
+    for (const task of open) {
+      const parsed = parseToolResult(await callTool({
+        name: 'run_skip_task',
+        arguments: { contactId: contact.id, stepId: task.stepId },
+      }));
+      if (parsed?.error) { busy = false; setNotice(parsed.error, 'err'); return; }
+    }
+    const ok = await reload({ silent: true });
+    busy = false;
+    if (!ok) return;
+    setNotice(`Skipped ${sessionFirstName(contact)}.`, 'ok');
+  }
+
+  async function sessionLogCall(contact, key) {
+    const status = { connected: 'completed', voicemail: 'no_answer', no_answer: 'no_answer', meeting_booked: 'meeting_booked' }[key] || 'completed';
+    const label = { connected: 'Connected', voicemail: 'Voicemail', no_answer: 'No answer', meeting_booked: 'Meeting booked' }[key] || 'Logged';
+    const task = activeTask();
+    await hangupPlivo();
+    const call = ws.openCall && ws.openCall.contactId === contact.id ? ws.openCall : null;
+    busy = true;
+    render();
+    const result = call && call.phase !== 'completed'
+      ? await callTool({ name: 'run_complete_call', arguments: { callId: call.id, disposition: status } })
+      : await callTool({
+          name: 'run_disposition',
+          arguments: {
+            contactId: contact.id,
+            status,
+            channel: 'call',
+            ...(key === 'voicemail' ? { note: 'Voicemail' } : {}),
+          },
+        });
+    const parsed = parseToolResult(result);
+    if (parsed?.error) { busy = false; setNotice(parsed.error, 'err'); return; }
+    let ok = await reload({ silent: true });
+    if (!ok) { busy = false; return; }
+    const still = (ws.tasks || []).find((row) => row.id === task?.id);
+    if (still && still.state !== 'done' && still.state !== 'skipped' && task?.stepId) {
+      const skipped = parseToolResult(await callTool({
+        name: 'run_skip_task',
+        arguments: { contactId: contact.id, stepId: task.stepId },
+      }));
+      if (skipped?.error) { busy = false; setNotice(skipped.error, 'err'); return; }
+      ok = await reload({ silent: true });
+      if (!ok) { busy = false; return; }
+    }
+    busy = false;
+    resetDialer();
+    setNotice(`${label} · ${contact.name}.`, 'ok');
+  }
+
   function render() {
     if (admin) { renderAdmin(); return; }
     if (!ws) {
@@ -3130,41 +3737,17 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     if (ws.researchPending) {
       const n = ws.contactCount ?? (ws.contacts || []).length;
       root.innerHTML = `
-        <header class="engage-head">
-          <div>
-            <div class="eyebrow">Engage</div>
-            <h1>Flows</h1>
-            <div class="sub">${esc(ws.name)}</div>
+        <div class="session-page">
+          <div class="session-card">
+            <div class="session-bar"><div class="session-bar-title">${esc(ws.name)}</div></div>
+            <div class="session-body"><p class="session-meta">Writing personalized copy for ${n} ${n === 1 ? 'person' : 'people'}…</p></div>
           </div>
-        </header>
-        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
-        <p class="empty">Writing personalized copy for ${n} ${n === 1 ? 'person' : 'people'}…</p>
+        </div>
       `;
       return;
     }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
-    const open = nextTaskByContact(myOpenTasks()).length;
-    root.innerHTML = `
-      <header class="engage-head">
-        <div>
-          <div class="eyebrow">Engage</div>
-          <h1>${tab === 'todos' ? 'To-dos' : 'Flows'}</h1>
-          <div class="sub">${esc(ws.name)}${ws.assignee?.name ? ` · ${esc(ws.assignee.name)}` : ''}</div>
-        </div>
-      </header>
-      ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
-      <div class="page-tabs">
-        <button class="page-tab ${tab === 'flows' ? 'on' : ''}" data-tab="flows">Flows</button>
-        <button class="page-tab ${tab === 'todos' ? 'on' : ''}" data-tab="todos">To-dos${open ? ` <span class="count">${open}</span>` : ''}</button>
-      </div>
-      <div id="panel">${tab === 'todos' ? renderTodos() : renderFlows()}</div>
-    `;
-    bindWorkspace();
-    if (scrollTaskId) {
-      const id = scrollTaskId;
-      scrollTaskId = null;
-      root.querySelector(`[data-task="${String(id).replace(/"/g, '')}"]`)?.scrollIntoView({ block: 'nearest' });
-    }
+    renderSession();
   }
 
   function bindWorkspace() {
@@ -3379,7 +3962,6 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       pendingSend = false;
       notice = '';
       render();
-      if (pane === 'linkedin') void openLinkedIn(contact);
     }));
     const selected = (ws.contacts || []).find((c) => c.id === selectedId);
     root.querySelector('#save-draft')?.addEventListener('click', () => selected && saveDraft(selected));

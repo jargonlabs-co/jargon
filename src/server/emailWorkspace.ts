@@ -14,6 +14,8 @@ import {
   listPublicMessages,
   toPublicCall,
   toPublicContact,
+  toPublicMessage,
+  toPublicStep,
   type PublicCall,
   type PublicContact,
   type PublicMessage,
@@ -45,7 +47,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=session1'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=session6'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -92,6 +94,11 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=contacts1',
   'ui://jargon/email-workspace.html?v=seqfresh1',
   'ui://jargon/email-workspace.html?v=callwindow1',
+  'ui://jargon/email-workspace.html?v=session1',
+  'ui://jargon/email-workspace.html?v=session2',
+  'ui://jargon/email-workspace.html?v=session3',
+  'ui://jargon/email-workspace.html?v=session4',
+  'ui://jargon/email-workspace.html?v=session5',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -199,6 +206,58 @@ export const SCHEDULED_BUILD =
 
 export function scheduleAsk(projectId: string): string {
   return `Ask the user once whether Jargon may run project ${projectId} on its own. Default: every Sunday at 6pm in their timezone. If they name another cadence, or a CRM segment such as disqualified leads, use that. If they say yes, this is the one Allow: call note_schedule_choice with accepted, and pass leadStatus, lifecycleStage, or listId when they named a segment. That grant lets Jargon pull the segment, enroll it on the agent lane, and queue ready people for reps with no further prompt. Also propose a Claude scheduled task and wait for them to confirm with Schedule. The task instructions must be: ${SCHEDULED_BUILD} Use project ${projectId}. After they answer, call note_schedule_choice. If they say no, call note_schedule_choice with declined and do not create a task.`
+}
+
+export type SequenceSummary = {
+  id: string
+  name: string
+  contactCount: number
+  /** Open rep tasks, including ones scheduled for later. */
+  tasks: number
+  /** Open tasks that are due or blocked now. */
+  due: number
+  channels: Channel[]
+  updatedAt: number
+}
+
+/** Every sequence in the account, with how much work is still open. */
+export function listSequenceSummaries(store: DataStore, orgId: string, now = Date.now()): SequenceSummary[] {
+  const projects = store.db.projects
+    .filter((project) => project.orgId === orgId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+  const summaries: SequenceSummary[] = []
+  for (const project of projects) {
+    const steps = store.db.steps
+      .filter((step) => step.projectId === project.id)
+      .sort((a, b) => a.order - b.order)
+      .map((step) => toPublicStep(step))
+      .filter((step): step is PublicStep => Boolean(step))
+    if (!steps.length) continue
+    const contacts = store.db.contacts
+      .filter((contact) => contact.projectId === project.id && contact.orgId === orgId && contact.lane !== 'agent' && isPriorityContact(contact))
+      .map((contact) => toPublicContact(contact))
+    const messages = store.db.messages
+      .filter((message) => message.projectId === project.id)
+      .map((message) => toPublicMessage(message))
+    const calls = store.db.calls
+      .filter((call) => call.projectId === project.id)
+      .map((call) => toPublicCall(call))
+    const tasks = buildWorkspaceTasks({ contacts, steps, messages, calls, now })
+    const open = tasks.filter((task) => task.owner !== 'auto' && task.state !== 'done' && task.state !== 'skipped')
+    const due = open.filter((task) => task.state === 'due' || task.state === 'blocked' || task.bucket === 'today' || task.bucket === 'overdue').length
+    const channels: Channel[] = []
+    for (const step of steps) if (!channels.includes(step.channel)) channels.push(step.channel)
+    summaries.push({
+      id: project.id,
+      name: project.name,
+      contactCount: contacts.length,
+      tasks: open.length,
+      due,
+      channels,
+      updatedAt: project.updatedAt
+    })
+  }
+  return summaries
 }
 
 export function getEmailWorkspace(

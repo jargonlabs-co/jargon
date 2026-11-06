@@ -98,6 +98,31 @@ export function emailWorkspacePreviewHtml(payloadJson?: string): string {
       const name=req&&req.name; const args=(req&&req.arguments)||{}; const tasks=this.data.tasks||[];
       const mark=(task,state)=>{ if(task){ task.state=state; task.bucket=state==='done'?'done':'skipped'; } };
       if(name==='run_skip_task') mark(tasks.find((t)=>t.contactId===args.contactId&&t.stepId===args.stepId),'skipped');
+      if(name==='run_skip_contact') for (const task of tasks) if(task.contactId===args.contactId) mark(task,'skipped');
+      if(name==='run_list_sequences' || name==='load_email_workspace'){
+        if(!this.bundle){
+          const gtm=this.data;
+          const dialer=JSON.parse(JSON.stringify(gtm));
+          dialer.projectId='proj_dialer';
+          dialer.name='Candela Medical, Reltio, Agiloft +28 Outbound Dialer';
+          dialer.contactCount=1;
+          dialer.channels=['email'];
+          dialer.contacts=[{id:'ct_doug',projectId:'proj_dialer',name:'Doug Cone',title:'Director of Growth Marketing and Operations',company:'DataRobot',email:'doug@datarobot.com',city:'Austin',status:'active',attrs:{}}];
+          dialer.tasks=[{id:'ct_doug:step_1',contactId:'ct_doug',contactName:'Doug Cone',contactMeta:'Director of Growth Marketing and Operations · DataRobot',stepId:'step_1',stepLabel:'Intro',stepOrder:0,day:0,channel:'email',dueAt:1,state:'due',bucket:'today',subject:'closing the loop',body:'Hi Doug,\\n\\nFollowing up on the Candela rollout.',owner:'user',target:'doug@datarobot.com'}];
+          dialer.steps=(gtm.steps||[]).filter((step)=>step && step.channel==='email');
+          dialer.messages=[];
+          this.bundle={proj_preview:gtm,proj_dialer:dialer};
+        }
+        if(name==='run_list_sequences'){
+          const sequences=[
+            {id:'proj_preview',name:this.bundle.proj_preview.name,contactCount:3,tasks:5,due:5,channels:['email','linkedin','call']},
+            {id:'proj_dialer',name:this.bundle.proj_dialer.name,contactCount:1,tasks:1,due:1,channels:['email']}
+          ];
+          return Promise.resolve({content:[{type:'text',text:JSON.stringify({view:'sequences',sequences,workspaces:this.bundle})}]});
+        }
+        const picked=this.bundle[args.projectId]||this.data;
+        return Promise.resolve({content:[{type:'text',text:JSON.stringify(picked)}]});
+      }
       if(name==='run_save_draft'){
         const task=tasks.find((t)=>t.contactId===args.contactId&&t.channel===(args.channel||'email')&&t.state!=='done'&&t.state!=='skipped');
         const id='msg_'+(this.n=(this.n||0)+1);

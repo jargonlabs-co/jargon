@@ -42,6 +42,7 @@ import {
   upsertPublicDraft,
   unenrollPublicContact,
   setStepSendMode,
+  skipPublicContact,
   skipPublicTask,
   savePublicResearch,
   savePublicTalkTrack,
@@ -59,6 +60,7 @@ import {
   ADMIN_REPORT_ROUTE,
   fitWorkspaceView,
   getEmailWorkspace,
+  listSequenceSummaries,
   SCHEDULED_BUILD,
   withoutDashboard,
   workspaceBrief
@@ -1022,6 +1024,34 @@ export function registerJargonTools(
       workspaceOk(store, config, actor.orgId, projectId, sandbox, undefined, actor.userId, { embed: false })
   )
 
+  server.registerTool(
+    'run_list_sequences',
+    {
+      ...display('List sequences', HINTS.read),
+      description: 'List sequences in this account for the in-chat UI. Not for the model.',
+      _meta: { ui: { visibility: ['app'] } },
+      inputSchema: z.object({})
+    },
+    async () => {
+      const sequences = listSequenceSummaries(store, actor.orgId)
+      const workspaces: Record<string, unknown> = {}
+      for (const sequence of sequences.slice(0, 8)) {
+        const ws = getEmailWorkspace(store, config, actor.orgId, sequence.id, { userId: actor.userId })
+        if (!ws) continue
+        const view = withoutDashboard(ws)
+        workspaces[sequence.id] = fitWorkspaceView(
+          view && typeof view === 'object' && !Array.isArray(view) ? (view as Record<string, unknown>) : {},
+          70_000
+        )
+      }
+      const body = { view: 'sequences' as const, sequences, workspaces }
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(body) }],
+        structuredContent: body
+      }
+    }
+  )
+
   const UpdateSequenceInput = z.object({
     summary: Summary,
     projectId: z.string(),
@@ -1623,6 +1653,21 @@ export function registerJargonTools(
       const result = skipPublicTask(store, actor.orgId, contactId, stepId)
       if (!result.ok) return fail(result.error)
       return workspaceOk(store, config, actor.orgId, contact.projectId, sandbox, 'tasks', actor.userId)
+    }
+  )
+
+  server.registerTool(
+    'run_skip_contact',
+    {
+      ...display('Skip this contact', HINTS.write),
+      description: 'Skip the remaining steps for one contact and move on. Not for the model.',
+      _meta: APP_ONLY_META,
+      inputSchema: z.object({ contactId: z.string() })
+    },
+    async ({ contactId }) => {
+      const result = skipPublicContact(store, actor.orgId, contactId)
+      if (!result.ok) return fail(result.error)
+      return workspaceOk(store, config, actor.orgId, result.projectId, sandbox, 'tasks', actor.userId)
     }
   )
 

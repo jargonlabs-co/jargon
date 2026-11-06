@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { loadConfig } from '../src/server/config.ts'
-import { enrollPublicSequence, updatePublicSequence } from '../src/server/publicApi.ts'
+import { listSequenceSummaries } from '../src/server/emailWorkspace.ts'
+import { enrollPublicSequence, skipPublicContact, toPublicContact, updatePublicSequence } from '../src/server/publicApi.ts'
 import type { DataStore } from '../src/server/store.ts'
 import type { Contact, Database, Message, Project, SequenceStep } from '../src/server/types.ts'
 import { buildWorkspaceTasks, nextOpenTasksByContact } from '../src/server/workspaceTasks.ts'
@@ -511,5 +512,104 @@ describe('a new sequence does not inherit finished steps', () => {
       now
     })
     assert.equal(tasks[0]?.state, 'done')
+  })
+})
+
+describe('skipping a contact', () => {
+  it('closes every remaining step and leaves the next person open', () => {
+    const db = emptyDb()
+    db.projects.push(project())
+    db.sequences.push({
+      id: 'seq_1',
+      orgId: 'org_1',
+      projectId: 'proj_1',
+      name: 'Email + Phone · Book a meeting',
+      goal: 'Book a meeting',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    db.steps.push(
+      {
+        id: 'step_email',
+        orgId: 'org_1',
+        sequenceId: 'seq_1',
+        projectId: 'proj_1',
+        day: 0,
+        channel: 'email',
+        label: 'Intro',
+        subject: 'Hi',
+        body: 'Hello',
+        order: 0
+      } as SequenceStep,
+      {
+        id: 'step_call',
+        orgId: 'org_1',
+        sequenceId: 'seq_1',
+        projectId: 'proj_1',
+        day: 2,
+        channel: 'call',
+        label: 'Call',
+        order: 1
+      } as SequenceStep
+    )
+    db.contacts.push(contact(), contact({ id: 'priya', name: 'Priya Shah', email: 'priya@acme.test' }))
+    db.messages.push({
+      id: 'msg_andrew',
+      orgId: 'org_1',
+      projectId: 'proj_1',
+      contactId: 'andrew',
+      subject: 'Hi',
+      body: 'Hello',
+      status: 'draft',
+      channel: 'email',
+      mode: 'demo',
+      stepId: 'step_email',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    const result = skipPublicContact(memoryStore(db), 'org_1', 'andrew')
+    assert.equal(result.ok, true)
+    assert.equal(db.messages[0]?.status, 'cancelled')
+    const tasks = buildWorkspaceTasks({
+      contacts: db.contacts.map(toPublicContact),
+      steps: [
+        { id: 'step_email', day: 0, channel: 'email', label: 'Intro', order: 0, mode: 'manual' },
+        { id: 'step_call', day: 2, channel: 'call', label: 'Call', order: 1, mode: 'manual' }
+      ],
+      messages: [],
+      calls: [],
+      now: Date.now()
+    })
+    const andrew = tasks.filter((task) => task.contactId === 'andrew')
+    assert.deepEqual(andrew.map((task) => task.state), ['skipped', 'skipped'])
+    assert.equal(tasks.find((task) => task.contactId === 'priya' && task.channel === 'email')?.state, 'due')
+  })
+})
+
+describe('sequence list', () => {
+  it('counts open work for each sequence and skips projects with no steps', () => {
+    const db = emptyDb()
+    db.projects.push(project(), { ...project(), id: 'proj_empty', name: 'Empty', updatedAt: 5 })
+    db.steps.push(
+      {
+        id: 'step_email',
+        orgId: 'org_1',
+        sequenceId: 'seq_1',
+        projectId: 'proj_1',
+        day: 0,
+        channel: 'email',
+        label: 'Intro',
+        subject: 'Hi',
+        body: 'Hello',
+        order: 0
+      } as SequenceStep
+    )
+    db.contacts.push(contact({ email: 'andrew@acme.com', attrs: { _enrolledAt: 1_000 } }))
+    const summaries = listSequenceSummaries(memoryStore(db), 'org_1', 2_000)
+    assert.deepEqual(summaries.map((row) => row.id), ['proj_1'])
+    assert.equal(summaries[0]?.contactCount, 1)
+    assert.equal(summaries[0]?.tasks, 1)
+    assert.equal(summaries[0]?.due, 1)
+    assert.deepEqual(summaries[0]?.channels, ['email'])
   })
 })

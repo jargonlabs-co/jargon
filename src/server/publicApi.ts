@@ -768,6 +768,46 @@ export function skipPublicTask(
   return { ok: true, contactId, stepId }
 }
 
+/** Skip every remaining step for one contact so the rep moves on to the next person. */
+export function skipPublicContact(
+  store: DataStore,
+  orgId: string,
+  contactId: string
+): { ok: true; contactId: string; projectId: string } | { ok: false; error: string } {
+  const contact = findOrgContact(store, orgId, contactId)
+  if (!contact) return { ok: false, error: 'Contact not found' }
+  const sequence = getPublicSequence(store, orgId, contact.projectId)
+  const stepIds = (sequence?.steps ?? [])
+    .map((step) => step?.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  store.update((db) => {
+    const now = Date.now()
+    cancelQueuedFollowups(db, contactId, now, 'Skipped')
+    const row = db.contacts.find((c) => c.id === contactId)
+    if (!row) return
+    const skipped = new Set(skippedStepIdsFrom(row))
+    for (const id of stepIds) skipped.add(id)
+    row.attrs = { ...(row.attrs ?? {}), _skippedSteps: [...skipped] }
+    row.updatedAt = now
+    db.activities.unshift({
+      id: uid('act'),
+      orgId,
+      projectId: row.projectId,
+      contactId,
+      kind: 'campaign',
+      summary: `Skipped ${row.name}`,
+      createdAt: now
+    })
+  })
+  return { ok: true, contactId, projectId: contact.projectId }
+}
+
+function skippedStepIdsFrom(contact: { attrs?: Record<string, unknown> }): string[] {
+  const raw = contact.attrs?._skippedSteps
+  if (!Array.isArray(raw)) return []
+  return raw.filter((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
 export function applyDisposition(
   store: DataStore,
   contactId: string,

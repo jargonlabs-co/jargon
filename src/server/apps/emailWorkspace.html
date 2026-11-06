@@ -429,6 +429,8 @@
     .btn.accent { background: var(--navy); border-color: var(--navy); color: var(--cream); }
     .btn.accent:hover { opacity: 0.92; }
 
+    html:has(.session-page), body:has(.session-page), .wrap:has(.session-page) { min-height: 0; }
+    .wrap:has(.session-page) { padding: 11px; }
     .session-page {
       --navy-900: #0F2B3F;
       --navy-700: #26506E;
@@ -444,119 +446,149 @@
       color: var(--navy-900);
       font-family: Inter, -apple-system, 'Segoe UI', sans-serif;
       min-height: 100%;
-      padding: 16px;
+      padding: 12px;
     }
     .session-card {
       background: #fff;
       border: 1px solid var(--cream-border);
-      border-radius: 14px;
-      box-shadow: 0 2px 10px rgba(15, 43, 63, 0.06);
+      border-radius: 11px;
+      box-shadow: 0 2px 8px rgba(15, 43, 63, 0.06);
       overflow: hidden;
     }
     .session-bar {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 12px 20px; background: var(--navy-900); color: #fff;
+      display: flex; align-items: center; justify-content: space-between; gap: 9px;
+      padding: 9px 15px; background: var(--navy-900); color: #fff;
     }
     .session-bar-title {
       flex: 1; min-width: 0;
-      font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
     }
-    .session-progress { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-    .session-progress span { font-size: 13px; color: #C9D6E0; white-space: nowrap; }
-    .session-track { width: 80px; height: 6px; border-radius: 999px; background: var(--navy-700); overflow: hidden; }
-    .session-track i { display: block; height: 6px; background: var(--red-500); }
-    .session-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
-    .session-who { display: flex; align-items: center; gap: 12px; }
+    .session-progress { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .session-progress span { font-size: 10px; color: #C9D6E0; white-space: nowrap; }
+    .session-track { width: 60px; height: 5px; border-radius: 999px; background: var(--navy-700); overflow: hidden; }
+    .session-track i { display: block; height: 5px; background: var(--red-500); }
+    .session-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 12px; }
+    .session-who { display: flex; align-items: center; gap: 9px; }
     .session-avatar {
-      width: 44px; height: 44px; border-radius: 50%; background: var(--navy-900); color: #fff;
-      font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 33px; height: 33px; border-radius: 50%; background: var(--navy-900); color: #fff;
+      font-weight: 600; font-size: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .session-name {
-      font-family: Poppins, Inter, sans-serif; font-size: 20px; font-weight: 700; line-height: 1.2; margin: 0;
+      font-family: Poppins, Inter, sans-serif; font-size: 15px; font-weight: 700; line-height: 1.2; margin: 0;
     }
-    .session-meta { font-size: 14px; color: var(--gray-600); margin-top: 2px; }
+    .session-meta { font-size: 11px; color: var(--gray-600); margin-top: 1px; }
     .why {
-      padding: 14px; border-radius: 10px; background: var(--cream-100);
-      display: flex; flex-direction: column; gap: 10px;
+      padding: 11px; border-radius: 8px; background: var(--cream-100);
+      display: flex; flex-direction: column; gap: 8px;
     }
     .why-h {
-      font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-600);
+      font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-600);
     }
-    .why-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 6px; }
+    .why-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: 5px; }
     .why-row.on { background: #fff; border: 1px solid var(--navy-900); }
-    .why-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--gray-400); flex-shrink: 0; }
+    .why-dot { width: 6px; height: 6px; margin-top: 4px; border-radius: 50%; background: var(--gray-400); flex-shrink: 0; }
     .why-row.on .why-dot { background: var(--red-500); }
     .why-copy { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
-    .why-label { font-size: 14px; font-weight: 500; }
+    .why-label { font-size: 11px; font-weight: 500; }
     .why-row.on .why-label { font-weight: 600; }
-    .why-meta { font-size: 12px; color: var(--gray-600); }
+    .why-meta { font-size: 9px; color: var(--gray-600); }
     .why-pill {
-      padding: 3px 8px; border-radius: 999px; background: var(--navy-900); color: #fff;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+      padding: 2px 6px; border-radius: 999px; background: var(--navy-900); color: #fff;
+      font-size: 8px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
     }
-    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
     .steps.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .steps.n1 { grid-template-columns: 1fr; }
     .step-cell {
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      min-height: 40px; padding: 6px; border-radius: 10px; border: 1px solid var(--cream-border);
-      font-size: 14px; color: var(--gray-600); text-align: center;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      min-height: 30px; padding: 5px; border-radius: 8px; border: 1px solid var(--cream-border);
+      font-size: 11px; color: var(--gray-600); text-align: center;
     }
     .step-cell.now { border: 2px solid var(--navy-900); color: var(--navy-900); font-weight: 600; }
     .step-cell.done { background: var(--navy-900); color: #fff; border-color: var(--navy-900); font-weight: 600; }
-    .session-field { display: flex; flex-direction: column; gap: 6px; }
-    .session-field label { font-size: 13px; font-weight: 500; color: var(--gray-600); margin: 0; }
+    .session-field { display: flex; flex-direction: column; gap: 5px; }
+    .session-field label { font-size: 10px; font-weight: 500; color: var(--gray-600); margin: 0; }
     .session-card input[type="text"], .session-card textarea {
-      width: 100%; box-sizing: border-box; border: 1px solid var(--cream-border); border-radius: 10px;
-      background: #fff; color: var(--navy-900); font: 400 15px/1.5 Inter, sans-serif;
+      width: 100%; box-sizing: border-box; border: 1px solid var(--cream-border); border-radius: 8px;
+      background: #fff; color: var(--navy-900); font: 400 11px/1.5 Inter, sans-serif;
     }
-    .session-card input[type="text"] { height: 44px; padding: 0 12px; }
-    .session-card textarea { min-height: 120px; padding: 12px; resize: vertical; }
-    .session-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .session-card input[type="text"] { height: 33px; padding: 0 9px; }
+    .session-card textarea { min-height: 90px; padding: 9px; resize: vertical; }
+    .session-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .session-actions .push { margin-left: auto; }
     .session-btn {
-      min-height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--cream-border);
-      background: #fff; color: var(--navy-900); font: 500 15px/1 Inter, sans-serif; cursor: pointer;
+      min-height: 33px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--cream-border);
+      background: #fff; color: var(--navy-900); font: 500 11px/1 Inter, sans-serif; cursor: pointer;
     }
     .session-btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .session-btn.primary {
-      border: none; background: var(--navy-900); color: #fff; font-weight: 600; padding: 0 22px;
+      border: none; background: var(--navy-900); color: #fff; font-weight: 600; padding: 0 16px;
     }
     .session-btn.ghost { border: none; background: transparent; color: var(--gray-600); }
     .session-btn.call {
-      width: 100%; height: 48px; border: none; border-radius: 14px; background: var(--navy-900); color: #fff;
-      font: 600 16px/1 Inter, sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; height: 36px; border: none; border-radius: 11px; background: var(--navy-900); color: #fff;
+      font: 600 12px/1 Inter, sans-serif; display: flex; align-items: center; justify-content: center; gap: 6px;
     }
     .session-note {
-      display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px;
-      background: var(--cream-200); font-size: 13px;
+      display: flex; align-items: center; gap: 6px; padding: 8px 9px; border-radius: 8px;
+      background: var(--cream-200); font-size: 10px;
     }
-    .session-note i { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow-600); flex-shrink: 0; }
+    .session-note i { width: 6px; height: 6px; border-radius: 50%; background: var(--yellow-600); flex-shrink: 0; }
     .talk {
-      display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
-      border: 1px solid var(--cream-border); border-radius: 10px;
+      display: flex; flex-direction: column; gap: 5px; padding: 9px 11px;
+      border: 1px solid var(--cream-border); border-radius: 8px;
     }
-    .talk strong { font-size: 13px; font-weight: 600; color: var(--gray-600); }
-    .talk p { margin: 0; font-size: 15px; line-height: 1.5; }
-    .outcomes { display: flex; flex-direction: column; gap: 8px; }
-    .outcome-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .talk strong { font-size: 10px; font-weight: 600; color: var(--gray-600); }
+    .talk p { margin: 0; font-size: 11px; line-height: 1.5; }
+    .outcomes { display: flex; flex-direction: column; gap: 6px; }
+    .outcome-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .outcome-grid button {
-      min-height: 44px; padding: 6px; border: 1px solid var(--cream-border); border-radius: 10px;
-      background: #fff; color: var(--navy-900); font: 500 14px/1.2 Inter, sans-serif; cursor: pointer;
+      min-height: 33px; padding: 5px; border: 1px solid var(--cream-border); border-radius: 8px;
+      background: #fff; color: var(--navy-900); font: 500 11px/1.2 Inter, sans-serif; cursor: pointer;
     }
     .outcome-grid button.book { border-color: var(--navy-900); font-weight: 600; }
     .session-foot {
       border-top: 1px solid var(--cream-border); background: var(--cream-50);
-      padding: 12px 20px; font-size: 13px; color: var(--gray-600);
+      padding: 9px 15px; font-size: 10px; color: var(--gray-600);
     }
-    .session-done { display: flex; flex-direction: column; gap: 8px; }
+    .session-done { display: flex; flex-direction: column; gap: 6px; }
     .session-done h2 {
-      font-family: Poppins, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 0;
+      font-family: Poppins, Inter, sans-serif; font-size: 15px; font-weight: 700; margin: 0;
     }
-    .session-done ul { margin: 0; padding-left: 18px; }
-    .session-done li { margin: 4px 0; font-size: 14px; }
-    .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .field-head span { font-size: 12px; color: var(--gray-600); }
+    .session-done ul { margin: 0; padding-left: 14px; }
+    .session-done li { margin: 3px 0; font-size: 11px; }
+    .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+    .field-head span { font-size: 9px; color: var(--gray-600); }
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 4px; margin: 0 0 8px;
+      min-height: 33px; padding: 0 12px 0 8px; border: 1px solid var(--cream-border);
+      border-radius: 11px; background: #fff; color: var(--navy-900);
+      font: 600 11px/1 Inter, sans-serif; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(15, 43, 63, 0.06);
+    }
+    .back-btn svg { display: block; }
+    .seq-list, .task-list { display: flex; flex-direction: column; }
+    .seq-row, .task-row {
+      display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+      border: 0; border-bottom: 1px solid var(--cream-border); background: #fff;
+      padding: 11px 15px; cursor: pointer; color: var(--navy-900);
+    }
+    .seq-row:last-child, .task-row:last-child { border-bottom: 0; }
+    .seq-copy, .task-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .seq-name, .task-name {
+      font-family: Poppins, Inter, sans-serif; font-size: 14px; font-weight: 700; line-height: 1.25;
+    }
+    .seq-due, .task-step {
+      flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--gray-600);
+    }
+    .task-group-h {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 10px 15px 4px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gray-600); background: var(--cream-50);
+    }
+    .task-group-h span { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--navy-900); }
+    .session-btn.block { width: 100%; }
     @media (max-width: 560px) {
       .outcome-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -913,6 +945,16 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   let notice = '';
   let noticeTone = '';
   let busy = false;
+  /** sequences → tasks for one sequence → the contact session. */
+  let screen = 'sequences';
+  let sequenceList = null;
+  let openingId = null;
+  let selectedSequenceId = null;
+  const workspaceById = new Map();
+  /** When set, the session starts at this contact, then continues in the same order. */
+  let sessionAnchor = null;
+  /** Contacts the rep skipped this session. A stale reload cannot put them back on screen. */
+  const skippedPeople = new Set();
   let pendingSend = false;
   let pendingStart = false;
   let pendingContactIds = null;
@@ -1062,14 +1104,27 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     render();
   }
 
+  function rememberWorkspace(parsed) {
+    if (!isWorkspacePayload(parsed)) return;
+    workspaceById.set(parsed.projectId, parsed);
+  }
+
+  function rememberSequenceBundle(parsed) {
+    if (!parsed || typeof parsed !== 'object' || !parsed.workspaces) return;
+    for (const workspace of Object.values(parsed.workspaces)) rememberWorkspace(workspace);
+  }
+
   async function reload(options) {
     if (!ws?.projectId) return false;
+    const projectId = ws.projectId;
     const result = await callTool({
       name: 'load_email_workspace',
-      arguments: { projectId: ws.projectId },
+      arguments: { projectId },
     });
     const next = parseToolResult(result);
     if (next?.error) { setNotice(next.error, 'err'); return false; }
+    if (!isWorkspacePayload(next) || next.projectId !== projectId) return false;
+    rememberWorkspace(next);
     ws = next;
     syncDrafts();
     if (!options?.silent) render();
@@ -3311,8 +3366,14 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       .sort((a, b) => Number(a.stepOrder || 0) - Number(b.stepOrder || 0) || Number(a.dueAt || 0) - Number(b.dueAt || 0));
   }
 
+  function taskStillOpen(task) {
+    if (!task || task.owner === 'auto') return false;
+    if (skippedPeople.has(task.contactId)) return false;
+    return task.state !== 'done' && task.state !== 'skipped';
+  }
+
   function openChannelTask(tasks) {
-    return tasks.find((task) => task.state !== 'done' && task.state !== 'skipped') || null;
+    return tasks.find((task) => taskStillOpen(task)) || null;
   }
 
   function contactChannels(contactId) {
@@ -3348,7 +3409,12 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   function sessionCurrent(people) {
-    for (const person of people) {
+    let ordered = people;
+    if (sessionAnchor) {
+      const index = people.findIndex((person) => person.id === sessionAnchor);
+      if (index > 0) ordered = people.slice(index).concat(people.slice(0, index));
+    }
+    for (const person of ordered) {
       for (const channel of contactChannels(person.id)) {
         const state = channelState(person.id, channel);
         if (state?.status === 'open') return { person, channel, task: state.task };
@@ -3451,8 +3517,8 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return 'OPEN WITH THIS';
   }
 
-  const SESSION_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>';
-  const SESSION_PHONE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>';
+  const SESSION_CHECK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>';
+  const SESSION_PHONE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>';
 
   function renderWhy(contact, channels, channel) {
     const signals = whyNowSignals(contact).map(parseSignal);
@@ -3607,6 +3673,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     root.innerHTML = `
       <div class="session-page">
         ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        ${backButton('Back')}
         <div class="session-card">
           <div class="session-bar">
             <div class="session-bar-title">${esc(title)}</div>
@@ -3655,6 +3722,12 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       else void sendNow(contact);
     });
     root.querySelector('#session-skip-step')?.addEventListener('click', () => void skipCurrentTask());
+    root.querySelector('#screen-back')?.addEventListener('click', () => {
+      screen = 'tasks';
+      sessionAnchor = null;
+      notice = '';
+      render();
+    });
     root.querySelector('#session-skip-person')?.addEventListener('click', () => {
       const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
       if (contact) void skipSessionPerson(contact);
@@ -3672,20 +3745,27 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   }
 
   async function skipSessionPerson(contact) {
-    const open = (ws.tasks || []).filter((task) => task.contactId === contact.id && task.owner !== 'auto' && task.state !== 'done' && task.state !== 'skipped');
-    if (!open.length) return;
+    skippedPeople.add(contact.id);
     busy = true;
     render();
-    for (const task of open) {
-      const parsed = parseToolResult(await callTool({
-        name: 'run_skip_task',
-        arguments: { contactId: contact.id, stepId: task.stepId },
-      }));
-      if (parsed?.error) { busy = false; setNotice(parsed.error, 'err'); return; }
+    const parsed = parseToolResult(await callTool({
+      name: 'run_skip_contact',
+      arguments: { contactId: contact.id },
+    }));
+    if (parsed?.error) {
+      skippedPeople.delete(contact.id);
+      busy = false;
+      setNotice(parsed.error, 'err');
+      return;
     }
-    const ok = await reload({ silent: true });
+    if (isWorkspacePayload(parsed)) {
+      ws = parsed;
+      syncDrafts();
+    } else {
+      const ok = await reload({ silent: true });
+      if (!ok) { busy = false; return; }
+    }
     busy = false;
-    if (!ok) return;
     setNotice(`Skipped ${sessionFirstName(contact)}.`, 'ok');
   }
 
@@ -3727,23 +3807,230 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     setNotice(`${label} · ${contact.name}.`, 'ok');
   }
 
+  function channelWord(channel) {
+    if (channel === 'linkedin') return 'LinkedIn';
+    if (channel === 'call') return 'Call';
+    return 'Email';
+  }
+
+  function sequenceCards() {
+    if (sequenceList?.length) return sequenceList;
+    if (sequenceList && !ws?.projectId) return [];
+    if (!ws?.projectId) return null;
+    const people = sessionPeople();
+    const progress = sessionProgress(people);
+    return [{
+      id: ws.projectId,
+      name: ws.name,
+      contactCount: ws.contactCount || people.length,
+      tasks: Math.max(0, progress.total - progress.done),
+      due: Math.max(0, progress.total - progress.done),
+      channels: ws.channels || [],
+    }];
+  }
+
+  function currentTasks() {
+    const rows = [];
+    for (const person of sessionPeople()) {
+      for (const channel of contactChannels(person.id)) {
+        const state = channelState(person.id, channel);
+        if (state?.status === 'open') rows.push({ person, channel, task: state.task });
+      }
+    }
+    return rows;
+  }
+
+  function backButton(label) {
+    return `<button type="button" class="back-btn" id="screen-back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg><span>${esc(label)}</span></button>`;
+  }
+
+  function renderSequences() {
+    const cards = sequenceCards();
+    const count = cards?.length || 0;
+    root.innerHTML = `
+      <div class="session-page">
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        <div class="session-card">
+          <div class="session-bar">
+            <div class="session-bar-title">Sequences</div>
+            <div class="session-progress"><span>${cards ? `${count} ${count === 1 ? 'sequence' : 'sequences'}` : ''}</span></div>
+          </div>
+          ${!cards ? '<div class="session-body"><p class="session-meta">Loading sequences…</p></div>' : !cards.length ? '<div class="session-body"><p class="session-meta">No sequences yet.</p></div>' : `
+            <div class="seq-list">
+              ${cards.map((card) => {
+                const channels = (card.channels || []).map(channelWord).join(' · ');
+                const work = card.due ? `${card.due} due now` : card.tasks ? `${card.tasks} tasks` : 'Nothing due';
+                return `
+                  <button type="button" class="seq-row" data-sequence-id="${esc(card.id)}">
+                    <span class="seq-copy">
+                      <span class="seq-name">${esc(card.name)}</span>
+                      <span class="session-meta">${card.contactCount || 0} contacts${channels ? ` · ${esc(channels)}` : ''}</span>
+                    </span>
+                    <span class="seq-due">${esc(work)}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+    root.querySelectorAll('[data-sequence-id]').forEach((el) => el.addEventListener('click', () => {
+      void openSequence(el.getAttribute('data-sequence-id'));
+    }));
+  }
+
+  function renderTasks() {
+    const rows = currentTasks();
+    const groups = ['email', 'linkedin', 'call']
+      .map((channel) => ({ channel, rows: rows.filter((row) => row.channel === channel) }))
+      .filter((group) => group.rows.length);
+    root.innerHTML = `
+      <div class="session-page">
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        ${backButton('Back')}
+        <div class="session-card">
+          <div class="session-bar">
+            <div class="session-bar-title">${esc(ws.name)}</div>
+            <div class="session-progress"><span>${rows.length} ${rows.length === 1 ? 'task' : 'tasks'}</span></div>
+          </div>
+          <div class="session-body">
+            ${rows.length ? '<button type="button" class="session-btn primary block" id="start-session">Start tasks</button>' : '<p class="session-meta">Nothing is due in this sequence.</p>'}
+          </div>
+          ${groups.map((group) => `
+            <div class="task-group-h">${channelWord(group.channel)} <span>${group.rows.length}</span></div>
+            <div class="task-list">
+              ${group.rows.map((row) => `
+                <button type="button" class="task-row" data-contact-id="${esc(row.person.id)}">
+                  <span class="session-avatar" aria-hidden="true">${esc(sessionInitials(row.person.name))}</span>
+                  <span class="task-copy">
+                    <span class="task-name">${esc(row.person.name)}</span>
+                    <span class="session-meta">${esc([row.person.title, row.person.company].filter(Boolean).join(' · ') || row.task?.stepLabel || channelWord(row.channel))}</span>
+                  </span>
+                  <span class="task-step">${esc(row.task?.stepLabel || channelWord(row.channel))}</span>
+                </button>
+              `).join('')}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    root.querySelector('#screen-back')?.addEventListener('click', () => {
+      screen = 'sequences';
+      selectedSequenceId = null;
+      sessionAnchor = null;
+      notice = '';
+      render();
+    });
+    root.querySelector('#start-session')?.addEventListener('click', () => {
+      sessionAnchor = null;
+      screen = 'session';
+      notice = '';
+      render();
+    });
+    root.querySelectorAll('[data-contact-id]').forEach((el) => el.addEventListener('click', () => {
+      sessionAnchor = el.getAttribute('data-contact-id');
+      screen = 'session';
+      notice = '';
+      render();
+    }));
+  }
+
+  function showSequence(id) {
+    const cached = workspaceById.get(id);
+    if (!cached) return false;
+    ws = cached;
+    syncDrafts();
+    openingId = null;
+    screen = 'tasks';
+    notice = '';
+    render();
+    return true;
+  }
+
+  async function openSequence(id) {
+    if (!id) return;
+    sessionAnchor = null;
+    selectedSequenceId = id;
+    if (showSequence(id)) return;
+    openingId = id;
+    screen = 'tasks';
+    busy = true;
+    notice = '';
+    render();
+    const parsed = parseToolResult(await callTool({
+      name: 'load_email_workspace',
+      arguments: { projectId: id },
+    }));
+    busy = false;
+    if (openingId !== id || selectedSequenceId !== id) return;
+    openingId = null;
+    if (!isWorkspacePayload(parsed) || parsed.projectId !== id) {
+      screen = 'sequences';
+      selectedSequenceId = null;
+      setNotice(parsed?.error || 'Could not open that sequence.', 'err');
+      return;
+    }
+    rememberWorkspace(parsed);
+    ws = parsed;
+    syncDrafts();
+    screen = 'tasks';
+    render();
+  }
+
+  async function loadSequences() {
+    const parsed = parseToolResult(await callTool({ name: 'run_list_sequences', arguments: {} }));
+    if (Array.isArray(parsed?.sequences)) sequenceList = parsed.sequences;
+    else if (!sequenceList) sequenceList = [];
+    rememberSequenceBundle(parsed);
+    if (screen === 'sequences') render();
+  }
+
   function render() {
     if (admin) { renderAdmin(); return; }
+    if (screen === 'sequences') { renderSequences(); return; }
     if (!ws) {
       root.innerHTML = `<p class="empty">${notice ? esc(notice) : 'Waiting for workspace data…'}</p>`;
       return;
     }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
+    if (screen === 'tasks' && openingId && ws.projectId !== openingId) {
+      root.innerHTML = `
+        <div class="session-page">
+          ${backButton('Back')}
+          <div class="session-card">
+            <div class="session-bar">
+              <div class="session-bar-title">Opening…</div>
+            </div>
+          </div>
+        </div>
+      `;
+      root.querySelector('#screen-back')?.addEventListener('click', () => {
+        openingId = null;
+        selectedSequenceId = null;
+        screen = 'sequences';
+        notice = '';
+        render();
+      });
+      return;
+    }
+    if (screen === 'tasks') { renderTasks(); return; }
     if (ws.researchPending) {
       const n = ws.contactCount ?? (ws.contacts || []).length;
       root.innerHTML = `
         <div class="session-page">
+          ${backButton('Back')}
           <div class="session-card">
             <div class="session-bar"><div class="session-bar-title">${esc(ws.name)}</div></div>
             <div class="session-body"><p class="session-meta">Writing personalized copy for ${n} ${n === 1 ? 'person' : 'people'}…</p></div>
           </div>
         </div>
       `;
+      root.querySelector('#screen-back')?.addEventListener('click', () => {
+        screen = 'tasks';
+        notice = '';
+        render();
+      });
       return;
     }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
@@ -4018,6 +4305,8 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
 
   function acceptWorkspace(parsed) {
     if (!isWorkspacePayload(parsed)) return false;
+    rememberWorkspace(parsed);
+    if (selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
     admin = null;
     applyWorkspace(parsed);
     notice = '';
@@ -4077,6 +4366,12 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       applyAdmin(parsed);
       return;
     }
+    if (parsed?.view === 'sequences' && Array.isArray(parsed.sequences)) {
+      sequenceList = parsed.sequences;
+      rememberSequenceBundle(parsed);
+      if (screen === 'sequences') render();
+      return;
+    }
     if (parsed?.projectId) toolProjectId = parsed.projectId;
     if (acceptWorkspace(parsed)) return;
     if (parsed?.error && !ws) {
@@ -4093,6 +4388,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   themeFromHost();
   render();
   scheduleLoad();
+  void loadSequences();
 })();
   </script>
 </body>

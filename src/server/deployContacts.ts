@@ -15,6 +15,7 @@ export type DeployContactInput = {
   notes?: string
   context?: string[]
   companyDomain?: string
+  companyIndustry?: string
   attrs?: Record<string, unknown>
 }
 
@@ -63,6 +64,7 @@ function normalizeContactRow(
     notes: pick(record, ['notes', 'note', 'reason', 'signal']),
     context: asStringList(record.context),
     companyDomain: pick(record, ['companyDomain', 'company_domain', 'domain']),
+    companyIndustry: pick(record, ['companyIndustry', 'company_industry', 'industry']),
     attrs: extraAttrs(record)
   }
 }
@@ -333,6 +335,7 @@ export function toManualContacts(
       accountName: p.accountName ?? company,
       linkedinUrl: normalizeLinkedInUrl(p.linkedinUrl),
       companyDomain: p.companyDomain,
+      companyIndustry: p.companyIndustry,
       context: p.context,
       attrs: p.attrs && Object.keys(p.attrs).length ? p.attrs : {},
       channelsDone: [],

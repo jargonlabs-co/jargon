@@ -1,4 +1,5 @@
 import type { Channel, PrimarySurface, ProjectKind } from '../server/types'
+import { isPhoneHeavySequence } from './callWindow'
 
 /** Catalog of outbound tools the rule compiler can pick without an LLM. */
 export type OutboundIntentId = 'linkedin' | 'phone' | 'email' | 'multi'
@@ -108,6 +109,15 @@ export function matchOutboundIntent(
   kindHint?: ProjectKind
 ): OutboundIntentMatch {
   const t = prompt.toLowerCase()
+  if (isPhoneHeavySequence(prompt)) {
+    return {
+      id: 'multi',
+      channels: ['call', 'email'],
+      primarySurface: 'sequence',
+      kind: 'cadence',
+      goal: 'Book a conversation with the practice'
+    }
+  }
   const named = namedChannels(t)
   const exclusive = EXCLUSIVE_RE.test(t)
   const scores = scoreIntents(t)

@@ -6,6 +6,7 @@ import type {
   WorkspaceSpec,
   WorkspaceSpecStep
 } from '../server/types'
+import { isPhoneHeavySequence, isPracticeCallOrder } from './callWindow'
 import { matchOutboundIntent } from './outboundIntents'
 
 export type {
@@ -42,7 +43,9 @@ export function compileWorkspaceSpec(prompt: string, override?: DeploySpecInput)
     primarySurface = 'sequence'
   }
   const goal = override?.goal?.trim() || intent.goal
-  const segment = override?.segment?.trim() || inferSegment(prompt)
+  const segment =
+    override?.segment?.trim() ||
+    (isPracticeCallOrder(prompt) ? 'Vet offices' : inferSegment(prompt))
   const rawSteps = override?.steps?.length
     ? normalizeSteps(override.steps, goal)
     : buildSteps(channels, goal, prompt)
@@ -413,6 +416,19 @@ function buildSteps(channels: Channel[], goal: string, prompt: string): Workspac
       label: defaultLabel(step.channel, i === 0 ? 'intro' : 'followup'),
       ...copyFor(step.channel, i === 0 ? 'intro' : 'followup', goal, tone)
     }))
+  }
+  if (isPhoneHeavySequence(prompt)) {
+    return [
+      { day: 0, channel: 'call', label: 'First call' },
+      { day: 2, channel: 'call', label: 'Second call' },
+      {
+        day: 5,
+        channel: 'email',
+        label: 'Follow-up email',
+        subject: 'A better time to reach {{company}}',
+        body: `Hi {{first_name}},\n\nI called for {{company}} and wanted to leave a note the front desk can pick up when the day is quieter.\n\n— (${tone})`
+      }
+    ]
   }
 
   const span = parseStepSpan(prompt, channels)

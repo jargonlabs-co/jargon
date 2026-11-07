@@ -34,6 +34,17 @@ export function wantsCallWindows(prompt: string): boolean {
   return false
 }
 
+/** "Phone-heavy sequencer" is a call-first cadence, not a single-channel dialer. */
+export function isPhoneHeavySequence(prompt: string): boolean {
+  const t = prompt.toLowerCase()
+  return /\bphone[ -]?heavy\b/.test(t) && /\bsequenc|\bcadence\b/.test(t)
+}
+
+/** The phone-heavy sequencer that should be ordered by when to call. */
+export function isPracticeCallOrder(prompt: string): boolean {
+  return isPhoneHeavySequence(prompt) && wantsCallWindows(prompt)
+}
+
 /** Extra person fields so Claude can group accounts by business and zone. */
 export function callWindowPersonFields(contact: {
   attrs?: Record<string, unknown> | null
@@ -153,17 +164,60 @@ export function callWindowSortMinutes(window: Pick<CallWindow, 'startLocal'>): n
   return h * 60 + m
 }
 
-export function callWindowTaskFields(attrs?: Record<string, unknown> | null): {
+const DAY_MINUTES = 24 * 60
+
+/** Minutes on the clock in an IANA zone. Falls back to the machine clock when the zone is missing. */
+export function minutesInZone(now: Date, timeZone?: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || undefined,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(now)
+    let hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0')
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0')
+    if (hour === 24) hour = 0
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return now.getHours() * 60 + now.getMinutes()
+    return hour * 60 + minute
+  } catch {
+    return now.getHours() * 60 + now.getMinutes()
+  }
+}
+
+/**
+ * Who to call next from this instant.
+ * A window that is open now sorts first (soonest to close, still ahead of later windows).
+ * Then a window still ahead today, by how many minutes until it opens.
+ * A window that already passed sorts last, by how soon it opens again tomorrow in that account's zone.
+ */
+export function callWindowSortKey(
+  window: Pick<CallWindow, 'startLocal' | 'endLocal' | 'timezone'>,
+  now: Date = new Date()
+): number {
+  const nowMin = minutesInZone(now, window.timezone)
+  const start = callWindowSortMinutes(window)
+  const end = callWindowSortMinutes({ startLocal: window.endLocal })
+  if (end > start && nowMin >= start && nowMin < end) return end - nowMin - DAY_MINUTES
+  if (nowMin < start) return start - nowMin
+  return DAY_MINUTES - nowMin + start
+}
+
+export function callWindowTaskFields(
+  attrs?: Record<string, unknown> | null,
+  now: number | Date = new Date()
+): {
   callWindowLabel?: string
   callWindowReason?: string
   callWindowSort?: number
 } {
   const window = readCallWindow(attrs)
   if (!window) return {}
+  const at = now instanceof Date ? now : new Date(now)
   return {
     callWindowLabel: formatCallWindow(window),
     callWindowReason: window.reason || undefined,
-    callWindowSort: callWindowSortMinutes(window)
+    callWindowSort: callWindowSortKey(window, at)
   }
 }
 

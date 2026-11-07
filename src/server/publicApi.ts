@@ -69,11 +69,14 @@ import {
   callWindowClause,
   callWindowGroupKey,
   callWindowPersonFields,
+  callWindowSortKey,
   contactCallWindowKey,
+  isPracticeCallOrder,
   readCallWindow,
   wantsCallWindows,
   type CallWindowDraft
 } from '../shared/callWindow'
+import { finishPracticeCallOrder, veterinaryDeployContacts } from './practiceCallOrder'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
   extractContactsFromPrompt,
@@ -435,8 +438,10 @@ export async function deployPublicTool(
   | { ok: false; status: 403; body: { error: string; code: string } }
   | { ok: false; status: 502; body: { error: string } }
 > {
-  const resolved =
-    contacts?.length ? contacts : extractContactsFromPrompt(prompt)
+  const provided = contacts?.length ? contacts : extractContactsFromPrompt(prompt)
+  const practiceBook =
+    isPracticeCallOrder(prompt) && (!provided?.length || /\bthis list\b/i.test(prompt))
+  const resolved = practiceBook ? veterinaryDeployContacts() : provided
   if (!resolved?.length && promptNeedsExplicitContacts(prompt)) {
     return {
       ok: false,
@@ -486,17 +491,19 @@ export async function deployPublicTool(
       })
     }
     const shouldEnroll =
-      opts?.enroll !== false &&
-      shouldAutoStartSequence({
-        prompt,
-        primarySurface: project.spec?.primarySurface,
-        channels: project.spec?.channels,
-        steps: project.spec?.steps
-      })
+      practiceBook ||
+      (opts?.enroll !== false &&
+        shouldAutoStartSequence({
+          prompt,
+          primarySurface: project.spec?.primarySurface,
+          channels: project.spec?.channels,
+          steps: project.spec?.steps
+        }))
     if (shouldEnroll) {
       const contactIds = contactsForAutomaticEnroll(store, orgId, projectId)
       if (contactIds.length) await enrollPublicSequence(store, config, orgId, projectId, { contactIds })
     }
+    if (practiceBook) finishPracticeCallOrder(store, orgId, projectId)
     const publicProject = toPublicProject(store.db.contacts, project, config.appUrl)
     const body: {
       projectId: string
@@ -540,7 +547,7 @@ export async function deployPublicTool(
       body.researchPending = true
       body.pendingEnrichment = recentPending
       body.nextAction = hubspotEnrichmentWaitMessage(recentPending)
-    } else if (opts?.enroll === false && publicProject.contactCount > 0) {
+    } else if (!practiceBook && opts?.enroll === false && publicProject.contactCount > 0) {
       const sequence = getPublicSequence(store, orgId, projectId)
       const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
       const willEnrollLater = shouldAutoStartSequence({
@@ -590,6 +597,45 @@ export async function deployPublicTool(
     }
     if (isPriorityPipelinePrompt(prompt)) {
       body.nextAction = `Call show_tasks for project ${projectId} now. The priority pipeline is already ranked. Do not research, do not save_research, and do not ask to schedule.`
+    }
+    if (practiceBook) {
+      delete body.researchPending
+      const sequence = getPublicSequence(store, orgId, projectId)
+      body.steps = (sequence?.steps ?? [])
+        .filter((step): step is PublicStep => Boolean(step))
+        .map((step) => ({
+          id: step.id,
+          day: step.day,
+          channel: step.channel,
+          label: step.label || step.channel
+        }))
+      const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
+      const rank = new Map(
+        store.db.contacts
+          .filter((contact) => contact.projectId === projectId)
+          .map((contact) => {
+            const window = readCallWindow(contact.attrs)
+            return [contact.id, window ? callWindowSortKey(window) : Number.MAX_SAFE_INTEGER] as const
+          })
+      )
+      body.people = listed.contacts
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          company: c.company || undefined,
+          title: c.title || undefined,
+          email: c.email || undefined,
+          phone: c.phone || undefined,
+          city: c.city || undefined,
+          companyIndustry: c.companyIndustry || undefined,
+          context: c.context?.length ? c.context : undefined
+        }))
+        .sort(
+          (a, b) =>
+            (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+            a.name.localeCompare(b.name)
+        )
+      body.nextAction = `Call show_tasks for project ${projectId} now. The vet offices are ordered from the next call to the last, using each Google Business profile. Do not research, do not save_research, and do not ask to schedule.`
     }
     return {
       ok: true,

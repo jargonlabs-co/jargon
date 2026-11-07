@@ -169,6 +169,17 @@ describe('best time to call', () => {
     })
     const calls = tasks.filter((task) => task.channel === 'call').map((task) => task.contactName)
     assert.deepEqual(calls, ['Sam Same', 'Zoe Early', 'Wes West', 'Pat Soft'])
+    const afternoon = buildWorkspaceTasks({
+      contacts: db.contacts.map((row) => ({ ...row })),
+      steps: [{ id: 'call', day: 0, channel: 'call', label: 'Call', order: 0 }],
+      messages: [],
+      calls: [],
+      now: Date.parse('2026-11-06T22:00:00.000Z')
+    })
+    assert.deepEqual(
+      afternoon.filter((task) => task.channel === 'call').map((task) => task.contactName),
+      ['Wes West', 'Sam Same', 'Zoe Early', 'Pat Soft']
+    )
     assert.match(tasks.find((task) => task.contactId === 'early')?.callWindowLabel || '', /7:30–9:00am/)
     assert.equal(tasks.find((task) => task.contactId === 'early')?.callWindowReason, 'Before the bays fill')
     assert.equal(tasks.find((task) => task.contactId === 'other')?.callWindowLabel, undefined)

@@ -4,6 +4,7 @@ import type { DataStore } from './store'
 import type { ServerConfig } from './config'
 import { toPublicUser } from './auth'
 import type { McpActor } from './mcpOauth'
+import { getConnection } from './connections'
 import { extractContactsFromPrompt, extractRecordsFromText, parseDeployContacts, parseRequiredContacts } from './deployContacts'
 import { upsertEnrichment } from './enrichment'
 import {
@@ -69,6 +70,7 @@ import { EMAIL_WORKSPACE_TOOL_META } from './mcpApps'
 import { shouldAutoStartSequence, type McpTab } from '../shared/workspaceSpec'
 import { isPriorityContact, isPriorityPipelinePrompt, leadIdentity, rankLeads } from '../shared/priorityOverlay'
 import { takeCallWindow, wantsCallWindows } from '../shared/callWindow'
+import { practiceContext, VETERINARY_PRACTICES } from '../shared/veterinaryPractices'
 import { parseWarmthFilter } from '../shared/warmth'
 
 const ContactStatus = z.enum([
@@ -213,7 +215,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. When they ask for the best or least-busy time of day to call, follow nextAction and put callWindow on each call item. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
+        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. If the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with that sentence and no contact table, then show_tasks once. Jargon loads the vet offices, reads each Google Business profile, and orders the calls. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. When they ask for the best or least-busy time of day to call, follow nextAction and put callWindow on each call item. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
       })
     }
   )
@@ -290,7 +292,8 @@ export function registerJargonTools(
     'list_prospects',
     {
       ...display('Look up your prospects', HINTS.read),
-      description: 'List prospects already in this org. Do not cache PII. Do not pass org_id.',
+      description:
+        'List prospects already in this org. When the account has no saved contacts and no HubSpot, Railway, or Postgres connection, this returns the vet offices currently on the account, including phone and Google Business hours. Do not cache PII. Do not pass org_id.',
       inputSchema: z.object({
         projectId: z.string().optional(),
         status: ContactStatus.optional(),
@@ -299,17 +302,42 @@ export function registerJargonTools(
         offset: z.number().int().min(0).optional()
       })
     },
-    async (args) =>
-      ok(
-        listPublicProspects(store, {
-          orgId: actor.orgId,
-          projectId: args.projectId,
-          status: args.status,
-          q: args.q,
-          limit: args.limit,
-          offset: args.offset
+    async (args) => {
+      const listed = listPublicProspects(store, {
+        orgId: actor.orgId,
+        projectId: args.projectId,
+        status: args.status,
+        q: args.q,
+        limit: args.limit,
+        offset: args.offset
+      })
+      if (
+        listed.total === 0 &&
+        !args.projectId &&
+        !args.status &&
+        !args.q &&
+        !orgHasContactSource(store, actor.orgId)
+      ) {
+        const contacts = VETERINARY_PRACTICES.map((practice) => ({
+          id: practice.id,
+          name: practice.name,
+          company: practice.company,
+          title: practice.title,
+          email: practice.email,
+          phone: practice.phone,
+          city: practice.city,
+          companyIndustry: 'Veterinary',
+          context: practiceContext(practice)
+        }))
+        return ok({
+          contacts,
+          total: contacts.length,
+          limit: args.limit ?? 50,
+          offset: args.offset ?? 0
         })
-      )
+      }
+      return ok(listed)
+    }
   )
 
   server.registerTool(
@@ -487,7 +515,7 @@ export function registerJargonTools(
     {
       ...display('Set up a new outbound workspace', HINTS.write),
       description:
-        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. When the user asks for the best or least-busy time of day to call, the dialer is unchanged and nextAction asks for a callWindow on each call item. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
+        'Create a new outbound workspace (structure only). Do not call this to edit a sequence that already exists — call update_sequence on that projectId, with subject and body set to the rewritten copy. Do not call this for a report, rep drilldown, or last quarter — call show_admin. summary is the sentence on Claude\'s Allow card. State goal, audience, channels, and any step count / day span in workspace — Jargon owns the cadence ladder; do not outline Day 0…N in chat. Include a markdown table, CSV, or JSON to ingest a list, or omit it to hydrate Railway, Postgres, or HubSpot. Only people with an email, phone, or LinkedIn URL are kept. Does not open the workspace — follow nextAction. Do not call get_sequence, show_email_workspace, or show_tasks to preview the template sequence. If nextAction says enrichment is still writing, wait and call list_crm_contacts again; do not save_research on empty people. When contacts are ready, research each from its fields (context and attrs from the source), then save_research. That enrolls everyone and opens the one workspace. When the user asks for the best or least-busy time of day to call, the dialer is unchanged and nextAction asks for a callWindow on each call item. Exception: "build an phone heavy outbound sequencer for this list of vet offices. determine the best time of day to call the prospect and sort them from first to last" is the sentence alone, no table. Jargon loads the vet offices and orders the calls from each Google Business profile. Then call show_tasks once. Do not save_research. Exception: a priority pipeline (for example "build a priority pipeline for this week") is the sentence alone, no table. Then call show_tasks once — that is the only workspace to open. Do not save_research. Do not share a web workspace URL — work stays in Claude.',
       inputSchema: DeployToolInput
     },
     async ({ workspace }) => execDeploy(workspace, extractContactsFromPrompt(workspace), undefined)
@@ -918,7 +946,7 @@ export function registerJargonTools(
     {
       ...display("Show what's due today", HINTS.read),
       description:
-        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Call this once when they ask what is due, or once after a priority-pipeline deploy. Do not call it to preview a template cadence, and do not call it in the same turn as save_research — that already opened the workspace.',
+        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Call this once when they ask what is due, once after a priority-pipeline deploy, or once after a phone-heavy sequencer deploy that ordered calls by time of day. Do not call it to preview a template cadence, and do not call it in the same turn as save_research — that already opened the workspace.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
@@ -1784,5 +1812,11 @@ export function registerJargonTools(
       inputSchema: SendDraftInput.omit({ summary: true })
     },
     async ({ messageId }) => execSendDraft(messageId)
+  )
+}
+
+function orgHasContactSource(store: DataStore, orgId: string): boolean {
+  return (['hubspot', 'railway', 'postgres'] as const).some(
+    (provider) => getConnection(store, orgId, provider)?.status === 'connected'
   )
 }

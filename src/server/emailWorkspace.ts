@@ -28,7 +28,7 @@ import {
   rankLeads,
   type LeadPriority
 } from '../shared/priorityOverlay'
-import { callWindowClause, wantsCallWindows } from '../shared/callWindow'
+import { callWindowClause, isPracticeCallOrder, wantsCallWindows } from '../shared/callWindow'
 import {
   inferMcpDefaultTab,
   inferMcpSurface,
@@ -419,9 +419,15 @@ export function getEmailWorkspace(
     }
   }
   const priorityPipeline = isPriorityPipelinePrompt(project.prompt || '')
-  const researchPending = !priorityPipeline && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
+  const practiceOrder = isPracticeCallOrder(project.prompt || '')
+  const researchPending =
+    !priorityPipeline && !practiceOrder && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const schedulePending =
-    !priorityPipeline && !researchPending && taskStats.enrolled > 0 && !project.brief?.scheduleChoice
+    !priorityPipeline &&
+    !practiceOrder &&
+    !researchPending &&
+    taskStats.enrolled > 0 &&
+    !project.brief?.scheduleChoice
   const researchAction = researchPending
     ? surface === 'one_off'
       ? `Write personalized email copy from each contact's fields (context and attrs) for project ${project.id}. Do not invent company facts. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
@@ -1127,6 +1133,8 @@ Jargon runs outbound for this account: email sends from the mailbox the customer
 
 Priority pipeline: when the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with that sentence as workspace and no contact table. Hydrate whoever is already connected — Railway, Postgres, HubSpot — or a list they paste. Do not call resume_workspace first. Then call show_tasks with the projectId. Stop. Only people with an email, phone, or LinkedIn URL are ranked. Rank and signals come from fields on the source (intent, seniority, funding, hiring, CRM warmth) — do not invent them. Do not save_research and do not ask to schedule. Do not enroll HubSpot if the workspace already has people from another source.
 
+Phone-heavy call order: when the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with their sentence and no contact table. Do not call resume_workspace first. Do not call list_crm_contacts. Jargon loads the vet offices, reads each Google Business profile, and orders the calls from the next one to the last. Then call show_tasks once. Do not save_research. Do not invent hours. Do not paste a table. Do not ask to schedule.
+
 On any other new chat that is not a report or rep drilldown, call resume_workspace before import_list or deploy_tool. It returns JSON and does not open a workspace. If a workspace already exists and the user is continuing it, call show_email_workspace or show_tasks once. If they are building a new sequence, do not open the resumed one. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals from any source. The queue is sorted best first. Do not regroup by warmth and do not drop cold contacts.
 
 Bring a list through Claude when no warehouse or CRM is connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument. If they name a source (Railway, HubSpot, a pasted table), use that source only.
@@ -1144,7 +1152,7 @@ Ownership — do not compete with Jargon on structure:
 - import_list / deploy_tool ingests the list and builds cadence structure only. Do not open a workspace yet. Do not call show_email_workspace, show_tasks, or get_sequence to preview the template sequence.
 - If nextAction / pendingEnrichment is set, HubSpot contacts were just added and enrichment is still writing email, phone, LinkedIn, or company fields. Call list_crm_contacts again until those fields exist. Do not enroll and do not save_research until HubSpot has the enrichment.
 - Once people are reachable, write personalized talk tracks, email copy, and LinkedIn notes from each contact's fields (context and attrs). Do not invent funding, hiring, tenure, or other company facts the source did not provide. Then save_research. Pass stepId or day for follow-ups. One Allow card for the whole list. Pass the JSON only as the research tool argument — never paste it into chat. Follow nextAction on the deploy payload. Do not wait to be asked.
-- When the user asks for the best time of day to call, or the least-busy time to call a kind of business, build the dialer the usual way. On save_research, group people by companyIndustry and timezone and add callWindow to each call item: startLocal, endLocal, timezone, businessType, reason, inferred. One window per kind of business and timezone, copied onto every person in that group. Infer a blank industry from the company name and set inferred true. Omit timezone when the account's zone is unknown. The window is a recommendation with a reason. The to-do list shows that time. Do not invent funding, hiring, or tenure.
+- When the user asks for the best time of day to call, or the least-busy time to call a kind of business, and it is not the phone-heavy sequencer above, build the dialer the usual way. On save_research, group people by companyIndustry and timezone and add callWindow to each call item: startLocal, endLocal, timezone, businessType, reason, inferred. One window per kind of business and timezone, copied onto every person in that group. Infer a blank industry from the company name and set inferred true. Omit timezone when the account's zone is unknown. The window is a recommendation with a reason. The to-do list shows that time. Do not invent funding, hiring, or tenure.
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
 - After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. ${SCHEDULED_BUILD} An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment puts people on the sequence and does not send anything. Email stays a draft, and a to-do, unless the user has turned Auto-send on for that email step. Do not pass mode auto and do not call send_message for people who were just added. The user turns Auto-send on in the sequence, or sends a to-do themselves. enroll_hubspot adds a HubSpot list onto the sequence and does not send. When personalized copy is already saved, that call opens the sequence — do not also call show_tasks or show_email_workspace. If you still need save_research, this enroll does not open a workspace; save_research does. Use show_tasks when they want to work what is due and nothing else has opened the sequence.

@@ -54,7 +54,7 @@ export type WorkspaceTask = {
   callWindowLabel?: string
   /** Why that window, e.g. "Auto repair — before the bays fill". */
   callWindowReason?: string
-  /** Minutes from midnight for the window start, used to order today's calls. */
+  /** Lower sorts first among today's calls: open windows, then later today, then tomorrow. */
   callWindowSort?: number
   /** Auto emails send on their day and stay out of the rep's to-do list. */
   owner: 'user' | 'auto'
@@ -143,7 +143,7 @@ export function buildWorkspaceTasks(input: {
       }
 
       if (step.channel === 'call') {
-        const windowFields = callWindowTaskFields(contact.attrs)
+        const windowFields = callWindowTaskFields(contact.attrs, now)
         const call =
           completedCalls.find((item) => !claimedCalls.has(item.id) && item.stepId === step.id) ??
           completedCalls.find(

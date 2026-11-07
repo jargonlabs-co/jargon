@@ -54,9 +54,12 @@ describe('phone-heavy practice call order', () => {
       const window = readCallWindow(contact.attrs)
       assert.equal(window?.startLocal, practice.startLocal)
       assert.equal(window?.timezone, practice.timezone)
-      assert.match(window?.reason || '', /Google Business hours/)
+      assert.match(window?.reason || '', /slowest/i)
       const email = db.messages.find((message) => message.contactId === contact.id && message.channel === 'email')
+      assert.match(email?.subject || '', /Software for/)
+      assert.match(email?.body || '', /scheduling, medical records, and client follow-up/)
       assert.match(email?.body || '', new RegExp(practice.company))
+      assert.equal(/I called for/.test(email?.body || ''), false)
       assert.equal(/\{\{first_name\}\}/.test(email?.body || ''), false)
     }
 

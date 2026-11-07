@@ -30,7 +30,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '7:00am–6:00pm',
     startLocal: '07:00',
     endLocal: '07:45',
-    reason: 'Google Business hours 7:00am–6:00pm. Opens at 7:00am, before the 8:00 surgery block.'
+    reason: 'Slowest before the day fills in, ahead of the 8:00 surgery block.'
   },
   {
     id: 'prac_pine',
@@ -44,7 +44,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:00am–6:00pm',
     startLocal: '11:30',
     endLocal: '13:00',
-    reason: 'Google Business hours 8:00am–6:00pm. The front desk is between appointments over lunch.'
+    reason: 'Slowest over lunch, while the front desk is between appointments.'
   },
   {
     id: 'prac_harbor',
@@ -58,7 +58,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:00am–5:30pm',
     startLocal: '11:30',
     endLocal: '13:00',
-    reason: 'Google Business hours 8:00am–5:30pm. Lunch is the quiet stretch on the profile.'
+    reason: 'Slowest over lunch, between the morning and afternoon appointments.'
   },
   {
     id: 'prac_summit',
@@ -72,7 +72,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '7:30am–6:00pm',
     startLocal: '07:30',
     endLocal: '08:15',
-    reason: 'Google Business hours 7:30am–6:00pm. Opens at 7:30am, and the first appointments are at 8:30.'
+    reason: 'Slowest just after open, before the 8:30 appointments.'
   },
   {
     id: 'prac_westside',
@@ -86,7 +86,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '9:00am–7:00pm',
     startLocal: '12:00',
     endLocal: '13:30',
-    reason: 'Google Business hours 9:00am–7:00pm. The desk is free from noon to 1:30pm.'
+    reason: 'Slowest from noon to 1:30, when the desk is between visits.'
   },
   {
     id: 'prac_cascade',
@@ -100,7 +100,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:00am–10:00pm',
     startLocal: '18:00',
     endLocal: '19:00',
-    reason: 'Google Business hours 8:00am–10:00pm. Evening visits pick up after 7:00pm.'
+    reason: 'Slowest in the early evening, before the late rush.'
   },
   {
     id: 'prac_magnolia',
@@ -114,7 +114,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '7:00am–6:00pm',
     startLocal: '07:00',
     endLocal: '07:40',
-    reason: 'Google Business hours 7:00am–6:00pm. Opens at 7:00am, before the morning surgeries.'
+    reason: 'Slowest at open, before the morning surgeries.'
   },
   {
     id: 'prac_redrock',
@@ -128,7 +128,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:00am–5:00pm',
     startLocal: '11:30',
     endLocal: '12:30',
-    reason: 'Google Business hours 8:00am–5:00pm. Call during the midday break.'
+    reason: 'Slowest at midday, during the break between appointments.'
   },
   {
     id: 'prac_lakeshore',
@@ -142,7 +142,7 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:30am–5:30pm',
     startLocal: '16:00',
     endLocal: '17:00',
-    reason: 'Google Business hours 8:30am–5:30pm. The last appointments start at 4:00pm.'
+    reason: 'Slowest late in the afternoon, as the last appointments wind down.'
   },
   {
     id: 'prac_mission',
@@ -156,12 +156,12 @@ export const VETERINARY_PRACTICES: VeterinaryPractice[] = [
     hours: '8:00am–6:00pm',
     startLocal: '08:00',
     endLocal: '08:45',
-    reason: 'Google Business hours 8:00am–6:00pm. Opens at 8:00am. Surgeries start at 9:00.'
+    reason: 'Slowest just after open, before surgeries start at 9:00.'
   }
 ]
 
 export function practiceContext(practice: VeterinaryPractice): string[] {
-  return [`Google Business hours: ${practice.hours}`, practice.reason]
+  return [practice.reason]
 }
 
 export function practiceByCompany(company: string): VeterinaryPractice | undefined {

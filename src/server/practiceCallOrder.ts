@@ -43,8 +43,8 @@ export function finishPracticeCallOrder(store: DataStore, orgId: string, project
       if (!practice) continue
       const window = windowFor(practice)
       const first = row.name.trim().split(/\s+/)[0] || row.name
-      const intro = `Hi ${first} — calling for ${practice.company}. ${practice.reason} Who handles new patient referrals?`
-      const followUp = `Hi ${first} — following up with ${practice.company}. ${practice.reason} Is there a better person for new patient referrals?`
+      const intro = `Hi ${first} — we help veterinary clinics with scheduling, records, and client follow-up. Calling ${practice.company} during the slow part of the day. Worth a few minutes?`
+      const followUp = `Hi ${first} — following up on the software for ${practice.company}. Scheduling, records, and client follow-up in one place. Is there a better time, or someone else I should ask?`
       const tracks: Record<string, string> = {}
       if (callSteps[0]) tracks[callSteps[0].id] = intro
       if (callSteps[1]) tracks[callSteps[1].id] = followUp
@@ -69,8 +69,8 @@ export function finishPracticeCallOrder(store: DataStore, orgId: string, project
       const practice = contact ? practiceByCompany(contact.company) : undefined
       if (!contact || !practice) continue
       const first = contact.name.trim().split(/\s+/)[0] || contact.name
-      message.subject = `A better time to reach ${practice.company}`
-      message.body = `Hi ${first},\n\nI called for ${practice.company}. ${practice.reason}\n\nHappy to try again when the front desk is free.\n`
+      message.subject = `Software for ${practice.company}`
+      message.body = `Hi ${first},\n\nWe help veterinary clinics run scheduling, medical records, and client follow-up in one place.\n\n${practice.company} looks like a practice where the front desk is still holding that together. Open to a 15-minute look this week?\n`
       message.updatedAt = now
     }
   })

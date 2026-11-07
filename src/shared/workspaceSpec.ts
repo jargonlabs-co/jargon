@@ -425,8 +425,8 @@ function buildSteps(channels: Channel[], goal: string, prompt: string): Workspac
         day: 5,
         channel: 'email',
         label: 'Follow-up email',
-        subject: 'A better time to reach {{company}}',
-        body: `Hi {{first_name}},\n\nI called for {{company}} and wanted to leave a note the front desk can pick up when the day is quieter.\n\n— (${tone})`
+        subject: 'Software for {{company}}',
+        body: `Hi {{first_name}},\n\nWe help veterinary clinics run scheduling, medical records, and client follow-up in one place.\n\n{{company}} looks like a practice where the front desk is still holding that together. Open to a 15-minute look this week?\n`
       }
     ]
   }

@@ -58,6 +58,14 @@ function fakeSupabase() {
         return send(200, { access_token: `at_${u.id}`, token_type: 'bearer', expires_in: 3600, refresh_token: 'rt', user: userJson(u) })
       }
       if (url.pathname === '/auth/v1/resend') return send(200, {})
+      if (url.pathname === '/auth/v1/recover') {
+        const email = String(body.email ?? '')
+        if (email === 'limited@acme.com') {
+          return send(429, { code: 429, error_code: 'over_email_send_rate_limit', msg: 'Email rate limit exceeded' })
+        }
+        if (email === 'smtp-down@acme.com') return send(500, { msg: 'Error sending recovery email' })
+        return send(200, {})
+      }
       send(404, { msg: 'not found' })
     })
   })
@@ -133,5 +141,31 @@ describe('email verification on sign-up', () => {
     assert.equal(body.user.name, 'Nia')
     assert.equal(body.org.name, 'Acme')
     assert.equal(store.db.users.length, 1)
+  })
+
+  it('password reset emails redirect to the reset page', async () => {
+    const res = await post('/auth/forgot-password', { email: 'new@acme.com' })
+    assert.equal(res.status, 200)
+    const recover = supabase.requests.find((r) => r.path.startsWith('POST /auth/v1/recover'))!
+    assert.match(decodeURIComponent(recover.path), /redirect_to=https:\/\/app\.test\/reset-password$/)
+  })
+
+  it('an unknown address still gets the generic reset response', async () => {
+    const res = await post('/auth/forgot-password', { email: 'nobody@else.com' })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as { ok: boolean }
+    assert.equal(body.ok, true)
+  })
+
+  it('a failed reset send is not reported as success', async () => {
+    const limited = await post('/auth/forgot-password', { email: 'limited@acme.com' })
+    assert.equal(limited.status, 429)
+    const limitedBody = (await limited.json()) as { error: string }
+    assert.match(limitedBody.error, /confirmation link already in your inbox/)
+
+    const down = await post('/auth/forgot-password', { email: 'smtp-down@acme.com' })
+    assert.equal(down.status, 503)
+    const downBody = (await down.json()) as { error: string }
+    assert.match(downBody.error, /Could not send a reset email/)
   })
 })

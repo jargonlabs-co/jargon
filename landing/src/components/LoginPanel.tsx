@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, setStoredToken } from '../api'
+import { loginNotice } from '../authLink'
 import { useAuth } from '../auth'
 import { LogoMark } from './LogoMark'
 
@@ -75,16 +76,19 @@ export function LoginPanel({
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
-  const [error, setError] = useState<string | null>(() => peekStorage(AUTH_ERROR_KEY))
-  const [info, setInfo] = useState<string | null>(() => {
-    const flashed = peekStorage(AUTH_INFO_KEY)
-    if (flashed) return flashed
-    return new URLSearchParams(window.location.search).get('verified') === '1'
-      ? 'Email confirmed. Sign in to finish setting up.'
-      : null
-  })
+  const [initialNotice] = useState(() =>
+    loginNotice({
+      search: window.location.search,
+      hash: window.location.hash,
+      flashedInfo: peekStorage(AUTH_INFO_KEY),
+      flashedError: peekStorage(AUTH_ERROR_KEY),
+      flashedConfirm: peekStorage(AUTH_CONFIRM_KEY) === '1'
+    })
+  )
+  const [error, setError] = useState<string | null>(initialNotice.error)
+  const [info, setInfo] = useState<string | null>(initialNotice.info)
   const [busy, setBusy] = useState(false)
-  const [needsConfirm, setNeedsConfirm] = useState(() => peekStorage(AUTH_CONFIRM_KEY) === '1')
+  const [needsConfirm, setNeedsConfirm] = useState(initialNotice.needsConfirm)
 
   useEffect(() => {
     try {

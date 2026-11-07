@@ -1,29 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, setStoredToken } from '../api'
+import { authRedirectError, recoveryAccessToken } from '../authLink'
 import { LogoMark } from './LogoMark'
 
-function parseRecoveryAccessToken(): string | null {
-  const hash = window.location.hash.replace(/^#/, '')
-  if (hash) {
-    const params = new URLSearchParams(hash)
-    const fromHash = params.get('access_token')
-    if (fromHash) return fromHash
-  }
-  const query = new URLSearchParams(window.location.search)
-  return query.get('access_token')
-}
-
 export function ResetPasswordPanel() {
-  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [accessToken] = useState<string | null>(() =>
+    recoveryAccessToken(window.location.hash, window.location.search)
+  )
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(() => authRedirectError(window.location.hash))
   const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    setAccessToken(parseRecoveryAccessToken())
-  }, [])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -66,17 +54,21 @@ export function ResetPasswordPanel() {
         {done ? (
           <div className="login-form">
             <p>Password updated. You can sign in with the new password.</p>
-            <a className="btn primary btn-full" href="/">
+            <a className="btn primary btn-full" href="/login">
               Sign in
+            </a>
+          </div>
+        ) : !accessToken ? (
+          <div className="login-form">
+            <p className="form-error">
+              {error ?? 'Open the link from your email to continue, or request a new reset from Sign in.'}
+            </p>
+            <a className="btn primary btn-full" href="/login">
+              Back to sign in
             </a>
           </div>
         ) : (
           <form onSubmit={submit} className="login-form">
-            {!accessToken ? (
-              <p className="form-error">
-                Open the link from your email to continue, or request a new reset from Sign in.
-              </p>
-            ) : null}
             <label>
               New password
               <input

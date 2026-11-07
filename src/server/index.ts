@@ -362,9 +362,19 @@ export async function createApi(store: DataStore, config: ServerConfig = loadCon
     try {
       await requestPasswordReset(config, email, `${config.appUrl}/reset-password`)
     } catch (err) {
-      console.warn('[jargon] password reset request failed', err)
+      // Supabase returns 200 when the address is unknown, so a thrown error is a real send failure
+      // (rate limit, SMTP, redirect). Do not report that as success.
+      console.warn('[jargon] password reset request failed', err instanceof Error ? err.message : err)
+      const message = err instanceof Error ? err.message : ''
+      const limited = /rate limit|too many|once every|over_email_send_rate_limit/i.test(message)
+      res.status(limited ? 429 : 503).json({
+        error: limited
+          ? 'Too many emails were sent. Wait a few minutes, then try again. If you just created an account, use the confirmation link already in your inbox.'
+          : 'Could not send a reset email. Try again in a few minutes.'
+      })
+      return
     }
-    // Always 200 — do not reveal whether the email exists.
+    // 200 when Supabase accepted the request, including unknown addresses.
     res.json({ ok: true, message: 'If that email is registered, a reset link is on the way.' })
   })
 

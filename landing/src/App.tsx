@@ -7,6 +7,7 @@ import { MarketingPage } from './MarketingPage'
 import { ChangelogPage } from './components/ChangelogPage'
 import { ConnectClaude } from './components/ConnectClaude'
 import { IconPage } from './components/IconPage'
+import { normalizeAuthRedirect } from './authLink'
 import { ResetPasswordPanel } from './components/ResetPasswordPanel'
 import { SignupPage } from './components/SignupPage'
 
@@ -17,7 +18,11 @@ function toolIdFromPath(pathname: string): string | null {
 
 function Root() {
   const { user, loading } = useAuth()
-  const [path, setPath] = useState(() => window.location.pathname)
+  const [path, setPath] = useState(() => {
+    const next = normalizeAuthRedirect(window.location.pathname, window.location.hash)
+    if (next) window.history.replaceState({}, '', next)
+    return window.location.pathname
+  })
   const previewApp =
     import.meta.env.DEV &&
     new URLSearchParams(window.location.search).get('preview') === 'app'

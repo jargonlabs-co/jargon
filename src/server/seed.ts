@@ -9,6 +9,7 @@ import type {
   WorkspaceSpec
 } from './types'
 import { uid } from './crypto'
+import { sequenceTitle } from '../shared/sequenceTitle'
 import { formatChannels, specToAnswers, workspaceKindLabel } from '../shared/workspaceSpec'
 import { setProjectCatalog } from './fieldCatalogSync'
 
@@ -36,15 +37,7 @@ export function seedProject(
   const segment = titleCase(spec.segment || input.answers.segment || 'Target accounts')
   const team = titleCase(input.answers.team ?? 'Sales')
   const label = workspaceKindLabel(spec)
-  const prospectCount = input.answers.prospect_count ?? '100'
-  const name =
-    kind === 'today'
-      ? segment !== 'HubSpot contacts' && segment !== 'Target accounts'
-        ? `${segment} · ${label}`
-        : label
-      : segment !== 'General' && segment !== 'Target accounts' && segment !== 'HubSpot contacts'
-        ? `${segment} ${label}`
-        : `${team} ${label}`
+  const name = sequenceTitle(input.prompt, spec)
   const now = Date.now()
   const orgId = input.orgId
 
@@ -139,7 +132,7 @@ function buildSequenceFromSpec(
     id: uid('seq'),
     orgId: project.orgId,
     projectId: project.id,
-    name: `${formatChannels(spec.channels)} · ${spec.goal}`,
+    name: sequenceTitle(project.prompt, spec),
     goal: spec.goal,
     createdAt: now,
     updatedAt: now

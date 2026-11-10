@@ -4,6 +4,8 @@ import { seedProject } from './seed'
 import type { DataStore } from './store'
 import type { DeploySpecInput, ProjectKind } from './types'
 import { compileWorkspaceSpec } from '../shared/workspaceSpec'
+import { parsePlay, playSpecInput } from '../shared/play'
+import { attachPlay } from './playResolve'
 import type { BillingService } from './billing/types'
 import { assertCanCreateTool, orgWaitsForHubSpotEnrichment, PlanLimitError } from './planLimits'
 import {
@@ -19,11 +21,7 @@ import {
   writePostgresContactsToProjects
 } from './providers/postgresProspects'
 import { syncRailwayProspects } from './providers/railway'
-import {
-  providedSegment,
-  toManualContacts,
-  type DeployContactInput
-} from './deployContacts'
+import { toManualContacts, type DeployContactInput } from './deployContacts'
 import { isPriorityPipelinePrompt, salesExecContactIds, wantsSalesExecs } from '../shared/priorityOverlay'
 
 export { PlanLimitError }
@@ -47,20 +45,18 @@ export async function createProjectRecord(
   }
 ): Promise<CreatedProject> {
   const { orgId, prompt } = input
+  const play = parsePlay(prompt)
+  const playSpec = play ? playSpecInput(play) : undefined
   if (input.billing) {
     await assertCanCreateTool(input.billing, store, orgId)
   }
   const provided = input.contacts?.length ? input.contacts : undefined
-  const listSegment = provided
-    ? input.answers?.segment && input.answers.segment !== 'HubSpot contacts'
-      ? input.answers.segment
-      : providedSegment(provided)
-    : undefined
   const spec = compileWorkspaceSpec(prompt, {
     ...input.spec,
-    kind: input.spec?.kind ?? input.kind,
-    goal: input.spec?.goal ?? input.answers?.goal,
-    segment: listSegment || input.spec?.segment || input.answers?.segment
+    ...(playSpec ?? {}),
+    kind: playSpec?.kind ?? input.spec?.kind ?? input.kind,
+    goal: playSpec?.goal ?? input.spec?.goal ?? input.answers?.goal,
+    segment: playSpec?.segment || input.spec?.segment || input.answers?.segment
   })
   const finalAnswers = {
     ...(input.answers ?? {}),
@@ -68,7 +64,7 @@ export async function createProjectRecord(
       ? {
           data_source: 'provided',
           prospect_count: String(provided.length),
-          segment: listSegment ?? spec.segment
+          segment: spec.segment
         }
       : {})
   }
@@ -85,6 +81,11 @@ export async function createProjectRecord(
     })
     projectId = project.id
   })
+
+  if (play) {
+    await attachPlay(store, config, orgId, projectId, play)
+    return { projectId }
+  }
 
   if (provided) return { projectId }
 

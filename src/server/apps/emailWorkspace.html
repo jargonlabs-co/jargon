@@ -468,6 +468,19 @@
     .session-track { width: 60px; height: 5px; border-radius: 999px; background: var(--navy-700); overflow: hidden; }
     .session-track i { display: block; height: 5px; background: var(--red-500); }
     .session-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 12px; }
+    .session-page .canvas { background: transparent; padding: 4px 0 8px; }
+    .session-page .flow { width: min(340px, 100%); }
+    .session-page .node .seq-copy {
+      color: var(--gray-600); font-size: 12.5px; margin-top: 4px; line-height: 1.45; white-space: pre-wrap;
+    }
+    .session-page .preview-for { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .bridge-kicker {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-600);
+    }
+    .assign-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .assign-row select, .preview-for select {
+      border: 1px solid var(--cream-border); border-radius: 8px; background: #fff; padding: 6px 8px; font: inherit;
+    }
     .session-who { display: flex; align-items: center; gap: 9px; }
     .session-avatar {
       width: 33px; height: 33px; border-radius: 50%; background: var(--navy-900); color: #fff;
@@ -947,6 +960,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   let busy = false;
   /** sequences → tasks for one sequence → the contact session. */
   let screen = 'sequences';
+  let variableContactId = null;
   let sequenceList = null;
   let openingId = null;
   let selectedSequenceId = null;
@@ -1774,6 +1788,45 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     }
   }
 
+  function copyWithCommand(note, text) {
+    const area = note || document.createElement('textarea');
+    const attached = area !== note;
+    if (attached) {
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.left = '-9999px';
+      document.body.appendChild(area);
+    }
+    area.focus();
+    area.select();
+    const ok = document.execCommand('copy');
+    if (attached) area.remove();
+    if (!ok) throw new Error('Could not copy the message.');
+  }
+
+  async function copyLinkedInMessage() {
+    const note = document.getElementById('li-body');
+    const text = note?.value || '';
+    if (!text.trim()) {
+      setNotice('Nothing to copy.', 'err');
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else copyWithCommand(note, text);
+    } catch (_) {
+      try {
+        copyWithCommand(note, text);
+      } catch (err) {
+        setNotice(err?.message || 'Could not copy the message.', 'err');
+        return;
+      }
+    }
+    const button = document.getElementById('session-copy-li') || document.getElementById('copy-li');
+    if (button) button.textContent = 'Copied';
+  }
+
   function renderOverflow() {
     root.innerHTML = `
       <header>
@@ -2506,9 +2559,9 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         <label>Message</label>
         ${filledTextarea('li-body', body)}
         <div class="row">
-          <button class="btn accent" id="send-li" data-contact-id="${esc(contact.id)}" ${busy || sent ? 'disabled' : ''}>${sent ? 'Sent' : 'Send'}</button>
+          <button class="btn accent" id="open-li" ${contact.linkedinUrl ? '' : 'disabled'}>Open LinkedIn profile</button>
+          <button class="btn" id="copy-li">Copy message</button>
           <button class="btn" id="save-li" ${busy || sent ? 'disabled' : ''}>Save draft</button>
-          ${contact.linkedinUrl ? '<button class="btn" id="open-li">Open profile</button>' : ''}
         </div>
       </div>
     `;
@@ -3639,7 +3692,6 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     }
     if (channel === 'linkedin') {
       const body = linkedinBody(contact, task);
-      const next = nextChannelName(channels, channel);
       return `
         ${reason}
         <div class="session-field">
@@ -3649,9 +3701,10 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
           </div>
           ${filledTextarea('li-body', body)}
         </div>
-        <div class="session-note"><i aria-hidden="true"></i><span>Jargon sends this from your LinkedIn. You can still edit it first.</span></div>
+        <div class="session-note"><i aria-hidden="true"></i><span>Open the profile and paste this note on LinkedIn.</span></div>
         <div class="session-actions">
-          <button type="button" class="session-btn primary" id="session-send" ${busy || blocked || !contact.linkedinUrl ? 'disabled' : ''}>Send request · ${esc(next)}</button>
+          <button type="button" class="session-btn primary" id="session-open-li" ${busy || !contact.linkedinUrl ? 'disabled' : ''}>Open LinkedIn profile</button>
+          <button type="button" class="session-btn" id="session-copy-li" ${busy ? 'disabled' : ''}>Copy message</button>
           <button type="button" class="session-btn" id="session-skip-step" ${busy ? 'disabled' : ''}>Skip step</button>
           <button type="button" class="session-btn ghost push" id="session-skip-person" ${busy ? 'disabled' : ''}>Skip ${esc(first)}</button>
         </div>
@@ -3760,14 +3813,21 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       const sync = () => { count.textContent = `${note.value.length} / 300`; };
       note.setAttribute('maxlength', '300');
       sync();
-      note.addEventListener('input', sync);
+      note.addEventListener('input', () => {
+        sync();
+        const copy = root.querySelector('#session-copy-li');
+        if (copy) copy.textContent = 'Copy message';
+      });
     }
     root.querySelector('#session-send')?.addEventListener('click', () => {
       const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
-      if (!contact) return;
-      if (actionPane === 'linkedin') void sendLinkedIn(contact);
-      else void sendNow(contact);
+      if (contact) void sendNow(contact);
     });
+    root.querySelector('#session-open-li')?.addEventListener('click', () => {
+      const contact = contactById(selectedId) || sessionPeople().find((person) => person.id === selectedId);
+      if (contact) void openLinkedIn(contact);
+    });
+    root.querySelector('#session-copy-li')?.addEventListener('click', () => void copyLinkedInMessage());
     root.querySelector('#session-skip-step')?.addEventListener('click', () => void skipCurrentTask());
     root.querySelector('#screen-back')?.addEventListener('click', () => {
       screen = 'tasks';
@@ -3891,6 +3951,130 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return `<button type="button" class="back-btn" id="screen-back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg><span>${esc(label)}</span></button>`;
   }
 
+  function renderVariables() {
+    const play = ws.play;
+    if (!play) { screen = 'tasks'; render(); return; }
+    const people = play.people || [];
+    if (!variableContactId || !people.some((person) => person.id === variableContactId)) {
+      variableContactId = people[0]?.id || null;
+    }
+    const selected = people.find((person) => person.id === variableContactId) || null;
+    const contact = (selected && contactById(selected.id)) || (selected ? {
+      name: selected.name || '',
+      company: selected.company || '',
+      title: selected.title || '',
+      email: '',
+      attrs: selected.values || {}
+    } : null);
+    const steps = (ws.steps && ws.steps.length ? ws.steps : play.steps || []).slice();
+    const assignment = play.assignment?.kind === 'rep' && play.assignment.id
+      ? play.assignment.id
+      : `team:${play.assignment?.id || (play.assignment?.name === 'AM BDRs' ? 'am_bdrs' : 'all')}`;
+    const teams = play.teams?.length ? play.teams : [{ id: 'all', name: 'Whole team' }, { id: 'am_bdrs', name: 'AM BDRs' }];
+    let flow = `<div class="canvas"><div class="flow">${triggerCard()}`;
+    steps.forEach((step, i) => {
+      const prev = i === 0 ? 0 : Number(steps[i - 1].day || 0);
+      const wait = Number(step.day || 0) - prev;
+      const subject = contact ? interpolate(step.subject || '', contact) : (step.subject || '');
+      const body = contact ? interpolate(step.body || '', contact) : (step.body || '');
+      const copy = [subject, body].filter(Boolean).join('\n\n');
+      const ico = step.channel === 'call' ? ICO.phone : step.channel === 'linkedin' ? ICO.linkedin : ICO.mail;
+      const title = step.label || channelLabel(step.channel);
+      flow += connector();
+      if (wait > 0) {
+        flow += waitCard(i, wait);
+        flow += connector();
+      }
+      flow += `
+        <div class="node">
+          <div class="node-top">
+            <span class="ico">${ico}</span>
+            <div class="node-copy">
+              <div class="title">Day ${Number(step.day) || 0} · ${esc(title)}</div>
+              ${copy ? `<div class="seq-copy">${esc(copy)}</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    if (!steps.length) flow += `${connector()}<p class="empty">No steps yet.</p>`;
+    flow += '</div></div>';
+    root.innerHTML = `
+      <div class="session-page">
+        ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
+        ${backButton('Sequences')}
+        <div class="session-card">
+          <div class="session-bar">
+            <div class="session-bar-title">${esc(ws.name || 'Sequence')}</div>
+            <div class="session-progress"><span>${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></div>
+          </div>
+          <div class="session-body">
+            <div>
+              <div class="session-name">${esc(play.audience?.label || ws.goal || '')}</div>
+              <div class="session-meta">${ws.contactCount || people.length} ${(ws.contactCount || people.length) === 1 ? 'contact' : 'contacts'} in this sequence</div>
+            </div>
+            ${play.notice ? `<div class="banner">${esc(play.notice)}</div>` : ''}
+            ${people.length > 1 ? `
+              <div class="preview-for">
+                <div class="bridge-kicker">Preview for</div>
+                <select id="preview-person">
+                  ${people.map((person) => `<option value="${esc(person.id)}" ${person.id === variableContactId ? 'selected' : ''}>${esc(person.name)}</option>`).join('')}
+                </select>
+              </div>
+            ` : ''}
+            ${flow}
+            <div class="assign-row">
+              <div>
+                <div class="bridge-kicker">Assign</div>
+                <div class="session-meta">${esc(play.assignment?.name || 'Unassigned')}</div>
+              </div>
+              <select id="assign-play">
+                ${teams.map((team) => `<option value="team:${esc(team.id)}" ${assignment === `team:${team.id}` ? 'selected' : ''}>${esc(team.name)}</option>`).join('')}
+                ${(play.roster || []).map((rep) => `<option value="${esc(rep.id)}" ${assignment === rep.id ? 'selected' : ''}>${esc(rep.name)}</option>`).join('')}
+              </select>
+            </div>
+            <button type="button" class="session-btn primary block" id="push-play">Push to sequencer</button>
+          </div>
+        </div>
+      </div>
+    `;
+    root.querySelector('#screen-back')?.addEventListener('click', () => {
+      screen = 'sequences';
+      selectedSequenceId = null;
+      notice = '';
+      render();
+    });
+    root.querySelector('#preview-person')?.addEventListener('change', (event) => {
+      variableContactId = event.target.value;
+      render();
+    });
+    root.querySelector('#assign-play')?.addEventListener('change', (event) => {
+      const value = event.target.value;
+      if (value.startsWith('team:')) {
+        const id = value.slice(5);
+        const team = (ws.play.teams || []).find((row) => row.id === id);
+        ws.play.assignment = { kind: 'team', id, name: team?.name || (id === 'am_bdrs' ? 'AM BDRs' : 'Whole team') };
+      } else {
+        const rep = (ws.play.roster || []).find((row) => row.id === value);
+        if (rep) ws.play.assignment = { kind: 'rep', id: rep.id, name: rep.name };
+      }
+      render();
+      void callTool({
+        name: 'assign_play',
+        arguments: {
+          projectId: ws.projectId,
+          kind: ws.play.assignment?.kind || 'team',
+          id: ws.play.assignment?.id
+        }
+      });
+    });
+    root.querySelector('#push-play')?.addEventListener('click', () => {
+      screen = 'tasks';
+      notice = '';
+      render();
+    });
+  }
+
   function renderSequences() {
     const cards = sequenceCards();
     const count = cards?.length || 0;
@@ -3989,7 +4173,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     ws = cached;
     syncDrafts();
     openingId = null;
-    screen = 'tasks';
+    screen = cached.play ? 'variables' : 'tasks';
     notice = '';
     render();
     return true;
@@ -4021,7 +4205,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     rememberWorkspace(parsed);
     ws = parsed;
     syncDrafts();
-    screen = 'tasks';
+    screen = parsed.play ? 'variables' : 'tasks';
     render();
   }
 
@@ -4040,6 +4224,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       root.innerHTML = `<p class="empty">${notice ? esc(notice) : 'Waiting for workspace data…'}</p>`;
       return;
     }
+    if (screen === 'variables' && ws.play) { renderVariables(); return; }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
     if (screen === 'tasks' && openingId && ws.projectId !== openingId) {
       root.innerHTML = `
@@ -4312,12 +4497,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
       void startCall(contact);
     });
-    root.querySelector('#send-li')?.addEventListener('click', () => {
-      const id = root.querySelector('#send-li')?.getAttribute('data-contact-id') || selectedId;
-      const contact = (ws.contacts || []).find((c) => c.id === id);
-      if (!contact) { setNotice('Pick a contact first.', 'err'); return; }
-      void sendLinkedIn(contact);
-    });
+    root.querySelector('#copy-li')?.addEventListener('click', () => void copyLinkedInMessage());
     root.querySelector('#save-li')?.addEventListener('click', () => selected && saveLinkedInDraft(selected));
     root.querySelector('#open-li')?.addEventListener('click', () => selected && openLinkedIn(selected));
     root.querySelectorAll('[data-disp]').forEach((el) => el.addEventListener('click', () => {
@@ -4356,6 +4536,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     if (selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
     admin = null;
     applyWorkspace(parsed);
+    if (parsed.play && screen === 'sequences') screen = 'variables';
     notice = '';
     try {
       render();

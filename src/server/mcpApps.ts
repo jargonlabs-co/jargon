@@ -111,11 +111,14 @@ export function emailWorkspacePreviewHtml(payloadJson?: string): string {
           dialer.tasks=[{id:'ct_doug:step_1',contactId:'ct_doug',contactName:'Doug Cone',contactMeta:'Director of Growth Marketing and Operations · DataRobot',stepId:'step_1',stepLabel:'Intro',stepOrder:0,day:0,channel:'email',dueAt:1,state:'due',bucket:'today',subject:'closing the loop',body:'Hi Doug,\\n\\nFollowing up on the Candela rollout.',owner:'user',target:'doug@datarobot.com'}];
           dialer.steps=(gtm.steps||[]).filter((step)=>step && step.channel==='email');
           dialer.messages=[];
-          this.bundle={proj_preview:gtm,proj_dialer:dialer};
+          this.bundle={};
+          this.bundle[gtm.projectId||'proj_preview']=gtm;
+          this.bundle.proj_dialer=dialer;
         }
         if(name==='run_list_sequences'){
+          const primary=this.bundle[this.data.projectId]||this.data;
           const sequences=[
-            {id:'proj_preview',name:this.bundle.proj_preview.name,contactCount:3,tasks:5,due:5,channels:['email','linkedin','call']},
+            {id:primary.projectId,name:primary.name,contactCount:primary.contactCount||3,tasks:(primary.tasks||[]).length,due:(primary.tasks||[]).length,channels:primary.channels||['email','linkedin','call']},
             {id:'proj_dialer',name:this.bundle.proj_dialer.name,contactCount:1,tasks:1,due:1,channels:['email']}
           ];
           return Promise.resolve({content:[{type:'text',text:JSON.stringify({view:'sequences',sequences,workspaces:this.bundle})}]});

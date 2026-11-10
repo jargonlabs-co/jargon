@@ -5,6 +5,7 @@ import type {
   OrgBillingRow,
   UsageDailyRow
 } from './billing/types'
+import type { Play } from '../shared/play'
 import type { Warmth } from '../shared/warmth'
 
 export type { PlanId } from './billing/catalog'
@@ -247,6 +248,8 @@ export interface Project {
   requestedFields?: string[]
   /** What a new Claude chat or a scheduled run should resume. */
   brief?: WorkspaceBrief
+  /** Audience, variable contract, and who the sequence is assigned to. */
+  play?: Play
   createdAt: number
   updatedAt: number
 }

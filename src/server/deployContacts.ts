@@ -301,15 +301,6 @@ export function extractRecordsFromText(text: string): Record<string, unknown>[] 
 export const PROMPT_CONTACTS_HINT =
   'Include the people in prompt as JSON, e.g. [{"name":"Ada Lopez","company":"Acme","title":"VP RevOps","email":"ada@acme.com","phone":"+1…","linkedinUrl":"https://linkedin.com/in/…"}]. That list becomes the queue — HubSpot/Railway are not used.'
 
-export function providedSegment(contacts: DeployContactInput[]): string {
-  const companies = [
-    ...new Set(contacts.map((c) => c.company).filter((c): c is string => Boolean(c)))
-  ]
-  if (!companies.length) return 'Provided list'
-  if (companies.length <= 4) return companies.join(', ')
-  return `${companies.slice(0, 3).join(', ')} +${companies.length - 3}`
-}
-
 export function toManualContacts(
   orgId: string,
   projectId: string,

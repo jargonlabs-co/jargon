@@ -29,6 +29,8 @@ import {
   type LeadPriority
 } from '../shared/priorityOverlay'
 import { callWindowClause, isPracticeCallOrder, wantsCallWindows } from '../shared/callWindow'
+import type { PlayView } from '../shared/play'
+import { playViewFor } from './playResolve'
 import {
   inferMcpDefaultTab,
   inferMcpSurface,
@@ -47,7 +49,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=session6'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=play3'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -99,6 +101,9 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=session3',
   'ui://jargon/email-workspace.html?v=session4',
   'ui://jargon/email-workspace.html?v=session5',
+  'ui://jargon/email-workspace.html?v=session6',
+  'ui://jargon/email-workspace.html?v=play1',
+  'ui://jargon/email-workspace.html?v=play2',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -169,6 +174,7 @@ export type EmailWorkspace = {
     called: number
     linkedin: number
   }
+  play?: PlayView
 }
 
 function projectChannels(project: Project): Channel[] {
@@ -420,11 +426,13 @@ export function getEmailWorkspace(
   }
   const priorityPipeline = isPriorityPipelinePrompt(project.prompt || '')
   const practiceOrder = isPracticeCallOrder(project.prompt || '')
+  const play = project.play
   const researchPending =
-    !priorityPipeline && !practiceOrder && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
+    !priorityPipeline && !practiceOrder && !play && contacts.length > 0 && contacts.some((c) => !c.enrichedAt)
   const schedulePending =
     !priorityPipeline &&
     !practiceOrder &&
+    !play &&
     !researchPending &&
     taskStats.enrolled > 0 &&
     !project.brief?.scheduleChoice
@@ -433,13 +441,15 @@ export function getEmailWorkspace(
       ? `Write personalized email copy from each contact's fields (context and attrs) for project ${project.id}. Do not invent company facts. Do not start a sequence. Pass research only as the save_research argument — do not paste JSON into chat.`
       : `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from their source). Then call save_research for project ${project.id}. Do not invent funding, hiring, or tenure. That enrolls everyone and opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
     : undefined
-  const nextAction = researchAction
-    ? wantsCallWindows(project.prompt || '')
-      ? `${researchAction} ${callWindowClause()}`
-      : researchAction
-    : schedulePending
-      ? scheduleAsk(project.id)
-      : undefined
+  const nextAction = play
+    ? `The play is open for project ${project.id}. Summarize the audience and the variables in one sentence. Do not call save_research. Do not outline the day ladder.`
+    : researchAction
+      ? wantsCallWindows(project.prompt || '')
+        ? `${researchAction} ${callWindowClause()}`
+        : researchAction
+      : schedulePending
+        ? scheduleAsk(project.id)
+        : undefined
   const view =
     surface === 'overflow' ? 'overflow' : surface === 'queue' || surface === 'tasks' ? 'queue' : 'email_workspace'
   return {
@@ -485,7 +495,24 @@ export function getEmailWorkspace(
       emailed: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('email')).length,
       called: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('call')).length,
       linkedin: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('linkedin')).length
-    }
+    },
+    ...(play
+      ? {
+          play: playViewFor(
+            store,
+            orgId,
+            project.id,
+            play,
+            rankedRows,
+            steps.map((step) => ({
+              channel: step.channel,
+              day: step.day,
+              label: step.label,
+              body: step.body
+            }))
+          )
+        }
+      : {})
   }
 }
 
@@ -1102,6 +1129,163 @@ export const SAMPLE_TASKS_WORKSPACE: EmailWorkspace = {
   }
 }
 
+const PLAY_CALL =
+  'Open with their last objection: {{last_call_objection}}\n\nCall during {{quiet_window}}, when the office is quietest.'
+const PLAY_EMAIL =
+  'Hi {{first_name}},\n\nYou raised this on our last call: {{last_call_objection}}\n\nI can talk during {{quiet_window}}, when the office is quiet.\n'
+
+const PLAY_PEOPLE = [
+  {
+    id: 'ct_ada',
+    name: 'Ada Morales',
+    title: 'Office manager',
+    company: 'Pine Street Veterinary',
+    city: 'Austin',
+    email: 'ada@pinestreet.example',
+    phone: '+15125550110',
+    objection: 'Already locked into a records system through next year.',
+    quiet: '8:00–9:30am CT'
+  },
+  {
+    id: 'ct_owen',
+    name: 'Owen Briggs',
+    title: 'Practice owner',
+    company: 'Summit Veterinary',
+    city: 'Denver',
+    email: 'owen@summit.example',
+    phone: '+13035550110',
+    objection: 'Budget is frozen until the new hospital wing opens.',
+    quiet: '7:30–9:00am MT'
+  },
+  {
+    id: 'ct_noah',
+    name: 'Noah Patel',
+    title: 'Medical director',
+    company: 'Cascade Veterinary',
+    city: 'Seattle',
+    email: 'noah@cascade.example',
+    phone: '+12065550110',
+    objection: 'Too many vendors already calling the front desk.',
+    quiet: '8:00–9:30am PT'
+  }
+]
+
+export const SAMPLE_PLAY_WORKSPACE: EmailWorkspace = {
+  view: 'email_workspace',
+  surface: 'sequence',
+  defaultTab: 'tasks',
+  focus: 'tasks',
+  projectId: 'proj_play',
+  name: 'A call with an email follow-up for stage-2 deals',
+  goal: 'Reopen deals that have gone quiet',
+  dashboardUrl: 'https://jargonlabs.co/tools/proj_play',
+  dashboardPath: '/tools/proj_play',
+  contactCount: PLAY_PEOPLE.length,
+  channels: ['call', 'email'],
+  emailLive: true,
+  voiceLive: true,
+  linkedinLive: false,
+  sandbox: false,
+  catalog: [
+    { key: 'last_call_objection', label: 'Last call objection', type: 'string', origin: 'attrs' },
+    { key: 'quiet_window', label: 'Quiet hours', type: 'string', origin: 'attrs' }
+  ],
+  steps: [
+    { id: 'step_call', day: 0, channel: 'call', label: 'Open on the last objection', body: PLAY_CALL, order: 0 },
+    {
+      id: 'step_email',
+      day: 2,
+      channel: 'email',
+      label: 'Follow up',
+      subject: 'Following up, {{first_name}}',
+      body: PLAY_EMAIL,
+      order: 1
+    }
+  ],
+  contacts: PLAY_PEOPLE.map((person) => ({
+    id: person.id,
+    projectId: 'proj_play',
+    name: person.name,
+    company: person.company,
+    title: person.title,
+    email: person.email,
+    phone: person.phone,
+    city: person.city,
+    status: 'active' as const,
+    stepIndex: 0,
+    notes: '',
+    attrs: { last_call_objection: person.objection, quiet_window: person.quiet },
+    createdAt: 1,
+    updatedAt: 1
+  })),
+  contactsTotal: PLAY_PEOPLE.length,
+  messages: [],
+  openCall: null,
+  sources: [{ provider: 'hubspot', status: 'connected', accountLabel: 'HubSpot' }],
+  tasks: PLAY_PEOPLE.map((person) => ({
+    id: `${person.id}:step_call`,
+    contactId: person.id,
+    contactName: person.name,
+    contactMeta: `${person.title} · ${person.company}`,
+    stepId: 'step_call',
+    stepLabel: 'Open on the last objection',
+    stepOrder: 0,
+    day: 0,
+    channel: 'call' as const,
+    dueAt: Date.now(),
+    state: 'due' as const,
+    bucket: 'today' as const,
+    body: PLAY_CALL,
+    target: person.phone,
+    owner: 'user' as const
+  })),
+  taskStats: { overdue: 0, today: PLAY_PEOPLE.length, upcoming: 0, done: 0, skipped: 0, blocked: 0, enrolled: PLAY_PEOPLE.length, open: PLAY_PEOPLE.length },
+  stepStats: [],
+  researchPending: false,
+  stats: {
+    drafts: 0,
+    queued: 0,
+    sent: 0,
+    missingEmail: 0,
+    remaining: PLAY_PEOPLE.length,
+    emailed: 0,
+    called: 0,
+    linkedin: 0
+  },
+  play: {
+    audience: {
+      label: 'Stage-2 deals with no activity in 30 days',
+      stage: 'stage 2',
+      stageNumber: 2,
+      inactiveDays: 30
+    },
+    variables: [
+      { key: 'last_call_objection', label: 'Last call objection', party: 'first', source: 'HubSpot calls' },
+      { key: 'quiet_window', label: 'Quiet hours', party: 'third', source: 'Google Business Profile' }
+    ],
+    roster: [
+      { id: 'user_tara', name: 'Tara' },
+      { id: 'user_jordan', name: 'Jordan' }
+    ],
+    teams: [
+      { id: 'all', name: 'Whole team' },
+      { id: 'am_bdrs', name: 'AM BDRs' }
+    ],
+    assignment: { kind: 'team', name: 'Whole team' },
+    people: PLAY_PEOPLE.map((person) => ({
+      id: person.id,
+      name: person.name,
+      company: person.company,
+      title: person.title,
+      values: { last_call_objection: person.objection, quiet_window: person.quiet }
+    })),
+    steps: [
+      { channel: 'call', day: 0, label: 'Open on the last objection', body: PLAY_CALL },
+      { channel: 'email', day: 2, label: 'Follow up', body: PLAY_EMAIL }
+    ]
+  }
+}
+
 const DNC_CALL_OVERRIDE = `Account override: if a contact is do-not-call or DNC, still include a call step and put their phone number on it. Keep the note that says the number is DNC. The rep can place the call.`
 
 export function jargonMcpInstructions(store: DataStore, orgId: string): string {
@@ -1135,6 +1319,8 @@ Priority pipeline: when the user asks to build a priority pipeline or prioritize
 
 Phone-heavy call order: when the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with their sentence and no contact table. Do not call resume_workspace first. Do not call list_crm_contacts. Jargon loads the vet offices, reads each Google Business profile, and orders the calls from the next one to the last. Then call show_tasks once. Do not save_research. Do not invent hours. Do not paste a table. Do not ask to schedule.
 
+Deal play: when the user asks to build a play from deals, a last-call objection, Google Business hours, or other first-party and third-party fields as sequence variables, call deploy_tool with that sentence and no contact table. Jargon pulls the audience, reads the CRM and any public source the sentence names, and stores each value as a sequence variable. Then call show_tasks once. Do not save_research. Do not rewrite the variable tokens. Do not ask to schedule.
+
 On any other new chat that is not a report or rep drilldown, call resume_workspace before import_list or deploy_tool. It returns JSON and does not open a workspace. If a workspace already exists and the user is continuing it, call show_email_workspace or show_tasks once. If they are building a new sequence, do not open the resumed one. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals from any source. The queue is sorted best first. Do not regroup by warmth and do not drop cold contacts.
 
 Bring a list through Claude when no warehouse or CRM is connected: import_list / deploy_tool with a markdown table or CSV in the workspace argument. If they name a source (Railway, HubSpot, a pasted table), use that source only.
@@ -1156,10 +1342,10 @@ Ownership — do not compete with Jargon on structure:
 - save_research enrolls everyone and opens the one workspace for this build, with that copy. Do not also call show_email_workspace or show_tasks. Sequence is the cadence structure (days, channels, labels). Fallback templates may use {{first_name}} — those are not the send copy, and they must not be shown as a workspace.
 - After the sequence is saved, follow nextAction: ask once whether Jargon may run this workspace on its own. Default every Sunday at 6pm. If they name a segment (disqualified, a lifecycle stage, a HubSpot list), pass it on note_schedule_choice. accepted is the one grant: Jargon then pulls that segment and queues reps without another prompt. Also create a Claude scheduled task only after they confirm with Schedule. ${SCHEDULED_BUILD} An Allow click on any other Jargon tool does not create that schedule or that grant.
 - Enrollment puts people on the sequence and does not send anything. Email stays a draft, and a to-do, unless the user has turned Auto-send on for that email step. Do not pass mode auto and do not call send_message for people who were just added. The user turns Auto-send on in the sequence, or sends a to-do themselves. enroll_hubspot adds a HubSpot list onto the sequence and does not send. When personalized copy is already saved, that call opens the sequence — do not also call show_tasks or show_email_workspace. If you still need save_research, this enroll does not open a workspace; save_research does. Use show_tasks when they want to work what is due and nothing else has opened the sequence.
-- Tasks is the rep session: one contact at a time, email, then the LinkedIn note, then the call. Sending or skipping a step moves to that contact's next step. A call outcome logs the call and opens the next contact. Open it with show_tasks; read it with list_tasks. Do not send the rep back to a to-do list.
+- Tasks is the rep session: one contact at a time, email, then the LinkedIn note, then the call. Sending or skipping an email moves to that contact's next step. A LinkedIn step opens the profile and copies the note for the rep to paste on LinkedIn. Skipping that step moves on. A call outcome logs the call and opens the next contact. Open it with show_tasks; read it with list_tasks. Do not send the rep back to a to-do list.
 - When the user asks how the team or org performed — a rep productivity drilldown, meetings booked, calls, emails, or replies over a period such as last quarter — call show_admin once. That opens the org view. Pass range quarter for last quarter, or 7d, 30d, or 90d. Pass focus reps, sequences, meetings, or territories. Use territories when they ask for sales territory, productivity by territory, or which message converts in a territory. Summarize the summary field in one sentence. Do not paste the table, and do not call show_tasks or get_usage for that.
 - Phone calls stay in the in-chat dialer. Do not send the user to the web dashboard to place a call.
-- The rep session sends the LinkedIn note itself. Do not type a chat message, call navigate, or open a Browser pane for a profile.
+- The rep session opens the LinkedIn profile and copies the note. The rep pastes it on LinkedIn. Do not type the note into chat, and do not call navigate or open a Browser pane.
 - Never share dashboardUrl, dashboardPath, or a jargonlabs.co/tools/… link. A build displays one in-chat workspace: the one save_research opens after personalized copy is saved. A priority pipeline displays one workspace: the show_tasks call after deploy. Do not tell them to open the web workspace.
 - Send the user to the web dashboard only to update billing or plans (call create_billing_link, or https://jargonlabs.co/billing) or to contact support (https://jargonlabs.co).
 - Queue (dialer / work the list today / multi-channel) is contact-by-contact Email, Call, LinkedIn.

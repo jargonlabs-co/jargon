@@ -45,9 +45,9 @@ import { hangupLiveCall, inspectLiveVoice } from './providers/voice'
 import { inferDeployParamsAsync } from './deploy'
 import { createProjectRecord, PlanLimitError } from './projectCreate'
 import { orgAllowsDncCalls, orgWaitsForHubSpotEnrichment } from './planLimits'
+import { sequenceTitle } from '../shared/sequenceTitle'
 import {
   channelsFromSteps,
-  formatChannels,
   parseDeploySpec,
   resolveStepAudience,
   shouldAutoStartSequence,
@@ -76,6 +76,7 @@ import {
   wantsCallWindows,
   type CallWindowDraft
 } from '../shared/callWindow'
+import { parsePlay } from '../shared/play'
 import { finishPracticeCallOrder, veterinaryDeployContacts } from './practiceCallOrder'
 import { setProjectCatalog } from './fieldCatalogSync'
 import {
@@ -490,15 +491,17 @@ export async function deployPublicTool(
         if (p) p.requestedFields = requestedFields
       })
     }
-    const shouldEnroll =
-      practiceBook ||
-      (opts?.enroll !== false &&
-        shouldAutoStartSequence({
-          prompt,
-          primarySurface: project.spec?.primarySurface,
-          channels: project.spec?.channels,
-          steps: project.spec?.steps
-        }))
+  const play = parsePlay(prompt)
+  const shouldEnroll =
+    practiceBook ||
+    Boolean(play) ||
+    (opts?.enroll !== false &&
+      shouldAutoStartSequence({
+        prompt,
+        primarySurface: project.spec?.primarySurface,
+        channels: project.spec?.channels,
+        steps: project.spec?.steps
+      }))
     if (shouldEnroll) {
       const contactIds = contactsForAutomaticEnroll(store, orgId, projectId)
       if (contactIds.length) await enrollPublicSequence(store, config, orgId, projectId, { contactIds })
@@ -547,7 +550,7 @@ export async function deployPublicTool(
       body.researchPending = true
       body.pendingEnrichment = recentPending
       body.nextAction = hubspotEnrichmentWaitMessage(recentPending)
-    } else if (!practiceBook && opts?.enroll === false && publicProject.contactCount > 0) {
+    } else if (!practiceBook && !play && opts?.enroll === false && publicProject.contactCount > 0) {
       const sequence = getPublicSequence(store, orgId, projectId)
       const listed = listPublicContacts(store, projectId, { limit: 50, offset: 0 })
       const willEnrollLater = shouldAutoStartSequence({
@@ -636,6 +639,20 @@ export async function deployPublicTool(
             a.name.localeCompare(b.name)
         )
       body.nextAction = `Call show_tasks for project ${projectId} now. The vet offices are ordered from the next call to the last, using each Google Business profile. Do not research, do not save_research, and do not ask to schedule.`
+    }
+    if (play) {
+      delete body.researchPending
+      const sequence = getPublicSequence(store, orgId, projectId)
+      body.steps = (sequence?.steps ?? [])
+        .filter((step): step is PublicStep => Boolean(step))
+        .map((step) => ({
+          id: step.id,
+          day: step.day,
+          channel: step.channel,
+          label: step.label || step.channel
+        }))
+      const names = play.variables.map((variable) => variable.label).join(' and ')
+      body.nextAction = `Call show_tasks for project ${projectId} now. The sequence already has ${names || 'the requested variables'} filled from the CRM and public sources. Do not research, do not save_research, and do not ask to schedule.`
     }
     return {
       ok: true,
@@ -1476,7 +1493,8 @@ export function updatePublicSequence(
     const sequence = db.sequences.find((s) => s.projectId === projectId)
     if (sequence) {
       sequence.goal = next.spec.goal
-      sequence.name = `${formatChannels(next.spec.channels)} · ${next.spec.goal}`
+      sequence.name = sequenceTitle(next.prompt || '', next.spec)
+      next.name = sequence.name
       sequence.updatedAt = now
     }
     db.steps = db.steps.filter((s) => s.projectId !== projectId)

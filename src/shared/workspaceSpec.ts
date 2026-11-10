@@ -8,6 +8,7 @@ import type {
 } from '../server/types'
 import { isPhoneHeavySequence, isPracticeCallOrder } from './callWindow'
 import { matchOutboundIntent } from './outboundIntents'
+import { isCompanyListLabel } from './sequenceTitle'
 
 export type {
   Channel,
@@ -43,9 +44,13 @@ export function compileWorkspaceSpec(prompt: string, override?: DeploySpecInput)
     primarySurface = 'sequence'
   }
   const goal = override?.goal?.trim() || intent.goal
+  const requestedSegment = override?.segment?.trim()
   const segment =
-    override?.segment?.trim() ||
-    (isPracticeCallOrder(prompt) ? 'Vet offices' : inferSegment(prompt))
+    requestedSegment && !isCompanyListLabel(requestedSegment)
+      ? requestedSegment
+      : isPracticeCallOrder(prompt)
+        ? 'Vet offices'
+        : inferSegment(prompt)
   const rawSteps = override?.steps?.length
     ? normalizeSteps(override.steps, goal)
     : buildSteps(channels, goal, prompt)

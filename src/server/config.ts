@@ -35,6 +35,10 @@ export interface ServerConfig {
     clientSecret: string
     scopes: string
   }
+  /** Public place hours. Used when a play asks for a Google Business Profile. */
+  places: {
+    apiKey: string
+  }
   plivo: {
     authId: string
     authToken: string
@@ -244,7 +248,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       clientSecret: process.env.HUBSPOT_CLIENT_SECRET ?? '',
       scopes:
         process.env.HUBSPOT_SCOPES ??
-        'oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read crm.objects.notes.write crm.objects.calls.write crm.objects.emails.write crm.objects.meetings.write crm.lists.read'
+        'oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.companies.read crm.objects.deals.read crm.objects.calls.read crm.objects.notes.read crm.objects.notes.write crm.objects.calls.write crm.objects.emails.write crm.objects.meetings.write crm.lists.read'
+    },
+    places: {
+      apiKey: (process.env.GOOGLE_PLACES_API_KEY ?? '').trim()
     },
     plivo: {
       authId: (process.env.PLIVO_AUTH_ID ?? '').trim(),

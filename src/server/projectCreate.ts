@@ -4,7 +4,8 @@ import { seedProject } from './seed'
 import type { DataStore } from './store'
 import type { DeploySpecInput, ProjectKind } from './types'
 import { compileWorkspaceSpec } from '../shared/workspaceSpec'
-import { parsePlay, playSpecInput } from '../shared/play'
+import { parsePlay, playSpecInput, type Play } from '../shared/play'
+import { UPSELL_STORES } from '../shared/upsellStores'
 import { attachPlay } from './playResolve'
 import type { BillingService } from './billing/types'
 import { assertCanCreateTool, orgWaitsForHubSpotEnrichment, PlanLimitError } from './planLimits'
@@ -50,7 +51,7 @@ export async function createProjectRecord(
   if (input.billing) {
     await assertCanCreateTool(input.billing, store, orgId)
   }
-  const provided = input.contacts?.length ? input.contacts : undefined
+  const provided = input.contacts?.length ? input.contacts : upsellContacts(play)
   const spec = compileWorkspaceSpec(prompt, {
     ...input.spec,
     ...(playSpec ?? {}),
@@ -186,4 +187,22 @@ export async function createProjectRecord(
   }
 
   return { projectId }
+}
+
+function upsellContacts(play: Play | null): DeployContactInput[] | undefined {
+  if (play?.audience?.kind !== 'upsell') return undefined
+  return UPSELL_STORES.map((store) => ({
+    name: store.name,
+    company: store.company,
+    title: store.title,
+    email: store.email,
+    phone: store.phone,
+    city: store.city,
+    companyIndustry: 'Retail',
+    attrs: {
+      attention_pain: store.attentionPain,
+      brand_addon: store.brandAddon,
+      quiet_window: store.quietWindow
+    }
+  }))
 }

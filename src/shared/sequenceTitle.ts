@@ -19,7 +19,9 @@ const GENERIC_GOALS = new Set([
   'run a cadence',
   'work the outbound sequence',
   'start a linkedin conversation',
-  'book a conversation with the practice'
+  'book a conversation with the practice',
+  'reopen deals that have gone quiet',
+  'reopen upsell opportunities that have gone quiet'
 ])
 
 /** Company-name dumps from a pasted list, not an audience. */
@@ -41,6 +43,7 @@ export function sequenceTitle(prompt: string, spec: WorkspaceSpec): string {
   const audience = audiencePhrase(spec.segment)
   const goal = goalPhrase(spec.goal)
   const titled = audience ? `${motion} for ${audience}` : motion
+  if (goal && audience && audience.toLowerCase().includes(goal.toLowerCase())) return titled
   return goal ? `${titled} to ${goal}` : titled
 }
 

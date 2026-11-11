@@ -22,7 +22,7 @@ import {
 import { registerJargonTools } from './mcpTools'
 import type { BillingService } from './billing/types'
 import { SAMPLE_ADMIN_REPORT } from './adminReport'
-import { jargonMcpInstructions, SAMPLE_PLAY_WORKSPACE, SAMPLE_QUEUE_WORKSPACE, SAMPLE_TASKS_WORKSPACE } from './emailWorkspace'
+import { jargonMcpInstructions, SAMPLE_PLAY_WORKSPACE, SAMPLE_QUEUE_WORKSPACE, SAMPLE_TASKS_WORKSPACE, SAMPLE_UPSELL_WORKSPACE } from './emailWorkspace'
 import { emailWorkspacePreviewHtml, registerEmailWorkspaceApp } from './mcpApps'
 
 const actorStore = new AsyncLocalStorage<McpActor>()
@@ -58,7 +58,9 @@ export function mountMcp(
               ? JSON.stringify(SAMPLE_ADMIN_REPORT)
               : req.query.surface === 'play'
                 ? JSON.stringify(SAMPLE_PLAY_WORKSPACE)
-                : undefined
+                : req.query.surface === 'upsell'
+                  ? JSON.stringify(SAMPLE_UPSELL_WORKSPACE)
+                  : undefined
       res.type('html').send(emailWorkspacePreviewHtml(payload))
     })
   }

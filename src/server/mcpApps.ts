@@ -100,6 +100,9 @@ export function emailWorkspacePreviewHtml(payloadJson?: string): string {
       if(name==='run_skip_task') mark(tasks.find((t)=>t.contactId===args.contactId&&t.stepId===args.stepId),'skipped');
       if(name==='run_skip_contact') for (const task of tasks) if(task.contactId===args.contactId) mark(task,'skipped');
       if(name==='run_list_sequences' || name==='load_email_workspace'){
+        if(!this.bundle && this.data && this.data.workspaces){
+          this.bundle=this.data.workspaces;
+        }
         if(!this.bundle){
           const gtm=this.data;
           const dialer=JSON.parse(JSON.stringify(gtm));
@@ -116,6 +119,9 @@ export function emailWorkspacePreviewHtml(payloadJson?: string): string {
           this.bundle.proj_dialer=dialer;
         }
         if(name==='run_list_sequences'){
+          if(this.data && Array.isArray(this.data.sequences)){
+            return Promise.resolve({content:[{type:'text',text:JSON.stringify({view:'sequences',sequences:this.data.sequences,workspaces:this.bundle})}]});
+          }
           const primary=this.bundle[this.data.projectId]||this.data;
           const sequences=[
             {id:primary.projectId,name:primary.name,contactCount:primary.contactCount||3,tasks:(primary.tasks||[]).length,due:(primary.tasks||[]).length,channels:primary.channels||['email','linkedin','call']},

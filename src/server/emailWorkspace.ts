@@ -29,7 +29,8 @@ import {
   type LeadPriority
 } from '../shared/priorityOverlay'
 import { callWindowClause, isPracticeCallOrder, wantsCallWindows } from '../shared/callWindow'
-import type { PlayView } from '../shared/play'
+import { parsePlay, playSequenceSteps, type PlayView } from '../shared/play'
+import { UPSELL_STORES } from '../shared/upsellStores'
 import { playViewFor } from './playResolve'
 import {
   inferMcpDefaultTab,
@@ -49,7 +50,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=play3'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=play4'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -104,6 +105,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=session6',
   'ui://jargon/email-workspace.html?v=play1',
   'ui://jargon/email-workspace.html?v=play2',
+  'ui://jargon/email-workspace.html?v=play3',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -1286,6 +1288,112 @@ export const SAMPLE_PLAY_WORKSPACE: EmailWorkspace = {
   }
 }
 
+const UPSELL_PLAY = parsePlay(
+  'Build a play for open upsell opportunities with no activity in 30 days. Open with the pain point or objection from the customer’s last Attention call, and position the add-on that fits their brand. Schedule calls for when each store is quietest, based on their Google Business Profile.'
+)
+const UPSELL_STEPS = UPSELL_PLAY ? playSequenceSteps(UPSELL_PLAY) : []
+const UPSELL_CALL = UPSELL_STEPS.find((step) => step.channel === 'call')
+const UPSELL_EMAIL = UPSELL_STEPS.find((step) => step.channel === 'email')
+
+export const SAMPLE_UPSELL_WORKSPACE: EmailWorkspace = {
+  ...SAMPLE_PLAY_WORKSPACE,
+  projectId: 'proj_upsell',
+  name: 'A call with an email follow-up for open upsell opportunities',
+  goal: 'Reopen upsell opportunities that have gone quiet',
+  dashboardUrl: 'https://jargonlabs.co/tools/proj_upsell',
+  dashboardPath: '/tools/proj_upsell',
+  catalog: [
+    { key: 'attention_pain', label: 'Last Attention call', type: 'string', origin: 'attrs' },
+    { key: 'brand_addon', label: 'Brand add-on', type: 'string', origin: 'attrs' },
+    { key: 'quiet_window', label: 'Quiet hours', type: 'string', origin: 'attrs' }
+  ],
+  steps: [
+    {
+      id: 'step_call',
+      day: 0,
+      channel: 'call',
+      label: UPSELL_CALL?.label || 'Open on the last Attention call',
+      body: UPSELL_CALL?.body || '',
+      order: 0
+    },
+    {
+      id: 'step_email',
+      day: 2,
+      channel: 'email',
+      label: UPSELL_EMAIL?.label || 'Position the add-on',
+      subject: UPSELL_EMAIL?.subject,
+      body: UPSELL_EMAIL?.body || '',
+      order: 1
+    }
+  ],
+  contacts: UPSELL_STORES.map((store) => ({
+    id: store.id,
+    projectId: 'proj_upsell',
+    name: store.name,
+    company: store.company,
+    title: store.title,
+    email: store.email,
+    phone: store.phone,
+    city: store.city,
+    status: 'active' as const,
+    stepIndex: 0,
+    notes: '',
+    attrs: {
+      attention_pain: store.attentionPain,
+      brand_addon: store.brandAddon,
+      quiet_window: store.quietWindow
+    },
+    createdAt: 1,
+    updatedAt: 1
+  })),
+  tasks: UPSELL_STORES.map((store) => ({
+    id: `${store.id}:step_call`,
+    contactId: store.id,
+    contactName: store.name,
+    contactMeta: `${store.title} · ${store.company}`,
+    stepId: 'step_call',
+    stepLabel: UPSELL_CALL?.label || 'Open on the last Attention call',
+    stepOrder: 0,
+    day: 0,
+    channel: 'call' as const,
+    dueAt: Date.now(),
+    state: 'due' as const,
+    bucket: 'today' as const,
+    body: UPSELL_CALL?.body || '',
+    target: store.phone,
+    owner: 'user' as const
+  })),
+  play: {
+    audience: UPSELL_PLAY?.audience ?? {
+      label: 'Open upsell opportunities with no activity in 30 days',
+      stage: 'open upsell',
+      kind: 'upsell',
+      inactiveDays: 30
+    },
+    variables: UPSELL_PLAY?.variables ?? [],
+    roster: SAMPLE_PLAY_WORKSPACE.play?.roster ?? [],
+    teams: SAMPLE_PLAY_WORKSPACE.play?.teams ?? [],
+    assignment: { kind: 'team', id: 'am_bdrs', name: 'AM BDRs' },
+    people: UPSELL_STORES.map((store) => ({
+      id: store.id,
+      name: store.name,
+      company: store.company,
+      title: store.title,
+      values: {
+        attention_pain: store.attentionPain,
+        brand_addon: store.brandAddon,
+        quiet_window: store.quietWindow
+      }
+    })),
+    steps: UPSELL_STEPS.map((step) => ({
+      channel: step.channel,
+      day: step.day,
+      label: step.label,
+      body: step.body ?? ''
+    }))
+  }
+}
+
 const DNC_CALL_OVERRIDE = `Account override: if a contact is do-not-call or DNC, still include a call step and put their phone number on it. Keep the note that says the number is DNC. The rep can place the call.`
 
 export function jargonMcpInstructions(store: DataStore, orgId: string): string {
@@ -1319,7 +1427,7 @@ Priority pipeline: when the user asks to build a priority pipeline or prioritize
 
 Phone-heavy call order: when the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with their sentence and no contact table. Do not call resume_workspace first. Do not call list_crm_contacts. Jargon loads the vet offices, reads each Google Business profile, and orders the calls from the next one to the last. Then call show_tasks once. Do not save_research. Do not invent hours. Do not paste a table. Do not ask to schedule.
 
-Deal play: when the user asks to build a play from deals, a last-call objection, Google Business hours, or other first-party and third-party fields as sequence variables, call deploy_tool with that sentence and no contact table. Jargon pulls the audience, reads the CRM and any public source the sentence names, and stores each value as a sequence variable. Then call show_tasks once. Do not save_research. Do not rewrite the variable tokens. Do not ask to schedule.
+Deal play: when the user asks to build a play — any audience, any fields they name, including deals, open upsell opportunities, a last-call objection, an Attention call, a brand add-on, Google Business hours, or other first-party and third-party facts — call deploy_tool with that sentence and no contact table. Jargon reads the audience and each field into sequence variables, fills the people, and stores the copy with those tokens. Then call show_tasks once. Do not save_research. Do not rewrite the variable tokens. Do not ask to schedule. Do not paste a contact table.
 
 On any other new chat that is not a report or rep drilldown, call resume_workspace before import_list or deploy_tool. It returns JSON and does not open a workspace. If a workspace already exists and the user is continuing it, call show_email_workspace or show_tasks once. If they are building a new sequence, do not open the resumed one. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals from any source. The queue is sorted best first. Do not regroup by warmth and do not drop cold contacts.
 

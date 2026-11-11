@@ -9,6 +9,8 @@ import { hubspotAccessToken, isDemoHubSpot, writeHubSpotContactsToProjects } fro
 import { pullQuietDeals } from './providers/hubspotDeals'
 import { lookupQuietWindow } from './providers/places'
 import { setProjectCatalog } from './fieldCatalogSync'
+import { toManualContacts } from './deployContacts'
+import { demoPeopleFor, valueFor } from '../shared/playPeople'
 
 export async function attachPlay(
   store: DataStore,
@@ -18,7 +20,7 @@ export async function attachPlay(
   play: Play
 ): Promise<void> {
   const next: Play = { ...play, variables: play.variables.map((variable) => ({ ...variable })) }
-  const wantsDeals = Boolean(play.audience)
+  const wantsDeals = play.audience?.kind !== 'upsell' && play.audience?.stageNumber != null
   const wantsObjection = play.variables.some((variable) => variable.key === 'last_call_objection')
   const wantsQuiet = play.variables.some((variable) => variable.key === 'quiet_window')
   const conn = getConnection(store, orgId, 'hubspot')
@@ -41,8 +43,29 @@ export async function attachPlay(
     } catch (err) {
       next.notice = err instanceof Error ? err.message : 'HubSpot deals could not be read.'
     }
-  } else if (wantsDeals && !hubspotReady) {
-    next.notice = 'Connect HubSpot to pull these deals and the last call.'
+  }
+
+  const pulledLive = wantsDeals && hubspotReady
+  const hasPeople = store.db.contacts.some((contact) => contact.projectId === projectId && contact.orgId === orgId)
+  if (!hasPeople && !pulledLive) {
+    const created = toManualContacts(
+      orgId,
+      projectId,
+      demoPeopleFor(next).map((person) => ({
+        name: person.name,
+        company: person.company,
+        title: person.title,
+        email: person.email,
+        phone: person.phone,
+        city: person.city,
+        attrs: person.attrs
+      }))
+    )
+    store.update((db) => {
+      db.contacts.push(...created)
+    })
+  } else if (hasPeople && !pulledLive) {
+    fillMissingPlayValues(store, orgId, projectId, next)
   }
 
   if (wantsQuiet) await fillQuietWindows(store, config, orgId, projectId)
@@ -97,6 +120,24 @@ async function fillQuietWindows(
       row.attrs = { ...(row.attrs ?? {}), quiet_window: label }
     })
   }
+}
+
+function fillMissingPlayValues(store: DataStore, orgId: string, projectId: string, play: Play): void {
+  store.update((db) => {
+    const people = db.contacts.filter((contact) => contact.projectId === projectId && contact.orgId === orgId)
+    people.forEach((contact, index) => {
+      const attrs = { ...(contact.attrs ?? {}) }
+      let changed = false
+      for (const variable of play.variables) {
+        if (text(attrs[variable.key])) continue
+        attrs[variable.key] = valueFor(variable, index)
+        changed = true
+      }
+      if (!changed) return
+      contact.attrs = attrs
+      contact.updatedAt = Date.now()
+    })
+  })
 }
 
 function ensureObjectionKey(store: DataStore, orgId: string, projectId: string): void {

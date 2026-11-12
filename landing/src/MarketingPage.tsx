@@ -3,8 +3,8 @@ import { BrandMark } from './components/BrandMark'
 import { ChatGptMark } from './components/ChatGptMark'
 import { ClaudeMark } from './components/ClaudeMark'
 import { LogoMark } from './components/LogoMark'
-import { CliDeployMock, ContextMock, HeroClaudeMock } from './components/ProductMocks'
-import { CONNECTOR_DESCRIPTION, ConnectorGallery } from './components/ConnectorGallery'
+import { PlayAccounts, PlayDiagram, PlaySequence } from './components/PlayStory'
+import { HeroClaudeMock } from './components/ProductMocks'
 
 function useReveal() {
   const ref = useRef<HTMLElement | null>(null)
@@ -65,10 +65,9 @@ export function MarketingPage() {
           <span>Jargon</span>
         </a>
         <nav className="nav-links">
-          <a href="#deploy">Build</a>
-          <a href="#run">Deploy</a>
-          <a href="#data">Connect</a>
-          <a href="#use-cases">Use cases</a>
+          <a href="#connect">Connect</a>
+          <a href="#build">Build</a>
+          <a href="#execute">Execute</a>
           <a href="/changelog">Changelog</a>
         </nav>
         <div className="nav-actions">
@@ -86,11 +85,11 @@ export function MarketingPage() {
       <main id="top">
         <section className="hero">
           <div className="hero-copy">
+            <p className="eyebrow">For GTM and Marketing Ops</p>
             <h1>Helping sales teams communicate better.</h1>
             <p className="hero-lede">
-              Find, sort, and dial contacts inside tools your reps already use.
-              <br />
-              Kill workflow bottlenecks and build more pipeline.
+              Build and assign custom sequences using first and third party data. All of your
+              intelligence at your fingertips, made for modern execution.
             </p>
             <div className="hero-actions">
               <a
@@ -116,121 +115,55 @@ export function MarketingPage() {
             </div>
           </div>
 
-          <div className="hero-visual" aria-hidden="true">
+          <div className="hero-visual">
             <HeroClaudeMock />
           </div>
         </section>
 
-        <Reveal className="section build-section" as="section">
-          <div className="section-inner" id="deploy">
-            <div className="section-copy centered">
-              <p className="eyebrow">For GTM Engineers</p>
-              <h2>Deploy fully functional UIs from Claude Code.</h2>
-              <p>
-                Describe the motion once. Jargon ships a working UI on your CRM, data warehouse,
-                and context layer — dialing, email, and LinkedIn included — without the tickets,
-                sprint cycles, or ongoing maintenance of a traditional engineering build. Sales
-                opens the tool in the browser and runs it.
-              </p>
-            </div>
-            <CliDeployMock />
-          </div>
-        </Reveal>
-
-        <Reveal className="section run-section" as="section">
-          <div className="section-inner" id="run">
+        <Reveal className="section" as="section">
+          <div className="section-inner" id="connect">
             <div className="section-copy centered wide">
-              <p className="eyebrow">For sales teams</p>
-              <h2>Connect Claude. Work your book from there.</h2>
-              <p>
-                {CONNECTOR_DESCRIPTION} Sign in once — no API keys, no terminal.
-              </p>
+              <p className="eyebrow">Sources</p>
+              <h2>Personalized plays, built from every source you have.</h2>
             </div>
-            <ConnectorGallery />
+            <PlayDiagram />
           </div>
         </Reveal>
 
         <Reveal className="section product-section" as="section">
-          <div className="section-inner split" id="data">
+          <div className="section-inner split" id="build">
             <div className="section-copy">
-              <p className="eyebrow">Enterprise-ready on your stack</p>
-              <h2>Custom software on the data layer you already own.</h2>
+              <p className="eyebrow">Built for GTM Operations teams</p>
+              <h2>A custom sequence, stitched from the tools you already run.</h2>
               <p>
-                Claude and ChatGPT showed your teams what&apos;s possible. Jargon is the next step:
-                enterprise-ready tools grounded in your CRM, data warehouse, and context layer —
-                so an outbound dialer or sequencer runs on how your org actually sells.
+                GTM ops writes the play once. Jargon pulls the CRM, the last call, the thread,
+                and what’s public, fills a sequence for each account, and pushes it to the
+                sequencer your team already runs.
               </p>
             </div>
-            <ContextMock />
+            <PlaySequence />
           </div>
         </Reveal>
 
         <Reveal className="section capabilities" as="section">
-          <div className="section-inner" id="use-cases">
-            <div className="section-copy centered">
-              <p className="eyebrow">What you can ship</p>
-              <h2>Custom UIs for every motion that matters.</h2>
+          <div className="section-inner" id="execute">
+            <div className="section-copy centered wide">
+              <p className="eyebrow">Your sequencer</p>
+              <h2>A personalized play, assigned to reps.</h2>
               <p>
-                Built by the people closest to the work — run by the reps who depend on it.
+                The same sentence becomes a different opener and a different call time for every
+                account. It lands in Outreach, Salesloft, Gong Engage, or HubSpot, assigned to the
+                rep who owns the book.
               </p>
             </div>
-            <ul className="capability-list">
-              <li>
-                <span className="cap-glyph">☎</span>
-                <div>
-                  <h3>Outbound dialers</h3>
-                  <p>
-                    Functional call UIs on your segments — dispositions, next steps, and write-back
-                    included.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span className="cap-glyph">⚑</span>
-                <div>
-                  <h3>Outbound sequences</h3>
-                  <p>
-                    Prioritized sequences for AEs and SDRs, pulled from your CRM and context layer —
-                    ready to run.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span className="cap-glyph">↻</span>
-                <div>
-                  <h3>Sequencers &amp; cadences</h3>
-                  <p>
-                    Multi-channel motions your GTM Engineers design — email, call, and LinkedIn in
-                    one runnable tool.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span className="cap-glyph">◎</span>
-                <div>
-                  <h3>Account &amp; retention motions</h3>
-                  <p>
-                    Prep consoles and risk queues on the same data layer — custom software that
-                    travels with the motion.
-                  </p>
-                </div>
-              </li>
-            </ul>
+            <PlayAccounts />
           </div>
         </Reveal>
 
         <Reveal className="section cta-section" as="section">
           <div className="cta-panel" id="demo">
             <BrandMark size={36} className="cta-mark" />
-            <h2>
-              Build the revenue stack
-              <br />
-              only you could design.
-            </h2>
-            <p>
-              Enterprise-ready custom software on your data layer — deployed by GTM Engineers from
-              Claude Code, without engineering maintenance, and run by sales as working tools.
-            </p>
+            <h2>Helping sales teams communicate better.</h2>
             <a
               className="btn primary large"
               href="https://calendly.com/tara_jargonlabs/30min"
@@ -239,9 +172,6 @@ export function MarketingPage() {
             >
               Book a demo
             </a>
-            <p className="cta-note">
-              Connect your data · Deploy from Claude Code · Run in the browser
-            </p>
           </div>
         </Reveal>
       </main>

@@ -1,80 +1,46 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BrandMark } from './BrandMark'
 import { ClaudeMark } from './ClaudeMark'
 import { MockWindow } from './MockWindow'
 
 const HERO_PROMPT =
-  'Pull my Salesforce contacts and build a dialer ranked by warmth. Call the hottest one from here.'
+  'Build a play for stage-2 deals with no activity in 30 days. Open with the objection from their last call, and schedule calls for when each office is quietest, based on their Google Business Profile.'
 
-const HERO_CONTACTS = [
+const PLAY_SOURCES = [
   {
-    name: 'Maya Chen',
-    title: 'VP Sales',
-    company: 'Lattice',
-    city: 'San Francisco',
-    phone: '+1 (415) 555-0142',
-    warmth: 'hot' as const
+    group: 'CRM',
+    detail: 'Stage-2 deals with no activity in 30 days',
+    from: 'Salesforce · HubSpot · Attio'
   },
   {
-    name: 'Jordan Blake',
-    title: 'Director of Sales',
-    company: 'Rippling',
-    city: 'San Francisco',
-    phone: '+1 (415) 555-0148',
-    warmth: 'hot' as const
+    group: 'Calls',
+    detail: 'The objection from the last call',
+    from: 'Gong · Granola · Attention · Zoom'
   },
   {
-    name: 'Priya Nair',
-    title: 'Head of RevOps',
-    company: 'Notion',
-    city: 'New York',
-    phone: '+1 (917) 555-0162',
-    warmth: 'warm' as const
+    group: 'Email & chat',
+    detail: 'The thread already on the account',
+    from: 'Gmail · Outlook · Slack'
   },
   {
-    name: 'Sam Okonkwo',
-    title: 'AE Manager',
-    company: 'Figma',
-    city: 'London',
-    phone: '+44 20 7946 0958',
-    warmth: 'warm' as const
+    group: 'Google Business Profile',
+    detail: 'The hour each office is quietest',
+    from: 'Hours'
   },
   {
-    name: 'Elena Vasquez',
-    title: 'VP Sales',
-    company: 'Linear',
-    city: 'Austin',
-    phone: '+1 (512) 555-0190',
-    warmth: 'cold' as const
+    group: 'The Web',
+    detail: 'What’s public on the account',
+    from: 'Jobs · funding · reviews'
   }
 ]
 
-const WARMTH_GROUPS = [
-  { key: 'hot', label: 'Hot' },
-  { key: 'warm', label: 'Warm' },
-  { key: 'cold', label: 'Cold' }
-] as const
+type HeroPhase = 'idle' | 'typing' | 'sent' | 'tool' | 'sources' | 'building' | 'pushed'
 
-const KEYPAD = [
-  ['1', ''],
-  ['2', 'ABC'],
-  ['3', 'DEF'],
-  ['4', 'GHI'],
-  ['5', 'JKL'],
-  ['6', 'MNO'],
-  ['7', 'PQRS'],
-  ['8', 'TUV'],
-  ['9', 'WXYZ'],
-  ['*', ''],
-  ['0', '+'],
-  ['#', '']
-] as const
-
-type HeroPhase = 'idle' | 'typing' | 'sent' | 'tool' | 'list' | 'dialing' | 'live'
+const GRAPHIC_PACE = 1 / 0.7
 
 function wait(ms: number, timers: number[]) {
   return new Promise<void>((resolve) => {
-    timers.push(window.setTimeout(resolve, ms))
+    timers.push(window.setTimeout(resolve, Math.round(ms * GRAPHIC_PACE)))
   })
 }
 
@@ -206,21 +172,32 @@ export function DialerMock() {
   )
 }
 
-function clock(seconds: number) {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
-}
-
 export function HeroClaudeMock() {
   const [phase, setPhase] = useState<HeroPhase>('idle')
   const [typed, setTyped] = useState('')
-  const [visiblePeople, setVisiblePeople] = useState(0)
-  const [seconds, setSeconds] = useState(0)
+  const [visibleSources, setVisibleSources] = useState(0)
+  const [detail, setDetail] = useState(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (phase !== 'live') return
-    const id = window.setInterval(() => setSeconds((value) => value + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [phase])
+    const el = scrollRef.current
+    if (!el) return
+    const anchor = el.querySelector('.hc-assistant')
+    if (!(anchor instanceof HTMLElement)) {
+      el.scrollTo({ top: 0 })
+      return
+    }
+    const place = () => {
+      if (phase === 'building' || phase === 'pushed') {
+        el.scrollTo({ top: el.scrollHeight })
+        return
+      }
+      const delta = anchor.getBoundingClientRect().top - el.getBoundingClientRect().top
+      el.scrollTo({ top: Math.max(0, el.scrollTop + delta - 14) })
+    }
+    place()
+    requestAnimationFrame(place)
+  }, [phase, visibleSources, detail])
 
   useEffect(() => {
     const timers: number[] = []
@@ -229,17 +206,17 @@ export function HeroClaudeMock() {
     async function play() {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         setTyped(HERO_PROMPT)
-        setVisiblePeople(HERO_CONTACTS.length)
-        setSeconds(42)
-        setPhase('live')
+        setVisibleSources(PLAY_SOURCES.length)
+        setDetail(3)
+        setPhase('pushed')
         return
       }
 
       while (!cancelled) {
         setPhase('idle')
         setTyped('')
-        setVisiblePeople(0)
-        setSeconds(0)
+        setVisibleSources(0)
+        setDetail(0)
         await wait(700, timers)
         if (cancelled) return
 
@@ -248,7 +225,7 @@ export function HeroClaudeMock() {
           if (cancelled) return
           setTyped(HERO_PROMPT.slice(0, i))
           const char = HERO_PROMPT[i - 1]
-          await wait(char === ' ' ? 55 : 28, timers)
+          await wait(char === ' ' ? 42 : 16, timers)
         }
 
         await wait(420, timers)
@@ -261,23 +238,28 @@ export function HeroClaudeMock() {
 
         await wait(900, timers)
         if (cancelled) return
-        setPhase('list')
+        setPhase('sources')
 
-        for (let i = 1; i <= HERO_CONTACTS.length; i += 1) {
+        for (let i = 1; i <= PLAY_SOURCES.length; i += 1) {
           if (cancelled) return
-          setVisiblePeople(i)
-          await wait(280, timers)
+          setVisibleSources(i)
+          await wait(420, timers)
         }
 
-        await wait(2200, timers)
+        await wait(900, timers)
         if (cancelled) return
-        setPhase('dialing')
+        setPhase('building')
 
-        await wait(1400, timers)
+        for (let i = 1; i <= 3; i += 1) {
+          if (cancelled) return
+          setDetail(i)
+          await wait(640, timers)
+        }
+
+        await wait(700, timers)
         if (cancelled) return
-        setSeconds(0)
-        setPhase('live')
-        await wait(7200, timers)
+        setPhase('pushed')
+        await wait(5200, timers)
       }
     }
 
@@ -289,11 +271,22 @@ export function HeroClaudeMock() {
   }, [])
 
   const showThread = phase !== 'idle' && phase !== 'typing'
-  const showWork = phase === 'tool' || phase === 'list' || phase === 'dialing' || phase === 'live'
-  const showApp = phase === 'list' || phase === 'dialing' || phase === 'live'
-  const onCall = phase === 'dialing' || phase === 'live'
-  const shown = HERO_CONTACTS.slice(0, visiblePeople)
-  const lead = HERO_CONTACTS[0]
+  const showWork = phase === 'tool' || phase === 'sources' || phase === 'building' || phase === 'pushed'
+  const showApp = phase === 'sources' || phase === 'building' || phase === 'pushed'
+  const building = phase === 'building' || phase === 'pushed'
+  const shown = PLAY_SOURCES.slice(0, visibleSources)
+  const assistant =
+    phase === 'pushed'
+      ? 'Pushed to the sequencer.'
+      : building
+        ? 'Building the sequence from those sources.'
+        : 'Pulling every source that sentence names.'
+  const tool =
+    phase === 'pushed'
+      ? 'pushed to the sequencer'
+      : building
+        ? 'building the sequence'
+        : 'gathering CRM, calls, email, and the public web'
 
   return (
     <div className="hc-shell" aria-hidden="true">
@@ -306,9 +299,9 @@ export function HeroClaudeMock() {
           <span>+</span> New chat
         </div>
         <div className="hc-side-label">Recents</div>
-        <div className="hc-recent on">Salesforce warmth dialer</div>
-        <div className="hc-recent">AE book follow-ups</div>
-        <div className="hc-recent">Rippling demo prep</div>
+        <div className="hc-recent on">Stage-2 quiet deals</div>
+        <div className="hc-recent">Open upsell opportunities</div>
+        <div className="hc-recent">Vet office call times</div>
         <div className="hc-recent">Q3 pipeline review</div>
         <div className="hc-side-foot">
           <div className="hc-you">Y</div>
@@ -323,21 +316,17 @@ export function HeroClaudeMock() {
         <div className="hc-top">
           <span>Share</span>
         </div>
-        <div className="hc-scroll">
+        <div className="hc-scroll" ref={scrollRef}>
           <div className="hc-col">
             {showThread ? <div className="hc-user">{HERO_PROMPT}</div> : null}
 
-            {showWork ? (
-              <p className="hc-assistant">
-                Pulled 24 Salesforce contacts and ranked them by warmth. Opening Maya Chen.
-              </p>
-            ) : null}
+            {showWork ? <p className="hc-assistant">{assistant}</p> : null}
 
             {showWork ? (
               <div className="hc-tool">
                 <span className="hc-tool-ico" aria-hidden="true" />
                 <span>
-                  <strong>Jargon</strong> · ranked Salesforce contacts by warmth
+                  <strong>Jargon</strong> · {tool}
                 </span>
               </div>
             ) : null}
@@ -347,114 +336,55 @@ export function HeroClaudeMock() {
                 <div className="hc-mcp-bar">
                   <div className="hc-mcp-brand">
                     <BrandMark size={16} />
-                    Jargon <span>· Engage</span>
+                    Jargon <span>· Sequence</span>
                   </div>
                   <span className="hc-full">Full screen</span>
                 </div>
                 <div className="hc-wrap">
                   <header className="hc-engage-head">
-                    <div className="hc-eyebrow">Engage</div>
-                    <h3>{onCall ? 'Call' : 'Dialer'}</h3>
-                    <p>Outbound dialer · Salesforce · 8 hot · 11 warm · 5 cold</p>
+                    <div className="hc-eyebrow">{building ? 'Sequence' : 'Sources'}</div>
+                    <h3>{phase === 'pushed' ? 'Pushed' : building ? 'Stage-2 deals' : 'From the sentence'}</h3>
+                    <p>
+                      {building
+                        ? 'Open on the last call. Call when the office is quietest.'
+                        : `${shown.length} of ${PLAY_SOURCES.length} sources`}
+                    </p>
                   </header>
 
-                  {onCall ? (
-                    <div className="hc-call-layout">
-                      <div className="hc-book">
-                        {WARMTH_GROUPS.map((group) => {
-                          const people = HERO_CONTACTS.filter((person) => person.warmth === group.key)
-                          return (
-                            <div key={group.key}>
-                              <div className={`hc-group-label ${group.key}`}>{group.label}</div>
-                              <div className="hc-people">
-                                {people.map((person) => (
-                                  <div
-                                    key={person.name}
-                                    className={`hc-person ${person.name === lead.name ? 'on' : ''}`}
-                                  >
-                                    <div className="hc-name">{person.name}</div>
-                                    <span className={`hc-warmth ${person.warmth}`}>{person.warmth}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="hc-dial-card">
-                        <div className="hc-dial-h">
-                          <div>
-                            <div className="hc-kicker">Outbound call</div>
-                            <div className="hc-dial-status">
-                              {phase === 'dialing' ? 'Calling…' : 'On the line'}
-                            </div>
-                          </div>
-                          <span className="hc-work-who">1 of 24</span>
+                  <div className="hc-play">
+                    <div className="hc-play-sources">
+                      <div className="hc-kicker">Sources</div>
+                      {shown.map((source) => (
+                        <div key={source.group} className="hc-play-source">
+                          <strong>{source.group}</strong>
+                          <em>{source.detail}</em>
+                          <span>{source.from}</span>
                         </div>
-                        <div className="hc-dial-who">{lead.name}</div>
-                        <div className="hc-dial-num">{lead.phone}</div>
-                        <div className="hc-dial-timer">{phase === 'live' ? clock(seconds) : 'Connecting…'}</div>
-                        <div className="hc-facts">
-                          <span>Lattice</span>
-                          <span>San Francisco</span>
-                          <span className="hot">Hot</span>
-                        </div>
-                        <div className="hc-dial-actions">
-                          {phase === 'live' ? (
-                            <>
-                              <span className="hc-mini">Mute</span>
-                              <span className="hc-mini end">End call</span>
-                            </>
-                          ) : (
-                            <span className="hc-mini call">Call</span>
-                          )}
-                        </div>
-                        <div className="hc-track">
-                          <label>Talk track</label>
-                          <p>Maya replied last week. Confirm the evaluation, then ask who owns outbound.</p>
-                        </div>
-                        <div className="hc-keypad">
-                          {KEYPAD.map(([key, sub]) => (
-                            <span key={key} className="hc-key">
-                              <b>{key}</b>
-                              <em>{sub}</em>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  ) : (
-                    <>
-                      <div className="hc-banner">
-                        Showing {shown.length} of 24, ranked hottest first.
+                    {detail >= 1 ? (
+                      <div className="hc-play-step">
+                        <div className="hc-kicker">Day 0 · Call</div>
+                        <p>Open with the objection from their last call.</p>
+                        <p>Schedule it for when each office is quietest.</p>
                       </div>
-                      {WARMTH_GROUPS.map((group) => {
-                        const people = shown.filter((person) => person.warmth === group.key)
-                        if (!people.length) return null
-                        return (
-                          <div key={group.key} className="hc-group">
-                            <div className={`hc-group-label ${group.key}`}>{group.label}</div>
-                            <div className="hc-people">
-                              {people.map((person) => (
-                                <div
-                                  key={person.name}
-                                  className={`hc-person ${person.name === lead.name ? 'on' : ''}`}
-                                >
-                                  <div>
-                                    <div className="hc-name">{person.name}</div>
-                                    <div className="hc-meta">
-                                      {person.title} · {person.company}
-                                    </div>
-                                  </div>
-                                  <span className={`hc-warmth ${person.warmth}`}>{person.warmth}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </>
-                  )}
+                    ) : null}
+                    {detail >= 2 ? (
+                      <div className="hc-play-step">
+                        <div className="hc-kicker">Day 2 · Email</div>
+                        <p>Follow up on that objection.</p>
+                      </div>
+                    ) : null}
+                    {detail >= 3 ? (
+                      <div className={`hc-play-assign ${phase === 'pushed' ? 'is-pushed' : ''}`}>
+                        <div>
+                          <div className="hc-kicker">Sequencer</div>
+                          <div className="hc-name">Outreach · Salesloft · Gong · HubSpot</div>
+                        </div>
+                        <span className="hc-play-push">{phase === 'pushed' ? 'Pushed' : 'Push'}</span>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : null}

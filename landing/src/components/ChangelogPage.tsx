@@ -62,10 +62,9 @@ export function ChangelogPage({ signedIn, onOpenApp }: Props) {
           <span>Jargon</span>
         </a>
         <nav className="nav-links">
-          <a href="/#deploy">Build</a>
-          <a href="/#run">Deploy</a>
-          <a href="/#data">Connect</a>
-          <a href="/#use-cases">Use cases</a>
+          <a href="/#connect">Connect</a>
+          <a href="/#build">Build</a>
+          <a href="/#execute">Execute</a>
           <a href="/changelog" aria-current="page">
             Changelog
           </a>

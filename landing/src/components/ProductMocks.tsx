@@ -6,8 +6,8 @@ import { MockWindow } from './MockWindow'
 const HERO_PROMPT =
   'Build a play for stage-2 deals with no activity in 30 days. Open with the objection from their last call, and schedule calls for when each office is quietest, based on their Google Business Profile.'
 
-const PLAY_TEAMS = ['Whole team', 'AM BDRs', 'Enterprise AEs']
-const ASSIGNED_TEAM = 'AM BDRs'
+const PLAY_TEAMS = ['Whole team', 'West Coast BDRs', 'Chicago AEs']
+const ASSIGNED_TEAM = 'Whole team'
 
 const PLAY_SOURCES = [
   {
@@ -280,7 +280,7 @@ export function HeroClaudeMock() {
   const shown = PLAY_SOURCES.slice(0, visibleSources)
   const assistant =
     phase === 'pushed'
-      ? `Assigned to ${ASSIGNED_TEAM} and pushed to the sequencer.`
+      ? 'Assigned to the whole team and pushed to the sequencer.'
       : detail >= 3
         ? 'Assign it to a team, then push it to the sequencer.'
         : building
@@ -288,9 +288,9 @@ export function HeroClaudeMock() {
           : 'Pulling every source that sentence names.'
   const tool =
     phase === 'pushed'
-      ? `assigned to ${ASSIGNED_TEAM} · pushed to the sequencer`
+      ? 'assigned to the whole team · pushed to the sequencer'
       : detail >= 4
-        ? `assigning to ${ASSIGNED_TEAM}`
+        ? 'assigning to the whole team'
         : detail >= 3
           ? 'choosing a team'
           : building

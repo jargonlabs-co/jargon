@@ -88,8 +88,8 @@ export function MarketingPage() {
             <p className="eyebrow">For GTM and Marketing Ops</p>
             <h1>Helping sales teams communicate better.</h1>
             <p className="hero-lede">
-              Build and assign custom sequences using first and third party data. All of your
-              intelligence at your fingertips, made for modern execution.
+              The fastest way to go from idea to execution in Gong, Outreach, Salesloft, Apollo,
+              and more.
             </p>
             <div className="hero-actions">
               <a
@@ -124,7 +124,7 @@ export function MarketingPage() {
           <div className="section-inner" id="connect">
             <div className="section-copy centered wide">
               <p className="eyebrow">Sources</p>
-              <h2>Personalized plays, built from every source you have.</h2>
+              <h2>Generate more opportunities out of the data you already bought.</h2>
             </div>
             <PlayDiagram />
           </div>

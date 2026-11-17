@@ -6,6 +6,9 @@ import { MockWindow } from './MockWindow'
 const HERO_PROMPT =
   'Build a play for stage-2 deals with no activity in 30 days. Open with the objection from their last call, and schedule calls for when each office is quietest, based on their Google Business Profile.'
 
+const PLAY_TEAMS = ['Whole team', 'AM BDRs', 'Enterprise AEs']
+const ASSIGNED_TEAM = 'AM BDRs'
+
 const PLAY_SOURCES = [
   {
     group: 'CRM',
@@ -207,7 +210,7 @@ export function HeroClaudeMock() {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         setTyped(HERO_PROMPT)
         setVisibleSources(PLAY_SOURCES.length)
-        setDetail(3)
+        setDetail(5)
         setPhase('pushed')
         return
       }
@@ -250,10 +253,10 @@ export function HeroClaudeMock() {
         if (cancelled) return
         setPhase('building')
 
-        for (let i = 1; i <= 3; i += 1) {
+        for (let i = 1; i <= 5; i += 1) {
           if (cancelled) return
           setDetail(i)
-          await wait(640, timers)
+          await wait(i >= 3 ? 780 : 640, timers)
         }
 
         await wait(700, timers)
@@ -277,16 +280,22 @@ export function HeroClaudeMock() {
   const shown = PLAY_SOURCES.slice(0, visibleSources)
   const assistant =
     phase === 'pushed'
-      ? 'Pushed to the sequencer.'
-      : building
-        ? 'Building the sequence from those sources.'
-        : 'Pulling every source that sentence names.'
+      ? `Assigned to ${ASSIGNED_TEAM} and pushed to the sequencer.`
+      : detail >= 3
+        ? 'Assign it to a team, then push it to the sequencer.'
+        : building
+          ? 'Building the sequence from those sources.'
+          : 'Pulling every source that sentence names.'
   const tool =
     phase === 'pushed'
-      ? 'pushed to the sequencer'
-      : building
-        ? 'building the sequence'
-        : 'gathering CRM, calls, email, and the public web'
+      ? `assigned to ${ASSIGNED_TEAM} · pushed to the sequencer`
+      : detail >= 4
+        ? `assigning to ${ASSIGNED_TEAM}`
+        : detail >= 3
+          ? 'choosing a team'
+          : building
+            ? 'building the sequence'
+            : 'gathering CRM, calls, email, and the public web'
 
   return (
     <div className="hc-shell" aria-hidden="true">
@@ -345,9 +354,11 @@ export function HeroClaudeMock() {
                     <div className="hc-eyebrow">{building ? 'Sequence' : 'Sources'}</div>
                     <h3>{phase === 'pushed' ? 'Pushed' : building ? 'Stage-2 deals' : 'From the sentence'}</h3>
                     <p>
-                      {building
-                        ? 'Open on the last call. Call when the office is quietest.'
-                        : `${shown.length} of ${PLAY_SOURCES.length} sources`}
+                      {phase === 'pushed'
+                        ? `${ASSIGNED_TEAM} · Outreach, Salesloft, Gong, or HubSpot`
+                        : building
+                          ? 'Open on the last call. Call when the office is quietest.'
+                          : `${shown.length} of ${PLAY_SOURCES.length} sources`}
                     </p>
                   </header>
 
@@ -376,6 +387,18 @@ export function HeroClaudeMock() {
                       </div>
                     ) : null}
                     {detail >= 3 ? (
+                      <div className="hc-play-teams">
+                        <div className="hc-kicker">Assign to</div>
+                        <div className="hc-team-picks">
+                          {PLAY_TEAMS.map((name) => (
+                            <span key={name} className={detail >= 4 && name === ASSIGNED_TEAM ? 'on' : ''}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {detail >= 5 ? (
                       <div className={`hc-play-assign ${phase === 'pushed' ? 'is-pushed' : ''}`}>
                         <div>
                           <div className="hc-kicker">Sequencer</div>

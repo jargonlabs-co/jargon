@@ -1134,12 +1134,36 @@ button {
 
 .hc-play-sources,
 .hc-play-step,
+.hc-play-teams,
 .hc-play-assign {
   padding: 10px 12px;
   border: 1px solid #e6ddd0;
   border-radius: 10px;
   background: #fff;
   animation: hc-pop 0.5s var(--ease) both;
+}
+
+.hc-team-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hc-team-picks span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #e6ddd0;
+  background: #fdf8ee;
+  color: #5a6a7a;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hc-team-picks span.on {
+  background: #131f22;
+  border-color: #131f22;
+  color: #fdf8ee;
 }
 
 .hc-play-source {

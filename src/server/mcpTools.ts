@@ -141,13 +141,14 @@ function workspaceOk(
   sandbox: boolean,
   focus?: McpTab,
   userId?: string,
-  opts?: { embed?: boolean }
+  opts?: { embed?: boolean; landing?: 'overview' }
 ) {
   try {
     const ws = getEmailWorkspace(store, config, orgId, projectId, {
       sandbox,
       focus,
-      userId
+      userId,
+      landing: opts?.landing
     })
     if (!ws) return fail('Project not found')
     const show = opts?.embed !== false
@@ -216,7 +217,7 @@ export function registerJargonTools(
         ...meBillingFields(credits),
         claude: claudeConnectorStatus(store, config, org.id),
         ingest:
-        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. If the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with that sentence and no contact table, then show_tasks once. Jargon loads the vet offices, reads each Google Business profile, and orders the calls. Do not resume_workspace first, do not save_research, and do not ask to schedule. If the user asks to build a play — any audience or any fields they name, including deals, open upsell opportunities, a last-call objection, an Attention call, a brand add-on, or Google Business hours — call deploy_tool with that sentence and no contact table, then show_tasks once. Jargon turns the sentence into the sequence and fills each variable. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. When they ask for the best or least-busy time of day to call, follow nextAction and put callWindow on each call item. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
+        `${ADMIN_REPORT_ROUTE} If the user asks to build a priority pipeline or prioritize contacts, call deploy_tool with their sentence as workspace and no contact table, then show_tasks once. Hydrate Railway, Postgres, HubSpot, or a pasted list — whichever they have. Do not resume_workspace first, do not save_research, and do not ask to schedule. Do not enroll HubSpot when the workspace already has people. If the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with that sentence and no contact table, then show_tasks once. Jargon loads the vet offices, reads each Google Business profile, and orders the calls. Do not resume_workspace first, do not save_research, and do not ask to schedule. If the user asks to build a play — any audience or any fields they name, including deals, open upsell opportunities, a last-call objection, an Attention call, a brand add-on, or Google Business hours — call deploy_tool with that sentence and no contact table, then show_tasks once. That opens the ops overview: the sequence, assign to a rep or team, and Push to sequencer. Do not describe the task list. Jargon turns the sentence into the sequence and fills each variable. Do not resume_workspace first, do not save_research, and do not ask to schedule. Otherwise, in a new chat that is not a report or rep drilldown, call resume_workspace first — it returns JSON and does not open a workspace. Contacts are already ranked from any source. Import a list with import_list or deploy_tool when nothing is connected. Do not open the template sequence. Then save_research, which opens the one workspace. When they ask for the best or least-busy time of day to call, follow nextAction and put callWindow on each call item. Do not call show_email_workspace, show_tasks, or get_sequence in that build. After the sequence is saved, ask once whether Jargon may run it on its own. accepted on note_schedule_choice is the grant. ${SCHEDULED_BUILD} Reopen an already personalized workspace later with show_email_workspace only when the user asks to see it, never in the same turn as save_research. Do not share a web workspace URL — send the user to jargonlabs.co only for billing, plans, or support.`
       })
     }
   )
@@ -947,11 +948,14 @@ export function registerJargonTools(
     {
       ...display("Show what's due today", HINTS.read),
       description:
-        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Call this once when they ask what is due, once after a priority-pipeline deploy, or once after a phone-heavy sequencer deploy that ordered calls by time of day. Do not call it to preview a template cadence, and do not call it in the same turn as save_research — that already opened the workspace.',
+        'Open Tasks in Claude: every sequence step due for enrolled contacts, in due order. The user clicks through them — send, skip, reschedule, log a call, send LinkedIn. Call this once when they ask what is due, once after a priority-pipeline deploy, once after a phone-heavy sequencer deploy that ordered calls by time of day, or once after a play deploy. A play (the user said build a play) opens the ops overview: the sequence, assign to a rep or team, and Push to sequencer. Do not describe that as the task list. Do not call it to preview a template cadence, and do not call it in the same turn as save_research — that already opened the workspace.',
       inputSchema: z.object({ projectId: z.string() }),
       _meta: EMAIL_WORKSPACE_TOOL_META
     },
-    async ({ projectId }) => workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId)
+    async ({ projectId }) =>
+      workspaceOk(store, config, actor.orgId, projectId, sandbox, 'tasks', actor.userId, {
+        landing: findOrgProject(store, actor.orgId, projectId)?.play ? 'overview' : undefined
+      })
   )
 
   server.registerTool(

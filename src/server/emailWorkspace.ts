@@ -50,7 +50,7 @@ import {
 } from './workspaceTasks'
 
 /** Current widget URI. Claude caches HTML by this string — bump when the bundle changes. */
-export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=play4'
+export const EMAIL_WORKSPACE_URI = 'ui://jargon/email-workspace.html?v=play5'
 
 /** Serve the current HTML under every URI Claude may still have cached from tools/list. */
 export const EMAIL_WORKSPACE_URIS = [
@@ -106,6 +106,7 @@ export const EMAIL_WORKSPACE_URIS = [
   'ui://jargon/email-workspace.html?v=play1',
   'ui://jargon/email-workspace.html?v=play2',
   'ui://jargon/email-workspace.html?v=play3',
+  'ui://jargon/email-workspace.html?v=play4',
   EMAIL_WORKSPACE_URI
 ] as const
 
@@ -166,6 +167,8 @@ export type EmailWorkspace = {
   researchPending: boolean
   /** Instruction the model should follow immediately. */
   nextAction?: string
+  /** A play opens the ops overview (sequence, assign, push) instead of the task list. */
+  landing?: 'overview'
   stats: {
     drafts: number
     queued: number
@@ -273,7 +276,7 @@ export function getEmailWorkspace(
   config: ServerConfig,
   orgId: string,
   projectId: string,
-  opts?: { sandbox?: boolean; focus?: McpTab; userId?: string }
+  opts?: { sandbox?: boolean; focus?: McpTab; userId?: string; landing?: 'overview' }
 ): EmailWorkspace | null {
   const project = findOrgProject(store, orgId, projectId)
   if (!project) return null
@@ -444,7 +447,7 @@ export function getEmailWorkspace(
       : `Write personalized talk tracks (channel: call), email copy, and LinkedIn notes for every sequence step from each contact's fields (context and attrs from their source). Then call save_research for project ${project.id}. Do not invent funding, hiring, or tenure. That enrolls everyone and opens the one workspace. Do not call show_email_workspace, show_tasks, or get_sequence. Do not wait to be asked. Do not paste the research JSON into chat. Do not leave {{first_name}} placeholders as the send copy.`
     : undefined
   const nextAction = play
-    ? `The play is open for project ${project.id}. Summarize the audience and the variables in one sentence. Do not call save_research. Do not outline the day ladder.`
+    ? `The ops overview is open for project ${project.id}: the sequence, assign to a rep or team, and Push to sequencer. Summarize the audience and the variables in one sentence. Do not describe the task list. Do not call save_research. Do not outline the day ladder.`
     : researchAction
       ? wantsCallWindows(project.prompt || '')
         ? `${researchAction} ${callWindowClause()}`
@@ -498,6 +501,7 @@ export function getEmailWorkspace(
       called: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('call')).length,
       linkedin: listed.contacts.filter((c) => (c.channelsDone ?? []).includes('linkedin')).length
     },
+    ...(opts?.landing === 'overview' && play ? { landing: 'overview' as const } : {}),
     ...(play
       ? {
           play: playViewFor(
@@ -1177,6 +1181,7 @@ export const SAMPLE_PLAY_WORKSPACE: EmailWorkspace = {
   surface: 'sequence',
   defaultTab: 'tasks',
   focus: 'tasks',
+  landing: 'overview',
   projectId: 'proj_play',
   name: 'A call with an email follow-up for stage-2 deals',
   goal: 'Reopen deals that have gone quiet',
@@ -1427,7 +1432,7 @@ Priority pipeline: when the user asks to build a priority pipeline or prioritize
 
 Phone-heavy call order: when the user asks to build a phone-heavy outbound sequencer for this list of vet offices, determine the best time of day to call, and sort from first to last, call deploy_tool with their sentence and no contact table. Do not call resume_workspace first. Do not call list_crm_contacts. Jargon loads the vet offices, reads each Google Business profile, and orders the calls from the next one to the last. Then call show_tasks once. Do not save_research. Do not invent hours. Do not paste a table. Do not ask to schedule.
 
-Deal play: when the user asks to build a play — any audience, any fields they name, including deals, open upsell opportunities, a last-call objection, an Attention call, a brand add-on, Google Business hours, or other first-party and third-party facts — call deploy_tool with that sentence and no contact table. Jargon reads the audience and each field into sequence variables, fills the people, and stores the copy with those tokens. Then call show_tasks once. Do not save_research. Do not rewrite the variable tokens. Do not ask to schedule. Do not paste a contact table.
+Deal play: when the user asks to build a play — any audience, any fields they name, including deals, open upsell opportunities, a last-call objection, an Attention call, a brand add-on, Google Business hours, or other first-party and third-party facts — call deploy_tool with that sentence and no contact table. Jargon reads the audience and each field into sequence variables, fills the people, and stores the copy with those tokens. Then call show_tasks once. That opens the ops overview: the sequence, assign to a rep or team, and Push to sequencer. Do not describe the task list. Do not save_research. Do not rewrite the variable tokens. Do not ask to schedule. Do not paste a contact table.
 
 On any other new chat that is not a report or rep drilldown, call resume_workspace before import_list or deploy_tool. It returns JSON and does not open a workspace. If a workspace already exists and the user is continuing it, call show_email_workspace or show_tasks once. If they are building a new sequence, do not open the resumed one. Contacts already have priority.rank, priority.motion (inbound or outbound), and priority.signals from any source. The queue is sorted best first. Do not regroup by warmth and do not drop cold contacts.
 

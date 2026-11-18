@@ -4565,10 +4565,15 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   function acceptWorkspace(parsed) {
     if (!isWorkspacePayload(parsed)) return false;
     rememberWorkspace(parsed);
-    if (selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
+    const playOverview = parsed.landing === 'overview' && parsed.play;
+    if (!playOverview && selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
+    const previousId = ws?.projectId;
     admin = null;
     applyWorkspace(parsed);
-    if (parsed.play && screen === 'sequences') screen = 'variables';
+    if (playOverview || (parsed.play && (screen === 'sequences' || (previousId && previousId !== parsed.projectId)))) {
+      selectedSequenceId = parsed.projectId;
+      screen = 'variables';
+    }
     notice = '';
     try {
       render();

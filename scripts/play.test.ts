@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { loadConfig } from '../src/server/config.ts'
+import { getEmailWorkspace } from '../src/server/emailWorkspace.ts'
+import { deployPublicTool } from '../src/server/publicApi.ts'
 import { createProjectRecord } from '../src/server/projectCreate.ts'
 import { migrateDatabase, type DataStore } from '../src/server/store.ts'
 import {
@@ -92,6 +94,22 @@ describe('play variables', () => {
       ['Ada Morales', 'Owen Briggs', 'Noah Patel']
     )
     assert.ok(contacts.every((row) => row.attrs?.last_call_objection && row.attrs?.quiet_window))
+    const opened = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId, { landing: 'overview' })
+    assert.equal(opened?.landing, 'overview')
+    assert.ok(opened?.play)
+    const quiet = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId)
+    assert.equal(quiet?.landing, undefined)
+  })
+
+  it('tells Claude to open the ops overview after build a play', async () => {
+    const db = migrateDatabase({})
+    const deployed = await deployPublicTool(memoryStore(db), loadConfig(), 'org_1', PROMPT)
+    assert.equal(deployed.ok, true)
+    if (!deployed.ok) return
+    assert.match(deployed.body.nextAction || '', /show_tasks/)
+    assert.match(deployed.body.nextAction || '', /ops overview/)
+    assert.match(deployed.body.nextAction || '', /Push to sequencer/)
+    assert.match(deployed.body.nextAction || '', /Do not describe the task list/)
   })
 
   it('turns a new audience and new fields into a filled sequence', async () => {

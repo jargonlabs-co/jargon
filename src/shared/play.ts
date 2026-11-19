@@ -59,6 +59,17 @@ export type PlayView = Play & {
   steps: Array<{ channel: string; day: number; label: string; body: string }>
 }
 
+/** Ops view of any sequence: sources, who it is for, and who it is assigned to. */
+export type SequenceOverview = {
+  audienceLabel: string
+  notice?: string
+  sources: Array<{ key: string; label: string; source: string }>
+  roster: Array<{ id: string; name: string }>
+  teams: Array<{ id: string; name: string }>
+  assignment?: PlayAssignment
+  people: Array<{ id: string; name: string; company: string; title: string; values: Record<string, string> }>
+}
+
 type Binder = PlayVariable & { match: RegExp }
 
 const BINDERS: Binder[] = [

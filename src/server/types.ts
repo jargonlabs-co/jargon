@@ -5,7 +5,7 @@ import type {
   OrgBillingRow,
   UsageDailyRow
 } from './billing/types'
-import type { Play } from '../shared/play'
+import type { Play, PlayAssignment } from '../shared/play'
 import type { Warmth } from '../shared/warmth'
 
 export type { PlanId } from './billing/catalog'
@@ -248,8 +248,10 @@ export interface Project {
   requestedFields?: string[]
   /** What a new Claude chat or a scheduled run should resume. */
   brief?: WorkspaceBrief
-  /** Audience, variable contract, and who the sequence is assigned to. */
+  /** Audience and variable contract when the prompt was a play. */
   play?: Play
+  /** Who this sequence is assigned to. */
+  assignment?: PlayAssignment
   createdAt: number
   updatedAt: number
 }

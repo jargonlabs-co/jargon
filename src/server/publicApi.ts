@@ -652,7 +652,7 @@ export async function deployPublicTool(
           label: step.label || step.channel
         }))
       const names = play.variables.map((variable) => variable.label).join(' and ')
-      body.nextAction = `Call show_tasks for project ${projectId} now. That opens the ops overview: the sequence, assign to a rep or team, and Push to sequencer. The sequence already has ${names || 'the requested variables'} filled from the CRM and public sources. Do not describe the task list. Do not research, do not save_research, and do not ask to schedule.`
+      body.nextAction = `Call show_tasks for project ${projectId} now. That opens the ops overview: the sequence, assign to a rep or team, and Push to sequencer. Run is on the same sequence. The sequence already has ${names || 'the requested variables'} filled from the CRM and public sources. Do not describe the task list. Do not research, do not save_research, and do not ask to schedule.`
     }
     return {
       ok: true,

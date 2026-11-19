@@ -482,6 +482,15 @@
       font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-600);
     }
     .assign-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .mode-row { display: flex; justify-content: center; padding: 10px 15px 0; }
+    .mode-switch {
+      display: flex; gap: 2px; background: var(--cream-100); border-radius: 8px; padding: 2px;
+    }
+    .mode-switch button {
+      border: 0; background: transparent; color: var(--gray-600); border-radius: 6px;
+      padding: 4px 14px; font-size: 12px; font-weight: 650;
+    }
+    .mode-switch button.on { background: #fff; color: var(--navy-900); }
     .assign-row select, .preview-for select {
       border: 1px solid var(--cream-border); border-radius: 8px; background: #fff; padding: 6px 8px; font: inherit;
     }
@@ -1852,8 +1861,8 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return `<div class="wire"></div><div class="joint"></div><div class="wire"></div>`;
   }
 
-  function sourcesCard(play) {
-    const rows = Array.isArray(play?.variables) ? play.variables : [];
+  function sourcesCard(sources) {
+    const rows = Array.isArray(sources) ? sources : [];
     if (!rows.length) return '';
     const lines = rows.map((variable) => `
       <div class="source-row">
@@ -3809,6 +3818,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
               <div class="session-track" aria-hidden="true"><i style="width:${width}%"></i></div>
             </div>
           </div>
+          ${modeRow('run')}
           ${!people.length ? '<div class="session-body"><p class="session-meta">No one is enrolled in this sequence yet.</p></div>' : `
             <div class="session-body">
               ${current ? `
@@ -3830,6 +3840,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       </div>
     `;
     bindSession();
+    bindModeSwitch();
   }
 
   function bindSession() {
@@ -3978,10 +3989,67 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     return `<button type="button" class="back-btn" id="screen-back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg><span>${esc(label)}</span></button>`;
   }
 
-  function renderVariables() {
-    const play = ws.play;
-    if (!play) { screen = 'tasks'; render(); return; }
-    const people = play.people || [];
+  function sequenceOverview() {
+    if (ws?.overview) return ws.overview;
+    const play = ws?.play;
+    if (!ws) return null;
+    const sources = Array.isArray(play?.variables) && play.variables.length
+      ? play.variables.map((variable) => ({
+          key: variable.key,
+          label: variable.label || variable.key || '',
+          source: variable.source || ''
+        }))
+      : (ws.sources || []).map((source) => ({
+          key: source.provider,
+          label: source.accountLabel || source.provider,
+          source: source.provider
+        }));
+    return {
+      audienceLabel: play?.audience?.label || ws.goal || '',
+      notice: play?.notice || '',
+      sources,
+      roster: play?.roster || [],
+      teams: play?.teams?.length ? play.teams : [
+        { id: 'all', name: 'Whole team' },
+        { id: 'am_bdrs', name: 'AM BDRs' }
+      ],
+      assignment: play?.assignment,
+      people: play?.people || (ws.contacts || []).map((contact) => ({
+        id: contact.id,
+        name: contact.name || '',
+        company: contact.company || '',
+        title: contact.title || '',
+        values: contact.attrs || {}
+      }))
+    };
+  }
+
+  function modeRow(active) {
+    const item = (id, label) =>
+      `<button type="button" data-mode="${id}" class="${active === id ? 'on' : ''}" role="tab" aria-selected="${active === id ? 'true' : 'false'}">${label}</button>`;
+    return `<div class="mode-row"><div class="mode-switch" role="tablist" aria-label="Sequence view">${item('overview', 'Overview')}${item('run', 'Run')}</div></div>`;
+  }
+
+  function bindModeSwitch() {
+    root.querySelectorAll('[data-mode]').forEach((el) => el.addEventListener('click', () => {
+      const mode = el.getAttribute('data-mode');
+      if (mode === 'overview') {
+        if (screen === 'overview') return;
+        screen = 'overview';
+      } else {
+        if (screen === 'tasks') return;
+        screen = 'tasks';
+        sessionAnchor = null;
+      }
+      notice = '';
+      render();
+    }));
+  }
+
+  function renderOverview() {
+    const overview = sequenceOverview();
+    if (!overview) { screen = 'tasks'; render(); return; }
+    const people = overview.people || [];
     if (!variableContactId || !people.some((person) => person.id === variableContactId)) {
       variableContactId = people[0]?.id || null;
     }
@@ -3993,13 +4061,15 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       email: '',
       attrs: selected.values || {}
     } : null);
-    const steps = (ws.steps && ws.steps.length ? ws.steps : play.steps || []).slice();
-    const assignment = play.assignment?.kind === 'rep' && play.assignment.id
-      ? play.assignment.id
-      : `team:${play.assignment?.id || (play.assignment?.name === 'AM BDRs' ? 'am_bdrs' : 'all')}`;
-    const teams = play.teams?.length ? play.teams : [{ id: 'all', name: 'Whole team' }, { id: 'am_bdrs', name: 'AM BDRs' }];
+    const steps = (ws.steps && ws.steps.length ? ws.steps : overview.steps || ws.play?.steps || []).slice();
+    const assignment = overview.assignment?.kind === 'rep' && overview.assignment.id
+      ? overview.assignment.id
+      : overview.assignment?.kind === 'team'
+        ? `team:${overview.assignment.id || (overview.assignment.name === 'AM BDRs' ? 'am_bdrs' : 'all')}`
+        : '';
+    const teams = overview.teams?.length ? overview.teams : [{ id: 'all', name: 'Whole team' }, { id: 'am_bdrs', name: 'AM BDRs' }];
     let flow = `<div class="canvas"><div class="flow">${triggerCard()}`;
-    const sources = sourcesCard(play);
+    const sources = sourcesCard(overview.sources);
     if (sources) {
       flow += connector();
       flow += sources;
@@ -4036,16 +4106,17 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         ${notice ? `<div class="banner ${noticeTone}">${esc(notice)}</div>` : ''}
         ${backButton('Sequences')}
         <div class="session-card">
-          <div class="session-bar">
+            <div class="session-bar">
             <div class="session-bar-title">${esc(ws.name || 'Sequence')}</div>
             <div class="session-progress"><span>${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></div>
           </div>
+          ${modeRow('overview')}
           <div class="session-body">
             <div>
-              <div class="session-name">${esc(play.audience?.label || ws.goal || '')}</div>
+              <div class="session-name">${esc(overview.audienceLabel || ws.goal || '')}</div>
               <div class="session-meta">${ws.contactCount || people.length} ${(ws.contactCount || people.length) === 1 ? 'contact' : 'contacts'} in this sequence</div>
             </div>
-            ${play.notice ? `<div class="banner">${esc(play.notice)}</div>` : ''}
+            ${overview.notice ? `<div class="banner">${esc(overview.notice)}</div>` : ''}
             ${people.length > 1 ? `
               <div class="preview-for">
                 <div class="bridge-kicker">Preview for</div>
@@ -4058,11 +4129,12 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
             <div class="assign-row">
               <div>
                 <div class="bridge-kicker">Assign</div>
-                <div class="session-meta">${esc(play.assignment?.name || 'Unassigned')}</div>
+                <div class="session-meta">${esc(overview.assignment?.name || 'Unassigned')}</div>
               </div>
               <select id="assign-play">
+                <option value="" ${assignment ? '' : 'selected'} disabled>Assign</option>
                 ${teams.map((team) => `<option value="team:${esc(team.id)}" ${assignment === `team:${team.id}` ? 'selected' : ''}>${esc(team.name)}</option>`).join('')}
-                ${(play.roster || []).map((rep) => `<option value="${esc(rep.id)}" ${assignment === rep.id ? 'selected' : ''}>${esc(rep.name)}</option>`).join('')}
+                ${(overview.roster || []).map((rep) => `<option value="${esc(rep.id)}" ${assignment === rep.id ? 'selected' : ''}>${esc(rep.name)}</option>`).join('')}
               </select>
             </div>
             <button type="button" class="session-btn primary block" id="push-play">Push to sequencer</button>
@@ -4082,29 +4154,36 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     });
     root.querySelector('#assign-play')?.addEventListener('change', (event) => {
       const value = event.target.value;
+      if (!value) return;
+      const overviewNow = sequenceOverview();
+      let assignmentNow = null;
       if (value.startsWith('team:')) {
         const id = value.slice(5);
-        const team = (ws.play.teams || []).find((row) => row.id === id);
-        ws.play.assignment = { kind: 'team', id, name: team?.name || (id === 'am_bdrs' ? 'AM BDRs' : 'Whole team') };
+        const team = (overviewNow.teams || []).find((row) => row.id === id);
+        assignmentNow = { kind: 'team', id, name: team?.name || (id === 'am_bdrs' ? 'AM BDRs' : 'Whole team') };
       } else {
-        const rep = (ws.play.roster || []).find((row) => row.id === value);
-        if (rep) ws.play.assignment = { kind: 'rep', id: rep.id, name: rep.name };
+        const rep = (overviewNow.roster || []).find((row) => row.id === value);
+        if (rep) assignmentNow = { kind: 'rep', id: rep.id, name: rep.name };
       }
+      if (!assignmentNow) return;
+      if (!ws.overview) ws.overview = overviewNow;
+      ws.overview.assignment = assignmentNow;
+      if (ws.play) ws.play.assignment = assignmentNow;
       render();
       void callTool({
         name: 'assign_play',
         arguments: {
           projectId: ws.projectId,
-          kind: ws.play.assignment?.kind || 'team',
-          id: ws.play.assignment?.id
+          kind: assignmentNow.kind,
+          id: assignmentNow.id
         }
       });
     });
     root.querySelector('#push-play')?.addEventListener('click', () => {
       screen = 'tasks';
-      notice = '';
-      render();
+      setNotice('Pushed to the sequencer.', 'ok');
     });
+    bindModeSwitch();
   }
 
   function renderSequences() {
@@ -4157,6 +4236,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
             <div class="session-bar-title">${esc(ws.name)}</div>
             <div class="session-progress"><span>${rows.length} ${rows.length === 1 ? 'task' : 'tasks'}</span></div>
           </div>
+          ${modeRow('run')}
           <div class="session-body">
             ${rows.length ? '<button type="button" class="session-btn primary block" id="start-session">Start tasks</button>' : '<p class="session-meta">Nothing is due in this sequence.</p>'}
           </div>
@@ -4197,6 +4277,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       notice = '';
       render();
     }));
+    bindModeSwitch();
   }
 
   function showSequence(id) {
@@ -4205,7 +4286,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     ws = cached;
     syncDrafts();
     openingId = null;
-    screen = cached.play ? 'variables' : 'tasks';
+    screen = 'tasks';
     notice = '';
     render();
     return true;
@@ -4237,7 +4318,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
     rememberWorkspace(parsed);
     ws = parsed;
     syncDrafts();
-    screen = parsed.play ? 'variables' : 'tasks';
+    screen = 'tasks';
     render();
   }
 
@@ -4256,7 +4337,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
       root.innerHTML = `<p class="empty">${notice ? esc(notice) : 'Waiting for workspace data…'}</p>`;
       return;
     }
-    if (screen === 'variables' && ws.play) { renderVariables(); return; }
+    if (screen === 'overview') { renderOverview(); return; }
     if (ws.view === 'overflow' || surface() === 'overflow') { renderOverflow(); return; }
     if (screen === 'tasks' && openingId && ws.projectId !== openingId) {
       root.innerHTML = `
@@ -4286,6 +4367,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
           ${backButton('Back')}
           <div class="session-card">
             <div class="session-bar"><div class="session-bar-title">${esc(ws.name)}</div></div>
+            ${modeRow('run')}
             <div class="session-body"><p class="session-meta">Writing personalized copy for ${n} ${n === 1 ? 'person' : 'people'}…</p></div>
           </div>
         </div>
@@ -4295,6 +4377,7 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
         notice = '';
         render();
       });
+      bindModeSwitch();
       return;
     }
     if (!draftSteps.length && ws.steps?.length) syncDrafts();
@@ -4565,14 +4648,17 @@ function orderAfterFinish(previousIds, finishedId, openIds, knownIds) {
   function acceptWorkspace(parsed) {
     if (!isWorkspacePayload(parsed)) return false;
     rememberWorkspace(parsed);
-    const playOverview = parsed.landing === 'overview' && parsed.play;
-    if (!playOverview && selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
-    const previousId = ws?.projectId;
+    const directed = parsed.landing === 'overview' || parsed.landing === 'run';
+    if (!directed && selectedSequenceId && parsed.projectId !== selectedSequenceId) return true;
     admin = null;
     applyWorkspace(parsed);
-    if (playOverview || (parsed.play && (screen === 'sequences' || (previousId && previousId !== parsed.projectId)))) {
+    if (parsed.landing === 'overview') {
       selectedSequenceId = parsed.projectId;
-      screen = 'variables';
+      screen = 'overview';
+    } else if (parsed.landing === 'run') {
+      selectedSequenceId = parsed.projectId;
+      sessionAnchor = null;
+      screen = 'tasks';
     }
     notice = '';
     try {

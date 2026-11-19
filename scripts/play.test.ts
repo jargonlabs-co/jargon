@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { loadConfig } from '../src/server/config.ts'
 import { getEmailWorkspace } from '../src/server/emailWorkspace.ts'
+import { assignPlay } from '../src/server/playResolve.ts'
 import { deployPublicTool } from '../src/server/publicApi.ts'
 import { createProjectRecord } from '../src/server/projectCreate.ts'
 import { migrateDatabase, type DataStore } from '../src/server/store.ts'
@@ -97,8 +98,13 @@ describe('play variables', () => {
     const opened = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId, { landing: 'overview' })
     assert.equal(opened?.landing, 'overview')
     assert.ok(opened?.play)
+    assert.deepEqual(
+      opened?.overview?.sources.map((source) => source.key),
+      ['last_call_objection', 'quiet_window']
+    )
     const quiet = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId)
     assert.equal(quiet?.landing, undefined)
+    assert.ok(quiet?.overview)
   })
 
   it('tells Claude to open the ops overview after build a play', async () => {
@@ -174,5 +180,49 @@ describe('play variables', () => {
     assert.ok(contacts.every((row) => row.attrs?.attention_pain && row.attrs?.brand_addon && row.attrs?.quiet_window))
     assert.ok(steps.some((step) => step.channel === 'call' && step.body?.includes('{{attention_pain}}') && step.body?.includes('{{brand_addon}}')))
     assert.ok(steps.some((step) => step.channel === 'email' && step.body?.includes('{{brand_addon}}') && step.body?.includes('store')))
+  })
+
+  it('opens the overview on a sequence that is not a play, and assigns it', async () => {
+    const db = migrateDatabase({})
+    db.users.push({
+      id: 'user_ada',
+      email: 'ada@example.com',
+      name: 'Ada',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    db.memberships.push({
+      id: 'mem_ada',
+      orgId: 'org_1',
+      userId: 'user_ada',
+      role: 'member',
+      createdAt: 1
+    })
+    const store = memoryStore(db)
+    const created = await createProjectRecord(store, loadConfig(), {
+      orgId: 'org_1',
+      prompt: 'Email sequence for GTM engineers in the US, 3 steps over 7 days.',
+      kind: 'sequencer'
+    })
+    const project = db.projects.find((row) => row.id === created.projectId)
+    assert.equal(project?.play, undefined)
+    const opened = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId, { landing: 'overview' })
+    assert.equal(opened?.landing, 'overview')
+    assert.equal(opened?.play, undefined)
+    const overview = opened?.overview
+    assert.ok(overview)
+    assert.ok(overview.teams.some((team) => team.name === 'Whole team'))
+    assert.ok((opened?.steps.length ?? 0) > 0)
+    assert.match(opened.nextAction || '', /Run is on the same sequence/)
+    const run = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId, { landing: 'run' })
+    assert.equal(run?.landing, 'run')
+    assert.equal(run?.overview?.assignment, undefined)
+    const assigned = assignPlay(store, 'org_1', created.projectId, { kind: 'rep', id: 'user_ada' })
+    assert.equal(assigned.ok, true)
+    assert.equal(project?.assignment?.name, 'Ada')
+    assert.equal(project?.play, undefined)
+    const again = getEmailWorkspace(store, loadConfig(), 'org_1', created.projectId)
+    assert.equal(again?.overview?.assignment?.name, 'Ada')
+    assert.ok(again?.overview?.roster.some((rep) => rep.name === 'Ada'))
   })
 })

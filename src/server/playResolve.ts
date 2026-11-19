@@ -3,7 +3,7 @@ import { getConnection, readSecrets } from './connections'
 import type { DataStore } from './store'
 import type { Contact } from './types'
 import { hasReachableContact } from '../shared/priorityOverlay'
-import type { Play, PlayAssignment, PlayView } from '../shared/play'
+import type { Play, PlayAssignment, PlayView, SequenceOverview } from '../shared/play'
 import { PLAY_TEAMS } from '../shared/play'
 import { hubspotAccessToken, isDemoHubSpot, writeHubSpotContactsToProjects } from './providers/hubspot'
 import { pullQuietDeals } from './providers/hubspotDeals'
@@ -157,7 +157,7 @@ export function assignPlay(
   input: { kind: 'rep' | 'team'; id?: string }
 ): { ok: true } | { ok: false; error: string } {
   const project = store.db.projects.find((row) => row.id === projectId && row.orgId === orgId)
-  if (!project?.play) return { ok: false, error: 'This workspace has no play' }
+  if (!project) return { ok: false, error: 'Project not found' }
   let assignment: PlayAssignment
   if (input.kind === 'team') {
     const team = PLAY_TEAMS.find((row) => row.id === (input.id || 'all'))
@@ -171,11 +171,92 @@ export function assignPlay(
   }
   store.update((db) => {
     const row = db.projects.find((item) => item.id === projectId)
-    if (!row?.play) return
-    row.play = { ...row.play, assignment }
+    if (!row) return
+    row.assignment = assignment
+    if (row.play) row.play = { ...row.play, assignment }
     row.updatedAt = Date.now()
   })
   return { ok: true }
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  hubspot: 'HubSpot',
+  railway: 'Railway',
+  postgres: 'Postgres',
+  gmail: 'Gmail',
+  outlook: 'Outlook'
+}
+
+function providerLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] || provider
+}
+
+function rosterFor(store: DataStore, orgId: string): Array<{ id: string; name: string }> {
+  return store.db.memberships
+    .filter((row) => row.orgId === orgId)
+    .map((row) => store.db.users.find((user) => user.id === row.userId))
+    .filter((user): user is NonNullable<typeof user> => Boolean(user))
+    .map((user) => ({ id: user.id, name: user.name || user.email }))
+}
+
+/** Sources, audience, and assignment for the overview. A play's variables win; otherwise the connected systems and catalog. */
+export function sequenceOverviewFor(
+  store: DataStore,
+  orgId: string,
+  project: {
+    segment?: string
+    assignment?: PlayAssignment
+    play?: Play
+    spec?: { segment?: string; goal?: string }
+  },
+  contacts: Contact[],
+  connections: Array<{ provider: string; accountLabel?: string }>,
+  catalog: Array<{ key: string; label: string; origin: string }>
+): SequenceOverview {
+  const play = project.play
+  const systems = [...new Set(connections.map((row) => providerLabel(row.provider)))]
+  const from = systems.join(', ')
+  const fields = catalog.filter((field) => field.origin === 'attrs').slice(0, 8)
+  const sources = play?.variables.length
+    ? play.variables.map((variable) => ({
+        key: variable.key,
+        label: variable.label,
+        source: variable.source
+      }))
+    : fields.length
+      ? fields.map((field) => ({
+          key: field.key,
+          label: field.label,
+          source: from || 'Sequence'
+        }))
+      : connections.map((row) => ({
+          key: row.provider,
+          label: row.accountLabel || providerLabel(row.provider),
+          source: providerLabel(row.provider)
+        }))
+  const keys = sources.map((source) => source.key)
+  return {
+    audienceLabel: play?.audience?.label || project.segment || project.spec?.segment || project.spec?.goal || '',
+    ...(play?.notice ? { notice: play.notice } : {}),
+    sources,
+    roster: rosterFor(store, orgId),
+    teams: PLAY_TEAMS.map((team) => ({ id: team.id, name: team.name })),
+    ...(project.assignment || play?.assignment
+      ? { assignment: project.assignment ?? play?.assignment }
+      : {}),
+    people: contacts.map((contact) => ({
+      id: contact.id,
+      name: contact.name,
+      company: contact.company,
+      title: contact.title,
+      values: Object.fromEntries(
+        keys.flatMap((key) => {
+          const value = text(contact.attrs?.[key])
+          return value ? [[key, value] as const] : []
+        })
+      )
+    }))
+  }
 }
 
 export function playViewFor(
@@ -186,14 +267,9 @@ export function playViewFor(
   contacts: Contact[],
   steps: Array<{ channel: string; day: number; label: string; body?: string }>
 ): PlayView {
-  const roster = store.db.memberships
-    .filter((row) => row.orgId === orgId)
-    .map((row) => store.db.users.find((user) => user.id === row.userId))
-    .filter((user): user is NonNullable<typeof user> => Boolean(user))
-    .map((user) => ({ id: user.id, name: user.name || user.email }))
   return {
     ...play,
-    roster,
+    roster: rosterFor(store, orgId),
     teams: PLAY_TEAMS.map((team) => ({ id: team.id, name: team.name })),
     people: contacts.map((contact) => ({
       id: contact.id,
